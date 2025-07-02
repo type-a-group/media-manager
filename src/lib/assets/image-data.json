@@ -1,0 +1,57 @@
+{
+  "schema": {
+    "image_name": {
+      "type": "string",
+      "removable": false,
+      "defaultValue": ""
+    },
+    "default": {
+      "type": "boolean",
+      "removable": true,
+      "defaultValue": false
+    },
+    "active": {
+      "type": "boolean",
+      "removable": true,
+      "defaultValue": true
+    },
+    "location": {
+      "type": "string",
+      "removable": true,
+      "defaultValue": ""
+    },
+    "Description": {
+      "type": "string",
+      "removable": true,
+      "defaultValue": ""
+    }
+  },
+  "images": [
+    {
+      "default": true,
+      "image_name": "",
+      "active": true,
+      "location": "",
+      "Description": ""
+    },
+    {
+      "image_name": "pexels-amar-18868637-2.jpg",
+      "default": false,
+      "active": false,
+      "location": "outside",
+      "Description": ""
+    },
+    {
+      "image_name": "pexels-omar-markhieh-637410-1447252-2.jpg",
+      "active": true,
+      "location": "",
+      "Description": ""
+    },
+    {
+      "image_name": "pexels-cottonbro-5082573-2.jpg",
+      "active": true,
+      "location": "",
+      "Description": ""
+    }
+  ]
+}
