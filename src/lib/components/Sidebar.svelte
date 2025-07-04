@@ -12,6 +12,8 @@
 	let view = $state<'linked' | 'unlinked'>('linked');
 	let loading = $state(true);
 
+	let { collapsed = $bindable() } = $props();
+
 	let searchQuery = $state('');
 	let selectedField = $state('');
 	let filterForEmpty = $state(false);
@@ -61,7 +63,7 @@
 	});
 </script>
 
-<div class="sidebar">
+<div class="sidebar" class:collapsed>
 	<div class="controls">
 		<button class:active={view === 'linked'} on:click={() => (view = 'linked')}>
 			Linked
@@ -71,6 +73,9 @@
 		</button>
 		<button class="sync-btn" on:click={fetchImageLists} title="Refresh lists">
 			🔄
+		</button>
+		<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
+			&lt;
 		</button>
 	</div>
 	<fieldset class="filter-controls">
@@ -135,7 +140,20 @@
 		padding: 1rem;
 		height: 100vh;
 		background: #f7f7f7;
+		display: flex;
+		flex-direction: column;
+		transition: width 0.3s ease-in-out;
+		overflow: hidden;
 	}
+
+	.sidebar.collapsed {
+		padding: 0;
+	}
+
+	.sidebar.collapsed > * {
+		visibility: hidden;
+	}
+
 	.controls {
 		display: flex;
 		gap: 0.5rem;
@@ -161,6 +179,15 @@
 	button.active:hover {
 		background: #0056b3;
 	}
+	.collapse-btn {
+		margin-left: auto;
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		padding: 0;
+		line-height: 1;
+	}
 	.sync-btn {
 		background: none;
 		border: none;
@@ -173,6 +200,8 @@
 		list-style: none;
 		padding: 0;
 		margin: 0;
+		overflow-y: auto;
+		flex-grow: 1;
 	}
 	.file-list a {
 		text-decoration: none;
