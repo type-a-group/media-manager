@@ -140,7 +140,7 @@
 					</a>
 				{/each}
 			{:else}
-				<li>No unlinked images found.</li>
+				<li>No {view} images found.</li>
 			{/if}
 		{/if}
 	</ul>
