@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { filteredImageList } from '$lib/stores/imageList';	
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -18,6 +19,9 @@
 	let selectedField = $state('');
 	let filterForEmpty = $state(false);
 	let schemaFields = $state<string[]>([]);
+
+	// This will hold the filenames actually displayed in the sidebar
+	let displayedFilenames = $state<string[]>([]);
 
 	async function fetchSchema() {
 		const response = await fetch('/api/schema');
@@ -51,9 +55,26 @@
 				inBoth: data.inBoth || [],
 				inAssetsOnly: data.inAssetsOnly || []
 			};
+			updateDisplayedFilenames();
 		}
 		loading = false;
 	}
+
+	function updateDisplayedFilenames() {
+		// Always reflect the current view and any search/filter
+		if (view === 'linked') {
+			displayedFilenames = imageLists.inBoth;
+		} else {
+			displayedFilenames = imageLists.inAssetsOnly;
+		}
+		// Set the store to match the displayed list
+		filteredImageList.set(displayedFilenames);
+	}
+
+	// When view changes, update displayedFilenames and store
+	$effect(() => {
+		updateDisplayedFilenames();
+	});
 
 	onMount(fetchSchema);
 
@@ -108,28 +129,19 @@
 	<ul class="file-list">
 		{#if loading}
 			<li>Loading...</li>
-		{:else if view === 'linked'}
-			{#each imageLists.inBoth as filename (filename)}
-				<a
-					href="/edit/{filename}?view=linked"
-					class:selected={$page.params.filename === filename}
-				>
-					<li>{filename}</li>
-				</a>
-			{:else}
-				<li>No linked images found.</li>
-			{/each}
 		{:else}
-			{#each imageLists.inAssetsOnly as filename (filename)}
-				<a
-					href="/edit/{filename}?view=unlinked"
-					class:selected={$page.params.filename === filename}
-				>
-					<li>{filename}</li>
-				</a>
+			{#if displayedFilenames.length > 0}
+				{#each displayedFilenames as filename (filename)}
+					<a
+						href="/edit/{filename}?view={view}"
+						class:selected={$page.params.filename === filename}
+					>
+						<li>{filename}</li>
+					</a>
+				{/each}
 			{:else}
-				<li>No unlinked images found.</li>
-			{/each}
+				<li>No {view} images found.</li>
+			{/if}
 		{/if}
 	</ul>
 </div>
@@ -257,4 +269,4 @@
 		display: flex;
 		align-items: center;
 	}
-</style> 
+</style>

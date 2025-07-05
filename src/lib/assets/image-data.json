@@ -1,31 +1,4 @@
 {
-  "schema": {
-    "image_name": {
-      "type": "string",
-      "removable": false,
-      "defaultValue": ""
-    },
-    "default": {
-      "type": "boolean",
-      "removable": true,
-      "defaultValue": false
-    },
-    "active": {
-      "type": "boolean",
-      "removable": true,
-      "defaultValue": true
-    },
-    "location": {
-      "type": "string",
-      "removable": true,
-      "defaultValue": ""
-    },
-    "Description": {
-      "type": "string",
-      "removable": true,
-      "defaultValue": ""
-    }
-  },
   "images": [
     {
       "default": true,

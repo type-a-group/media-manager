@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { filteredImageList } from '$lib/stores/imageList'; 
+	import { onMount, onDestroy } from 'svelte';
 
 	let { filename = null } = $props<{ filename?: string | null }>();
 
@@ -17,16 +19,6 @@
 	let newFieldDefaultNumber = $state(0);
 	let newFieldDefaultBoolean = $state(false);
 
-	$effect(() => {
-		if (newFieldType === 'boolean' && typeof newFieldDefaultBoolean !== 'boolean') {
-			newFieldDefaultBoolean = false;
-		} else if (newFieldType === 'number' && typeof newFieldDefaultNumber !== 'number') {
-			newFieldDefaultNumber = 0;
-		} else if (newFieldType === 'string' && typeof newFieldDefaultString !== 'string') {
-			newFieldDefaultString = '';
-		}
-	});
-
 	let imageLists = $state<{
 		inBoth: string[];
 		inAssetsOnly: string[];
@@ -37,21 +29,41 @@
 
 	let currentList = $state<string[]>([]);
 	let currentIndex = $state(-1);
+	
+	// Filtered list from svelte store
+	let filteredList: string[] = [];
+	let unsubscribe: () => void;
+	
+	onMount(() => {
+		unsubscribe = filteredImageList.subscribe((list) => {
+			filteredList = list;
+			updateCurrentList(); // Update when filtered list changes
+		});
+	});
+	
+	onDestroy(() => {
+		unsubscribe && unsubscribe();
+	});
+
+	// Clean function to update current list and index
+	function updateCurrentList() {
+		const view = $page.url.searchParams.get('view') || 'linked';
+		
+		// Use filtered list if available, otherwise fall back to the appropriate list
+		if (filteredList && filteredList.length > 0) {
+			currentList = filteredList;
+		} else {
+			currentList = view === 'unlinked' ? imageLists.inAssetsOnly : imageLists.inBoth;
+		}
+		
+		// Update index based on current filename
+		currentIndex = filename ? currentList.indexOf(filename) : -1;
+	}
 
 	async function fetchImageLists() {
 		const response = await fetch('/api/images/compare');
 		if (response.ok) {
 			imageLists = await response.json();
-		}
-	}
-
-	function updateCurrentList() {
-		const view = $page.url.searchParams.get('view') || 'linked';
-		currentList = view === 'unlinked' ? imageLists.inAssetsOnly : imageLists.inBoth;
-		if (filename) {
-			currentIndex = currentList.indexOf(filename);
-		} else {
-			currentIndex = -1;
 		}
 	}
 
@@ -73,32 +85,34 @@
 		}
 	}
 
+	// Fetch lists and schema on mount
 	$effect(() => {
 		fetchImageLists();
 		fetchSchema();
 	});
 
+	// Fetch metadata when filename changes
 	$effect(() => {
 		if (filename) {
 			fetchMetadata(filename);
-			saveMessage = ''; // Clear message on new image
-			updateCurrentList();
+			saveMessage = '';
+			updateCurrentList(); // Update when filename changes
 		} else {
 			metadata = null;
 			imageUrl = null;
-			currentIndex = -1;
 		}
 	});
 
+	// Update when imageLists changes
 	$effect(() => {
-		updateCurrentList();
+		if (imageLists.inBoth.length > 0 || imageLists.inAssetsOnly.length > 0) {
+			updateCurrentList();
+		}
 	});
 
 	function navigate(direction: 'prev' | 'next') {
 		if (currentIndex === -1) return;
-
 		const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
-
 		if (newIndex >= 0 && newIndex < currentList.length) {
 			const newFilename = currentList[newIndex];
 			const view = $page.url.searchParams.get('view') || 'linked';
@@ -245,7 +259,11 @@
 					<button type="submit" disabled={saving}>
 						{saving ? 'Saving...' : 'Save'}
 					</button>
-					<button type="button" on:click={() => navigate('prev')} disabled={currentIndex <= 0}>
+					<button 
+						type="button" 
+						on:click={() => navigate('prev')} 
+						disabled={currentIndex <= 0}
+					>
 						&larr; Previous
 					</button>
 					<button
@@ -292,6 +310,10 @@
 					<button on:click={handleAddNewField}>Add Field</button>
 				</div>
 			{/if}
+
+			<!-- <div style="font-size: 0.8em; color: #888; margin-top: 0.5rem;">
+				Debug: currentIndex: {currentIndex}, listLength: {currentList.length}, filename: {filename}
+			</div> -->
 		</div>
 	{:else if filename}
 		<p>Loading metadata for {filename}...</p>
@@ -429,4 +451,4 @@
 	.new-field-form button {
 		width: 100%;
 	}
-</style> 
+</style>
