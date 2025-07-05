@@ -32,5 +32,5 @@
 # Specific to other applications (not-important for now)
 - add an option to fill out some fields based on Google Vision API (food web thing)
     - offline semantic search using the vision api-filled fields
-    - vector database the fields for a fast fully local search also? (can maybe even wortk on exif data)
+    - vector database the fields for a fast fully local search also? (can maybe even work on exif data)
 - experiment with an image grid renderer
