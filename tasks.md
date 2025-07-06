@@ -5,7 +5,7 @@
 - im thinking we can try to get it to comment on code that might be confusing AS its making it
 
 # General
-- add a last-modified timestamp to the metadata - then we can optionally organize by this
+- optionally organize by timestamp
 - search/filter results
     - add an option to search by field
     - make this fast
@@ -21,9 +21,6 @@
     - Show thumbnail on hover or just on the side already
 -  Verbose mode: like not compact at all, images are displayed as the sidebar, so you can visually search through the data
     - Option to look at the images in a larger grid view (like lightroom) and select one in case you REALLY need to search for something visually
-- Upload images through the webapp
-- non deletable name field, either togglable name/filename display, or just always display name if fileld is nonempty
-- Schema separate from image data json
 
 # Things to think about
 - is having default values important? other than like false for bools and 0 for ints - maybe we can just filter for empty values?

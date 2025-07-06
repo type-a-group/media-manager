@@ -22,6 +22,14 @@
 
 	// This will hold the filenames actually displayed in the sidebar
 	let displayedFilenames = $state<string[]>([]);
+	
+	// Map filename to metadata for display names
+	let imageMetadata = $state<Map<string, any>>(new Map());
+	
+	// Upload-related state variables
+	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input
+	let uploading = $state(false); // Track upload status
+	let uploadMessage = $state(''); // Status messages for uploads
 
 	async function fetchSchema() {
 		const response = await fetch('/api/schema');
@@ -32,6 +40,30 @@
 				selectedField = schemaFields[0];
 			}
 		}
+	}
+
+	async function fetchMetadataForImages(filenames: string[]) {
+		const metadataMap = new Map();
+		await Promise.all(filenames.map(async (filename) => {
+			try {
+				const response = await fetch(`/api/images/metadata/${filename}`);
+				if (response.ok) {
+					const metadata = await response.json();
+					metadataMap.set(filename, metadata);
+				}
+			} catch (error) {
+				console.error(`Failed to fetch metadata for ${filename}:`, error);
+			}
+		}));
+		imageMetadata = metadataMap;
+	}
+
+	function getDisplayName(filename: string): string {
+		const metadata = imageMetadata.get(filename);
+		if (metadata && metadata.image_name && metadata.image_name.trim() !== '') {
+			return metadata.image_name;
+		}
+		return metadata?.file_name || filename;
 	}
 
 	async function fetchImageLists() {
@@ -69,6 +101,8 @@
 		}
 		// Set the store to match the displayed list
 		filteredImageList.set(displayedFilenames);
+		// Fetch metadata for display names
+		fetchMetadataForImages(displayedFilenames);
 	}
 
 	// When view changes, update displayedFilenames and store
@@ -82,6 +116,77 @@
 		// This will re-run whenever searchQuery, selectedField, or filterForEmpty changes
 		fetchImageLists();
 	});
+
+	/**
+	 * Triggers the hidden file input to open file selection dialog
+	 * Only allows image file types to be selected
+	 */
+	function triggerFileUpload() {
+		if (fileInput) {
+			fileInput.click();
+		}
+	}
+
+	/**
+	 * Handles the file upload process after user selects a file
+	 * Validates file type, uploads to server, and refreshes the image list
+	 * 
+	 * #NOTE: Future concerns:
+	 * - Progress indication: Could add upload progress bar for large files
+	 * - Multiple file uploads: Currently only handles single file selection
+	 * - Upload queue: No queuing system for multiple sequential uploads
+	 * - Drag & drop: Could enhance UX with drag-and-drop functionality
+	 */
+	async function handleFileUpload(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+		
+		if (!file) return;
+
+		// Client-side validation for file type
+		const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml'];
+		if (!allowedTypes.includes(file.type)) {
+			uploadMessage = 'Error: Please select a valid image file (JPEG, PNG, GIF, or SVG)';
+			setTimeout(() => uploadMessage = '', 3000);
+			return;
+		}
+
+		uploading = true;
+		uploadMessage = 'Uploading...';
+
+		try {
+			// Create FormData to send the file
+			const formData = new FormData();
+			formData.append('image', file);
+
+			// Send the upload request
+			const response = await fetch('/api/images/upload', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (response.ok) {
+				const result = await response.json();
+				uploadMessage = `✅ ${result.message}`;
+				
+				// Refresh the image lists to show the new upload
+				await fetchImageLists();
+				
+				// Clear the file input for future uploads
+				target.value = '';
+			} else {
+				const errorData = await response.json();
+				uploadMessage = `❌ Upload failed: ${errorData.message || 'Unknown error'}`;
+			}
+		} catch (error) {
+			console.error('Upload error:', error);
+			uploadMessage = '❌ Upload failed: Network error';
+		} finally {
+			uploading = false;
+			// Clear message after 3 seconds
+			setTimeout(() => uploadMessage = '', 3000);
+		}
+	}
 </script>
 
 <div class="sidebar" class:collapsed>
@@ -95,10 +200,35 @@
 		<button class="sync-btn" on:click={fetchImageLists} title="Refresh lists">
 			🔄
 		</button>
+		<button 
+			class="upload-btn" 
+			on:click={triggerFileUpload} 
+			disabled={uploading}
+			title="Upload new image"
+		>
+			📁
+		</button>
 		<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
-			&lt;
+			{collapsed ? '>' : '<'}
 		</button>
 	</div>
+	
+	<!-- Hidden file input for image uploads -->
+	<input 
+		type="file" 
+		bind:this={fileInput}
+		on:change={handleFileUpload}
+		accept="image/*"
+		style="display: none;"
+		aria-label="Upload image file"
+	/>
+	
+	<!-- Upload status message -->
+	{#if uploadMessage}
+		<div class="upload-message">
+			{uploadMessage}
+		</div>
+	{/if}
 	<fieldset class="filter-controls">
 		<legend>Filters</legend>
 		<div class="form-group">
@@ -136,7 +266,7 @@
 						href="/edit/{filename}?view={view}"
 						class:selected={$page.params.filename === filename}
 					>
-						<li>{filename}</li>
+						<li>{getDisplayName(filename)}</li>
 					</a>
 				{/each}
 			{:else}
@@ -162,7 +292,11 @@
 		padding: 0;
 	}
 
-	.sidebar.collapsed > * {
+	.sidebar.collapsed > *:not(.controls) {
+		visibility: hidden;
+	}
+	
+	.sidebar.collapsed .controls > *:not(.collapse-btn) {
 		visibility: hidden;
 	}
 
@@ -171,6 +305,8 @@
 		gap: 0.5rem;
 		margin-bottom: 1rem;
 		align-items: center;
+		flex-wrap: wrap;
+		min-height: 2.5rem;
 	}
 	button {
 		padding: 0.5rem 1rem;
@@ -193,12 +329,18 @@
 	}
 	.collapse-btn {
 		margin-left: auto;
-		background: none;
-		border: none;
-		font-size: 1.5rem;
+		background: #f0f0f0;
+		border: 1px solid #ccc;
+		font-size: 1.2rem;
 		cursor: pointer;
-		padding: 0;
+		padding: 0.25rem 0.5rem;
 		line-height: 1;
+		border-radius: 4px;
+		min-width: 2rem;
+		flex-shrink: 0;
+	}
+	.collapse-btn:hover {
+		background: #e0e0e0;
 	}
 	.sync-btn {
 		background: none;
@@ -207,6 +349,19 @@
 		cursor: pointer;
 		padding: 0;
 		line-height: 1;
+	}
+	.upload-btn {
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		padding: 0;
+		line-height: 1;
+		transition: opacity 0.2s ease-in-out;
+	}
+	.upload-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 	.file-list {
 		list-style: none;
@@ -268,5 +423,14 @@
 		cursor: pointer;
 		display: flex;
 		align-items: center;
+	}
+	.upload-message {
+		background: #f0f8ff;
+		border: 1px solid #cce5ff;
+		border-radius: 4px;
+		padding: 0.5rem;
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+		text-align: center;
 	}
 </style>

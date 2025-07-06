@@ -2,26 +2,42 @@
   "images": [
     {
       "default": true,
+      "file_name": "",
       "image_name": "",
+      "last_modified": "",
       "active": true,
       "location": "",
       "Description": ""
     },
     {
-      "image_name": "pexels-amar-18868637-2.jpg",
+      "file_name": "pexels-amar-18868637-2.jpg",
+      "image_name": "Person holding phone",
+      "last_modified": "2025-07-06T15:30:42.135Z",
       "default": false,
       "active": false,
       "location": "outside",
       "Description": ""
     },
     {
-      "image_name": "pexels-omar-markhieh-637410-1447252-2.jpg",
+      "file_name": "pexels-omar-markhieh-637410-1447252-2.jpg",
+      "image_name": "photographer edc",
+      "last_modified": "2025-07-03T15:30:30.006Z",
       "active": true,
       "location": "",
       "Description": ""
     },
     {
-      "image_name": "pexels-cottonbro-5082573-2.jpg",
+      "file_name": "pexels-cottonbro-5082573-2.jpg",
+      "image_name": "Mac keyboard mouse",
+      "last_modified": "2025-07-06T15:30:37.591Z",
+      "active": true,
+      "location": "",
+      "Description": ""
+    },
+    {
+      "file_name": "ariel_nicholas_muffins_deceptionpass.jpg",
+      "image_name": "the muffin men",
+      "last_modified": "2025-07-06T15:43:20.636Z",
       "active": true,
       "location": "",
       "Description": ""
