@@ -1,0 +1,5 @@
+---
+description: Always use svelte5 style code. One example of this is using runes for state, rather than the old
+globs:
+alwaysApply: false
+---

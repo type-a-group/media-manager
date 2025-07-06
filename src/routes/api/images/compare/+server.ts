@@ -20,8 +20,8 @@ export async function GET({ url }) {
 		const allData = JSON.parse(jsonData);
 		const jsonImagesData = allData.images;
 		const jsonImages = jsonImagesData
-			.filter((img: { image_name: string }) => img.image_name && img.image_name !== '')
-			.map((img: { image_name: string }) => img.image_name);
+			.filter((img: { file_name: string }) => img.file_name && img.file_name !== '')
+			.map((img: { file_name: string }) => img.file_name);
 
 		let inBoth = fsImages.filter((file) => jsonImages.includes(file));
 		const inAssetsOnly = fsImages.filter((file) => !jsonImages.includes(file));
@@ -29,7 +29,7 @@ export async function GET({ url }) {
 
 		if (query || empty) {
 			const imageMetadataMap: Map<string, { [key: string]: any }> = new Map(
-				jsonImagesData.map((img: any) => [img.image_name, img])
+				jsonImagesData.map((img: any) => [img.file_name, img])
 			);
 
 			inBoth = inBoth.filter((file) => {

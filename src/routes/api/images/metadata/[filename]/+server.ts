@@ -16,7 +16,7 @@ export const GET: RequestHandler = ({ params }) => {
 		const jsonImagesData = allData.images;
 
 		const imageMetadata = jsonImagesData.find(
-			(img: { image_name: string }) => img.image_name === filename
+			(img: { file_name: string }) => img.file_name === filename
 		);
 
 		if (imageMetadata) {
@@ -25,7 +25,7 @@ export const GET: RequestHandler = ({ params }) => {
 			// Return a default object if not found, as per user story
 			const defaultData = jsonImagesData.find((img: { default: boolean }) => img.default === true);
 			if (defaultData) {
-				return json({ ...defaultData, image_name: filename, default: false });
+				return json({ ...defaultData, file_name: filename, default: false });
 			}
 			throw error(404, { message: 'Image metadata not found and no default available' });
 		}
@@ -47,22 +47,28 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const allData = JSON.parse(jsonData);
 		const jsonImagesData = allData.images;
 
+		// Add current timestamp to metadata
+		const metadataWithTimestamp = { 
+			...newMetadata, 
+			last_modified: new Date().toISOString() 
+		};
+
 		const imageIndex = jsonImagesData.findIndex(
-			(img: { image_name: string }) => img.image_name === filename
+			(img: { file_name: string }) => img.file_name === filename
 		);
 
 		if (imageIndex > -1) {
 			// Update existing metadata
-			jsonImagesData[imageIndex] = { ...jsonImagesData[imageIndex], ...newMetadata };
+			jsonImagesData[imageIndex] = { ...jsonImagesData[imageIndex], ...metadataWithTimestamp };
 		} else {
 			// Add new metadata
-			jsonImagesData.push(newMetadata);
+			jsonImagesData.push(metadataWithTimestamp);
 		}
 
 		allData.images = jsonImagesData;
 		fs.writeFileSync(imageDataPath, JSON.stringify(allData, null, 2));
 
-		return json({ success: true, metadata: newMetadata });
+		return json({ success: true, metadata: metadataWithTimestamp });
 	} catch (err) {
 		console.error(err);
 		throw error(500, { message: 'Failed to save image metadata' });
