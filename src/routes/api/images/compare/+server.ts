@@ -27,26 +27,34 @@ export async function GET({ url }) {
 		const inAssetsOnly = fsImages.filter((file) => !jsonImages.includes(file));
 		const inJsonOnly = jsonImages.filter((file: string) => !fsImages.includes(file));
 
+		// Apply filters only if we have a query or empty filter
 		if (query || empty) {
-			const imageMetadataMap: Map<string, { [key: string]: any }> = new Map(
+			const imagePropertiesMap: Map<string, { [key: string]: any }> = new Map(
 				jsonImagesData.map((img: any) => [img.file_name, img])
 			);
 
 			inBoth = inBoth.filter((file) => {
-				const metadata = imageMetadataMap.get(file);
-				if (!metadata) {
+				const properties = imagePropertiesMap.get(file);
+				if (!properties) {
 					return false; // Should not happen for inBoth list
 				}
+				
+				// Filter for empty values
 				if (empty) {
 					if (!field) return false;
-					return metadata[field] === '';
+					return properties[field] === '' || properties[field] === undefined || properties[field] === null;
 				}
-				if (query && field && metadata[field] !== undefined) {
-					return String(metadata[field]).toLowerCase().includes(query.toLowerCase());
+				
+				// Filter by search query
+				if (query && field && properties[field] !== undefined) {
+					return String(properties[field]).toLowerCase().includes(query.toLowerCase());
 				}
+				
+				// If we have a query but no field, or field doesn't exist, exclude
 				return false;
 			});
 		}
+		// If no filters are applied, return all images without filtering
 
 		return json({
 			inBoth,

@@ -15,11 +15,6 @@
       "removable": false,
       "defaultValue": ""
     },
-    "default": {
-      "type": "boolean",
-      "removable": true,
-      "defaultValue": false
-    },
     "active": {
       "type": "boolean",
       "removable": true,
