@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { filteredImageList } from '$lib/stores/imageList';	
+	import { filteredImageList } from '$lib/stores/imageList';
+	import FiltersPopup from './FiltersPopup.svelte';
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -19,53 +20,89 @@
 	let selectedField = $state('');
 	let filterForEmpty = $state(false);
 	let schemaFields = $state<string[]>([]);
+	let showFiltersPopup = $state(false);
 
 	// This will hold the filenames actually displayed in the sidebar
 	let displayedFilenames = $state<string[]>([]);
 	
-	// Map filename to metadata for display names
-	let imageMetadata = $state<Map<string, any>>(new Map());
+	// Map filename to properties for display names
+	let imageProperties = $state<Map<string, any>>(new Map());
 	
 	// Upload-related state variables
 	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input
 	let uploading = $state(false); // Track upload status
 	let uploadMessage = $state(''); // Status messages for uploads
 
+	// Removed liked/unliked functionality as those fields don't exist
+
+	// Image preview hover state
+	let previewImage = $state<string | null>(null);
+	let previewPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+	let previewVisible = $state(false);
+
+	/**
+	 * Fetches the schema fields from the API
+	 * Used to populate the field selection dropdown in filters
+	 */
 	async function fetchSchema() {
-		const response = await fetch('/api/schema');
-		if (response.ok) {
-			const schema = await response.json();
-			schemaFields = Object.keys(schema);
-			if (schemaFields.length > 0) {
-				selectedField = schemaFields[0];
+		try {
+			const response = await fetch('/api/schema');
+			if (response.ok) {
+				const schema = await response.json();
+				schemaFields = Object.keys(schema);
+				if (schemaFields.length > 0) {
+					selectedField = schemaFields[0];
+				}
+				// Fetch initial image lists after schema is loaded
+				await fetchImageLists();
+			} else {
+				console.error('Failed to fetch schema:', response.status);
 			}
+		} catch (error) {
+			console.error('Error fetching schema:', error);
 		}
 	}
 
-	async function fetchMetadataForImages(filenames: string[]) {
-		const metadataMap = new Map();
+	/**
+	 * Fetches properties for a list of images to get display names
+	 * @param filenames - Array of image filenames to fetch properties for
+	 */
+	async function fetchPropertiesForImages(filenames: string[]) {
+		const propertiesMap = new Map();
 		await Promise.all(filenames.map(async (filename) => {
 			try {
-				const response = await fetch(`/api/images/metadata/${filename}`);
+				const response = await fetch(`/api/images/properties/${filename}`);
 				if (response.ok) {
-					const metadata = await response.json();
-					metadataMap.set(filename, metadata);
+					const properties = await response.json();
+					propertiesMap.set(filename, properties);
 				}
 			} catch (error) {
-				console.error(`Failed to fetch metadata for ${filename}:`, error);
+				console.error(`Failed to fetch properties for ${filename}:`, error);
 			}
 		}));
-		imageMetadata = metadataMap;
+		imageProperties = propertiesMap;
 	}
 
+	/**
+	 * Gets the display name for an image
+	 * Uses image_name if available, otherwise falls back to file_name or filename
+	 * @param filename - The filename to get display name for
+	 * @returns Display name for the image
+	 */
 	function getDisplayName(filename: string): string {
-		const metadata = imageMetadata.get(filename);
-		if (metadata && metadata.image_name && metadata.image_name.trim() !== '') {
-			return metadata.image_name;
+		const properties = imageProperties.get(filename);
+		if (properties && properties.image_name && properties.image_name.trim() !== '') {
+			return properties.image_name;
 		}
-		return metadata?.file_name || filename;
+		return properties?.file_name || filename;
 	}
 
+	// Removed isImageLiked function as liked field doesn't exist
+
+	/**
+	 * Fetches image lists based on current filters
+	 * Applies search, field, and empty value filters
+	 */
 	async function fetchImageLists() {
 		loading = true;
 		const params = new URLSearchParams();
@@ -79,30 +116,39 @@
 			params.append('query', searchQuery);
 			params.append('field', selectedField);
 		}
+		// If no filters are applied, fetch all images (no params needed)
 
-		const response = await fetch(`/api/images/compare?${params.toString()}`);
-		if (response.ok) {
-			const data = await response.json();
-			imageLists = {
-				inBoth: data.inBoth || [],
-				inAssetsOnly: data.inAssetsOnly || []
-			};
-			updateDisplayedFilenames();
+		const url = `/api/images/compare?${params.toString()}`;
+
+		try {
+			const response = await fetch(url);
+			if (response.ok) {
+				const data = await response.json();
+				imageLists = {
+					inBoth: data.inBoth || [],
+					inAssetsOnly: data.inAssetsOnly || []
+				};
+				updateDisplayedFilenames();
+			} else {
+				console.error('Failed to fetch image lists:', response.status);
+			}
+		} catch (error) {
+			console.error('Error fetching image lists:', error);
 		}
 		loading = false;
 	}
 
+	/**
+	 * Updates the displayed filenames based on current view and filters
+	 * Updates the store with the current list
+	 */
 	function updateDisplayedFilenames() {
-		// Always reflect the current view and any search/filter
-		if (view === 'linked') {
-			displayedFilenames = imageLists.inBoth;
-		} else {
-			displayedFilenames = imageLists.inAssetsOnly;
-		}
+		displayedFilenames = view === 'linked' ? imageLists.inBoth : imageLists.inAssetsOnly;
+		
 		// Set the store to match the displayed list
 		filteredImageList.set(displayedFilenames);
-		// Fetch metadata for display names
-		fetchMetadataForImages(displayedFilenames);
+		// Fetch properties for display names
+		fetchPropertiesForImages(displayedFilenames);
 	}
 
 	// When view changes, update displayedFilenames and store
@@ -114,6 +160,12 @@
 
 	$effect(() => {
 		// This will re-run whenever searchQuery, selectedField, or filterForEmpty changes
+		// We need to read the variables inside the effect for them to be tracked
+		const query = searchQuery;
+		const field = selectedField;
+		const empty = filterForEmpty;
+		
+		// Trigger the fetch when any of these values change
 		fetchImageLists();
 	});
 
@@ -187,150 +239,284 @@
 			setTimeout(() => uploadMessage = '', 3000);
 		}
 	}
+
+	// Removed handleFiltersApply as advanced filters are now just a coming soon message
+
+	/**
+	 * Handles closing the filters popup
+	 */
+	function handleFiltersClose() {
+		showFiltersPopup = false;
+	}
+
+	/**
+	 * Handles mouse entering an image item to show preview
+	 * @param event - The mouse event
+	 * @param filename - The filename of the image to preview
+	 */
+	function handleImageMouseEnter(event: MouseEvent, filename: string) {
+		previewImage = filename;
+		updatePreviewPosition(event);
+		previewVisible = true;
+	}
+
+	/**
+	 * Handles mouse leaving an image item to hide preview
+	 */
+	function handleImageMouseLeave() {
+		previewVisible = false;
+		previewImage = null;
+	}
+
+	/**
+	 * Updates the preview position based on mouse coordinates
+	 * @param event - The mouse event
+	 */
+	function updatePreviewPosition(event: MouseEvent) {
+		const offset = 20;
+		const previewWidth = 200;
+		const previewHeight = 200;
+		const padding = 10;
+		
+		let x = event.clientX + offset;
+		let y = event.clientY + offset;
+		
+		// Check if preview would go off-screen horizontally
+		if (x + previewWidth > window.innerWidth - padding) {
+			x = event.clientX - previewWidth - offset;
+		}
+		
+		// Check if preview would go off-screen vertically
+		if (y + previewHeight > window.innerHeight - padding) {
+			y = event.clientY - previewHeight - offset;
+		}
+		
+		// Ensure preview doesn't go off-screen on left or top
+		x = Math.max(padding, x);
+		y = Math.max(padding, y);
+		
+		previewPosition = { x, y };
+	}
+
+	/**
+	 * Handles mouse movement over an image item to update preview position
+	 * @param event - The mouse event
+	 */
+	function handleImageMouseMove(event: MouseEvent) {
+		if (previewVisible) {
+			updatePreviewPosition(event);
+		}
+	}
 </script>
 
 <div class="sidebar" class:collapsed>
-	<div class="controls">
-		<button class:active={view === 'linked'} on:click={() => (view = 'linked')}>
-			Linked
-		</button>
-		<button class:active={view === 'unlinked'} on:click={() => (view = 'unlinked')}>
-			Unlinked
-		</button>
-		<button class="sync-btn" on:click={fetchImageLists} title="Refresh lists">
-			🔄
-		</button>
-		<button 
-			class="upload-btn" 
-			on:click={triggerFileUpload} 
-			disabled={uploading}
-			title="Upload new image"
-		>
-			📁
-		</button>
+	<div class="sidebar-header">
+		<h2>Image Manager</h2>
 		<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
 			{collapsed ? '>' : '<'}
 		</button>
 	</div>
 	
-	<!-- Hidden file input for image uploads -->
-	<input 
-		type="file" 
-		bind:this={fileInput}
-		on:change={handleFileUpload}
-		accept="image/*"
-		style="display: none;"
-		aria-label="Upload image file"
-	/>
-	
-	<!-- Upload status message -->
-	{#if uploadMessage}
-		<div class="upload-message">
-			{uploadMessage}
+	<!-- Removed Key Section as liked/unliked fields don't exist -->
+
+	<!-- Upload Section -->
+	<section class="sidebar-section">
+		<h3>Upload</h3>
+		<div class="upload-controls">
+			<button 
+				class="upload-btn" 
+				on:click={triggerFileUpload} 
+				disabled={uploading}
+				title="Upload new image"
+			>
+				{uploading ? '⏳ Uploading...' : '📁 Upload Image'}
+			</button>
+			<button class="sync-btn" on:click={fetchImageLists} title="Refresh lists">
+				🔄 Refresh
+			</button>
 		</div>
-	{/if}
-	<fieldset class="filter-controls">
-		<legend>Filters</legend>
-		<div class="form-group">
-			<label for="search-input">Search</label>
-			<input
-				id="search-input"
-				type="text"
-				placeholder="Search..."
-				bind:value={searchQuery}
-				disabled={filterForEmpty}
-			/>
-		</div>
-		<div class="form-group">
-			<label for="field-select">Field</label>
-			<select id="field-select" bind:value={selectedField}>
+		
+		<!-- Hidden file input for image uploads -->
+		<input 
+			type="file" 
+			bind:this={fileInput}
+			on:change={handleFileUpload}
+			accept="image/*"
+			style="display: none;"
+			aria-label="Upload image file"
+		/>
+		
+		<!-- Upload status message -->
+		{#if uploadMessage}
+			<div class="upload-message">
+				{uploadMessage}
+			</div>
+		{/if}
+	</section>
+
+	<!-- Search Section -->
+	<section class="sidebar-section">
+		<h3>Search</h3>
+		<div class="search-controls">
+			<div class="search-input-group">
+				<input
+					type="text"
+					placeholder="Search images..."
+					bind:value={searchQuery}
+					disabled={filterForEmpty}
+					class="search-input"
+				/>
+				<button 
+					class="clear-search-btn"
+					on:click={() => (searchQuery = '')}
+					class:visible={searchQuery.length > 0}
+					title="Clear search"
+				>
+					×
+				</button>
+			</div>
+			<select class="field-select" bind:value={selectedField}>
 				{#each schemaFields as field}
 					<option value={field}>{field}</option>
 				{/each}
 			</select>
+			<div class="search-checkbox">
+				<label>
+					<input type="checkbox" bind:checked={filterForEmpty} />
+					<span class="checkbox-label">Filter for empty</span>
+				</label>
+			</div>
 		</div>
-		<div class="form-group-checkbox">
-			<label for="empty-checkbox">
-				<input id="empty-checkbox" type="checkbox" bind:checked={filterForEmpty} />
-				Filter for empty
-			</label>
+	</section>
+
+	<!-- Filters Section -->
+	<section class="sidebar-section">
+		<h3>Filters</h3>
+		<div class="filter-controls">
+			<div class="view-toggle">
+				<button class:active={view === 'linked'} on:click={() => (view = 'linked')}>
+					Linked
+				</button>
+				<button class:active={view === 'unlinked'} on:click={() => (view = 'unlinked')}>
+					Unlinked
+				</button>
+			</div>
+			<button 
+				class="advanced-filters-btn"
+				on:click={() => (showFiltersPopup = true)}
+			>
+				🔍 Advanced Filters
+			</button>
 		</div>
-	</fieldset>
-	<ul class="file-list">
-		{#if loading}
-			<li>Loading...</li>
-		{:else}
-			{#if displayedFilenames.length > 0}
-				{#each displayedFilenames as filename (filename)}
-					<a
-						href="/edit/{filename}?view={view}"
-						class:selected={$page.params.filename === filename}
-					>
-						<li>{getDisplayName(filename)}</li>
-					</a>
-				{/each}
+	</section>
+
+	<!-- Image List -->
+	<section class="sidebar-section image-list-section">
+		<h3>Images ({displayedFilenames.length})</h3>
+		<ul class="file-list">
+			{#if loading}
+				<li class="loading">Loading...</li>
 			{:else}
-				<li>No {view} images found.</li>
+				{#if displayedFilenames.length > 0}
+					{#each displayedFilenames as filename (filename)}
+						<a
+							href="/edit/{filename}?view={view}"
+							class:selected={$page.params.filename === filename}
+						>
+							<li 
+								class="image-item"
+								on:mouseenter={(e) => handleImageMouseEnter(e, filename)}
+								on:mouseleave={handleImageMouseLeave}
+								on:mousemove={handleImageMouseMove}
+							>
+								<span class="image-name">{getDisplayName(filename)}</span>
+							</li>
+						</a>
+					{/each}
+				{:else}
+					<li class="no-images">No {view} images found.</li>
+				{/if}
 			{/if}
-		{/if}
-	</ul>
+		</ul>
+	</section>
 </div>
+
+<!-- Filters Popup -->
+<FiltersPopup 
+	bind:show={showFiltersPopup}
+	bind:searchQuery
+	bind:selectedField
+	bind:filterForEmpty
+	{schemaFields}
+	onApply={() => {}}
+	onClose={handleFiltersClose}
+/>
+
+<!-- Image Preview Hover -->
+{#if previewVisible && previewImage}
+	<div 
+		class="image-preview"
+		style="left: {previewPosition.x}px; top: {previewPosition.y}px;"
+	>
+		<img 
+			src="/api/images/{previewImage}" 
+			alt="Preview of {getDisplayName(previewImage)}"
+			on:error={() => {
+				// Hide preview if image fails to load
+				previewVisible = false;
+			}}
+		/>
+		<div class="preview-info">
+			<span class="preview-name">{getDisplayName(previewImage)}</span>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.sidebar {
-		border-right: 1px solid #ccc;
-		padding: 1rem;
+		border-right: 1px solid #e0e0e0;
 		height: 100vh;
-		background: #f7f7f7;
+		background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 		display: flex;
 		flex-direction: column;
-		transition: width 0.3s ease-in-out;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 		overflow: hidden;
+		box-shadow: 2px 0 20px rgba(0, 0, 0, 0.08);
+		backdrop-filter: blur(10px);
 	}
 
 	.sidebar.collapsed {
-		padding: 0;
+		width: 0;
 	}
 
-	.sidebar.collapsed > *:not(.controls) {
+	.sidebar.collapsed > *:not(.sidebar-header) {
 		visibility: hidden;
 	}
 	
-	.sidebar.collapsed .controls > *:not(.collapse-btn) {
+	.sidebar.collapsed .sidebar-header > *:not(.collapse-btn) {
 		visibility: hidden;
 	}
 
-	.controls {
+	.sidebar-header {
 		display: flex;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
+		justify-content: space-between;
 		align-items: center;
-		flex-wrap: wrap;
-		min-height: 2.5rem;
-	}
-	button {
-		padding: 0.5rem 1rem;
-		border: 1px solid #ccc;
-		background: white;
-		cursor: pointer;
-		border-radius: 4px;
-		transition: all 0.2s ease-in-out;
-	}
-	button:hover {
-		background: #eee;
-	}
-	button.active {
-		background: #007bff;
+		padding: 1rem;
+		background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
 		color: white;
-		border-color: #007bff;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 	}
-	button.active:hover {
-		background: #0056b3;
+
+	.sidebar-header h2 {
+		margin: 0;
+		font-size: 1.2rem;
+		font-weight: 600;
 	}
+
 	.collapse-btn {
-		margin-left: auto;
-		background: #f0f0f0;
-		border: 1px solid #ccc;
+		background: rgba(255, 255, 255, 0.2);
+		border: 1px solid rgba(255, 255, 255, 0.3);
+		color: white;
 		font-size: 1.2rem;
 		cursor: pointer;
 		padding: 0.25rem 0.5rem;
@@ -338,31 +524,272 @@
 		border-radius: 4px;
 		min-width: 2rem;
 		flex-shrink: 0;
+		transition: all 0.2s ease;
 	}
+
 	.collapse-btn:hover {
-		background: #e0e0e0;
+		background: rgba(255, 255, 255, 0.3);
 	}
-	.sync-btn {
-		background: none;
-		border: none;
-		font-size: 1.5rem;
-		cursor: pointer;
-		padding: 0;
-		line-height: 1;
+
+	.sidebar-section {
+		padding: 1rem;
+		border-bottom: 1px solid #e0e0e0;
 	}
-	.upload-btn {
-		background: none;
-		border: none;
-		font-size: 1.5rem;
-		cursor: pointer;
-		padding: 0;
-		line-height: 1;
-		transition: opacity 0.2s ease-in-out;
+
+	.sidebar-section h3 {
+		margin: 0 0 0.75rem 0;
+		font-size: 1rem;
+		font-weight: 600;
+		color: #333;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
 	}
-	.upload-btn:disabled {
-		opacity: 0.5;
+
+	/* Removed key-btn styles as liked/unliked functionality was removed */
+
+	.upload-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.search-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.search-input-group {
+		position: relative;
+		display: flex;
+		align-items: center;
+	}
+
+	.search-input {
+		width: 100%;
+		padding: 0.75rem 2.5rem 0.75rem 0.75rem;
+		border: 2px solid #e0e0e0;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		background: white;
+	}
+
+	.search-input:focus {
+		outline: none;
+		border-color: #007bff;
+		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+	}
+
+	.search-input:disabled {
+		background: #f8f9fa;
+		color: #6c757d;
 		cursor: not-allowed;
 	}
+
+	.clear-search-btn {
+		position: absolute;
+		right: 0.5rem;
+		top: 50%;
+		transform: translateY(-50%);
+		background: none;
+		border: none;
+		font-size: 1.5rem;
+		cursor: pointer;
+		color: #6c757d;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		opacity: 0;
+		transition: all 0.2s ease;
+		pointer-events: none;
+	}
+
+	.clear-search-btn.visible {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	.clear-search-btn:hover {
+		background: #f8f9fa;
+		color: #333;
+	}
+
+	.field-select {
+		padding: 0.5rem 0.75rem;
+		border: 2px solid #e0e0e0;
+		border-radius: 8px;
+		font-size: 0.9rem;
+		background: white;
+		cursor: pointer;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.field-select:focus {
+		outline: none;
+		border-color: #007bff;
+		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+	}
+
+	.search-checkbox {
+		display: flex;
+		align-items: center;
+	}
+
+	.search-checkbox label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		cursor: pointer;
+		font-size: 0.9rem;
+		color: #333;
+	}
+
+	.search-checkbox input[type="checkbox"] {
+		width: 1.1rem;
+		height: 1.1rem;
+		border: 2px solid #e0e0e0;
+		border-radius: 4px;
+		background: white;
+		cursor: pointer;
+		appearance: none;
+		position: relative;
+		transition: all 0.2s ease;
+		margin: 0;
+	}
+
+	.search-checkbox input[type="checkbox"]:checked {
+		background: #007bff;
+		border-color: #007bff;
+	}
+
+	.search-checkbox input[type="checkbox"]:checked::after {
+		content: '✓';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		color: white;
+		font-size: 0.75rem;
+		font-weight: bold;
+	}
+
+	.search-checkbox input[type="checkbox"]:focus {
+		outline: none;
+		border-color: #007bff;
+		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+	}
+
+	.checkbox-label {
+		user-select: none;
+	}
+
+	.upload-btn {
+		padding: 0.75rem;
+		border: 2px dashed #007bff;
+		background: linear-gradient(135deg, #f8f9ff 0%, #e6f3ff 100%);
+		cursor: pointer;
+		border-radius: 8px;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		font-size: 0.9rem;
+		color: #007bff;
+		font-weight: 600;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.upload-btn:hover {
+		background: linear-gradient(135deg, #e6f3ff 0%, #cce7ff 100%);
+		border-color: #0056b3;
+		transform: translateY(-2px);
+		box-shadow: 0 6px 20px rgba(0, 123, 255, 0.2);
+	}
+
+	.upload-btn:active {
+		transform: translateY(0);
+		box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
+	}
+
+	.upload-btn:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
+	.sync-btn {
+		padding: 0.5rem 0.75rem;
+		border: 1px solid #e0e0e0;
+		background: white;
+		cursor: pointer;
+		border-radius: 6px;
+		transition: all 0.2s ease;
+		font-size: 0.9rem;
+	}
+
+	.sync-btn:hover {
+		background: #f8f9fa;
+		border-color: #007bff;
+	}
+
+	.filter-controls {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.view-toggle {
+		display: flex;
+		gap: 0.5rem;
+	}
+
+	.view-toggle button {
+		flex: 1;
+		padding: 0.5rem;
+		border: 1px solid #e0e0e0;
+		background: white;
+		cursor: pointer;
+		border-radius: 6px;
+		transition: all 0.2s ease;
+		font-size: 0.9rem;
+	}
+
+	.view-toggle button:hover {
+		background: #f8f9fa;
+		border-color: #007bff;
+	}
+
+	.view-toggle button.active {
+		background: #007bff;
+		color: white;
+		border-color: #007bff;
+	}
+
+	.advanced-filters-btn {
+		padding: 0.5rem 0.75rem;
+		border: 1px solid #007bff;
+		background: white;
+		cursor: pointer;
+		border-radius: 6px;
+		transition: all 0.2s ease;
+		font-size: 0.9rem;
+		color: #007bff;
+		font-weight: 600;
+	}
+
+	.advanced-filters-btn:hover {
+		background: #007bff;
+		color: white;
+	}
+
+	.image-list-section {
+		flex-grow: 1;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
 	.file-list {
 		list-style: none;
 		padding: 0;
@@ -370,67 +797,154 @@
 		overflow-y: auto;
 		flex-grow: 1;
 	}
+
 	.file-list a {
 		text-decoration: none;
 		color: inherit;
 		display: block;
 	}
-	.file-list li {
-		padding: 0.5rem;
-		cursor: pointer;
-		border-radius: 4px;
-	}
-	.file-list li:hover {
-		background: #eee;
-	}
-	.file-list a.selected li {
-		background: #cce5ff;
-	}
-	.filter-controls {
-		border: 1px solid #ccc;
-		border-radius: 4px;
-		padding: 0.5rem;
-		margin-bottom: 1rem;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.5rem;
-		align-items: center;
-	}
-	.filter-controls legend {
-		padding: 0 0.5rem;
-		font-size: 0.9rem;
-		color: #555;
-	}
-	.form-group {
-		display: contents;
-	}
-	.form-group-checkbox {
-		grid-column: 1 / -1;
+
+	.image-item {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: 0.5rem;
+		padding: 0.75rem;
+		cursor: pointer;
+		border-radius: 8px;
+		margin-bottom: 0.25rem;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		background: white;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+		border: 1px solid transparent;
+		position: relative;
+		overflow: hidden;
 	}
-	.filter-controls label {
+
+	.image-item:hover {
+		background: #f8f9fa;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+		transform: translateY(-2px);
+		border-color: #e0e0e0;
+	}
+
+	.image-item:active {
+		transform: translateY(0);
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+	}
+
+	.file-list a.selected .image-item {
+		background: #e6f3ff;
+		border-left: 4px solid #007bff;
+	}
+
+	.image-name {
 		font-size: 0.9rem;
+		color: #333;
+		flex-grow: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	.filter-controls input[type='text'],
-	.filter-controls select {
-		width: 100%;
-		padding: 0.25rem;
+
+	/* Removed liked-indicator styles as liked functionality was removed */
+
+	.loading,
+	.no-images {
+		padding: 1rem;
+		text-align: center;
+		color: #666;
+		font-style: italic;
 	}
-	.form-group-checkbox label {
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-	}
+
 	.upload-message {
 		background: #f0f8ff;
 		border: 1px solid #cce5ff;
-		border-radius: 4px;
+		border-radius: 6px;
 		padding: 0.5rem;
-		margin-bottom: 1rem;
+		margin-top: 0.5rem;
 		font-size: 0.9rem;
 		text-align: center;
+	}
+
+	/* Responsive adjustments */
+	@media (max-width: 768px) {
+		.sidebar {
+			width: 100%;
+			position: fixed;
+			z-index: 100;
+		}
+		
+		.upload-controls,
+		.search-controls,
+		.filter-controls {
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+		
+		.upload-btn,
+		.sync-btn {
+			flex: 1;
+			min-width: 0;
+		}
+	}
+
+	/* Image Preview Hover Styles */
+	.image-preview {
+		position: fixed;
+		z-index: 2000;
+		background: white;
+		border-radius: 12px;
+		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 8px 25px rgba(0, 0, 0, 0.1);
+		overflow: hidden;
+		max-width: 200px;
+		max-height: 200px;
+		pointer-events: none;
+		transform: translateZ(0) scale(0.9);
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		border: 2px solid #f0f0f0;
+		backdrop-filter: blur(10px);
+		animation: previewSlideIn 0.3s ease-out;
+	}
+
+	@keyframes previewSlideIn {
+		from {
+			opacity: 0;
+			transform: translateZ(0) scale(0.8) translateY(10px);
+		}
+		to {
+			opacity: 1;
+			transform: translateZ(0) scale(1) translateY(0);
+		}
+	}
+
+	.image-preview img {
+		width: 100%;
+		height: auto;
+		max-height: 150px;
+		object-fit: cover;
+		display: block;
+		transition: transform 0.3s ease;
+	}
+
+	.image-preview:hover img {
+		transform: scale(1.05);
+	}
+
+	.preview-info {
+		padding: 0.75rem;
+		background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+		border-top: 1px solid #e0e0e0;
+	}
+
+	.preview-name {
+		font-size: 0.85rem;
+		color: #333;
+		font-weight: 600;
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 100%;
+		letter-spacing: 0.25px;
 	}
 </style>

@@ -1,15 +1,6 @@
 {
   "images": [
     {
-      "default": true,
-      "file_name": "",
-      "image_name": "",
-      "last_modified": "",
-      "active": true,
-      "location": "",
-      "Description": ""
-    },
-    {
       "file_name": "pexels-amar-18868637-2.jpg",
       "image_name": "Person holding phone",
       "last_modified": "2025-07-06T15:30:42.135Z",

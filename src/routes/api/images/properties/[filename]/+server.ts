@@ -15,23 +15,23 @@ export const GET: RequestHandler = ({ params }) => {
 		const allData = JSON.parse(jsonData);
 		const jsonImagesData = allData.images;
 
-		const imageMetadata = jsonImagesData.find(
+		const imageProperties = jsonImagesData.find(
 			(img: { file_name: string }) => img.file_name === filename
 		);
 
-		if (imageMetadata) {
-			return json(imageMetadata);
+		if (imageProperties) {
+			return json(imageProperties);
 		} else {
 			// Return a default object if not found, as per user story
 			const defaultData = jsonImagesData.find((img: { default: boolean }) => img.default === true);
 			if (defaultData) {
 				return json({ ...defaultData, file_name: filename, default: false });
 			}
-			throw error(404, { message: 'Image metadata not found and no default available' });
+			throw error(404, { message: 'Image properties not found and no default available' });
 		}
 	} catch (err) {
 		console.error(err);
-		throw error(500, { message: 'Failed to read or parse image metadata' });
+		throw error(500, { message: 'Failed to read or parse image properties' });
 	}
 };
 
@@ -42,14 +42,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	try {
-		const newMetadata = await request.json();
+		const newProperties = await request.json();
 		const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
 		const allData = JSON.parse(jsonData);
 		const jsonImagesData = allData.images;
 
-		// Add current timestamp to metadata
-		const metadataWithTimestamp = { 
-			...newMetadata, 
+		// Add current timestamp to properties
+		const propertiesWithTimestamp = { 
+			...newProperties, 
 			last_modified: new Date().toISOString() 
 		};
 
@@ -58,19 +58,19 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		);
 
 		if (imageIndex > -1) {
-			// Update existing metadata
-			jsonImagesData[imageIndex] = { ...jsonImagesData[imageIndex], ...metadataWithTimestamp };
+			// Update existing properties
+			jsonImagesData[imageIndex] = { ...jsonImagesData[imageIndex], ...propertiesWithTimestamp };
 		} else {
-			// Add new metadata
-			jsonImagesData.push(metadataWithTimestamp);
+			// Add new properties
+			jsonImagesData.push(propertiesWithTimestamp);
 		}
 
 		allData.images = jsonImagesData;
 		fs.writeFileSync(imageDataPath, JSON.stringify(allData, null, 2));
 
-		return json({ success: true, metadata: metadataWithTimestamp });
+		return json({ success: true, properties: propertiesWithTimestamp });
 	} catch (err) {
 		console.error(err);
-		throw error(500, { message: 'Failed to save image metadata' });
+		throw error(500, { message: 'Failed to save image properties' });
 	}
 }; 
