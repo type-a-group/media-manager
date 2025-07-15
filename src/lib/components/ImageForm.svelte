@@ -216,29 +216,6 @@
 			alert(`Error adding field: ${result.message}`);
 		}
 	}
-
-	function formatLastModified(timestamp: string): string {
-		if (!timestamp) return '';
-		
-		const date = new Date(timestamp);
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffMinutes = Math.floor(diffMs / 60000);
-		const diffHours = Math.floor(diffMinutes / 60);
-		const diffDays = Math.floor(diffHours / 24);
-
-		if (diffMinutes < 1) {
-			return 'Just now';
-		} else if (diffMinutes < 60) {
-			return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
-		} else if (diffHours < 24) {
-			return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-		} else if (diffDays < 7) {
-			return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-		} else {
-			return `on ${date.toLocaleDateString()} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-		}
-	}
 </script>
 
 <div class="edit-container">
@@ -252,29 +229,8 @@
 			<h2>{filename}</h2>
 			<form on:submit|preventDefault={handleSubmit}>
 				{#if schema}
-					<!-- File name field (read-only) -->
-					{#if schema.file_name}
-						<label class="dynamic-label">
-							<span>file_name</span>
-							<div class="input-wrapper">
-								<input type="text" value={metadata.file_name} readonly />
-							</div>
-						</label>
-					{/if}
-					
-					<!-- Image name field (editable) -->
-					{#if schema.image_name}
-						<label class="dynamic-label">
-							<span>image_name</span>
-							<div class="input-wrapper">
-								<input type="text" bind:value={metadata.image_name} placeholder="Custom display name" />
-							</div>
-						</label>
-					{/if}
-					
-					<!-- Other dynamic fields -->
 					{#each Object.entries(schema) as [fieldName, fieldProps]}
-						{#if fieldName !== 'image_name' && fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
+						{#if fieldName !== 'image_name' && fieldName !== 'default'}
 							<label class="dynamic-label">
 								<span>{fieldName}</span>
 								<div class="input-wrapper">
@@ -352,12 +308,6 @@
 						{/if}
 					</label>
 					<button on:click={handleAddNewField}>Add Field</button>
-				</div>
-			{/if}
-
-			{#if metadata && metadata.last_modified}
-				<div class="last-modified">
-					Last modified {formatLastModified(metadata.last_modified)}
 				</div>
 			{/if}
 
@@ -457,11 +407,6 @@
 		border: 1px solid #ccc;
 		border-radius: 4px;
 	}
-	input[readonly] {
-		background-color: #f5f5f5;
-		color: #666;
-		cursor: not-allowed;
-	}
 	button {
 		padding: 0.5rem 1rem;
 		border: 1px solid #ccc;
@@ -505,13 +450,5 @@
 
 	.new-field-form button {
 		width: 100%;
-	}
-
-	.last-modified {
-		font-size: 0.8rem;
-		color: #666;
-		text-align: center;
-		margin-top: 1rem;
-		font-style: italic;
 	}
 </style>

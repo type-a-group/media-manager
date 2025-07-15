@@ -6,7 +6,7 @@ export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	test: {
 		environment: 'jsdom',
-		// setupFiles: ['./tests/setup.ts'],
+		setupFiles: ['./test/setup.ts'],
 		globals: true,
 		coverage: {
 			provider: 'v8',
