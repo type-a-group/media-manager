@@ -85,7 +85,6 @@
 			bind:this={popupElement} 
 			class="popup-content" 
 			style="max-width: {maxWidth}"
-			onclick={(e) => e.stopPropagation()}
 		>
 			<header class="popup-header">
 				<h2 id="popup-title">{title}</h2>

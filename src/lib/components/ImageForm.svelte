@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { filteredImageList } from '$lib/stores/imageList'; 
+	import { filteredImageList } from '$lib/stores/imageList';
+	import { settingsStore } from '$lib/stores/settings';
 	import { onMount, onDestroy } from 'svelte';
 	import MetadataPopup from './MetadataPopup.svelte';
 
@@ -23,8 +24,44 @@
 	let showMetadataPopup = $state(false);
 
 	// State for creating new properties on unlinked images
-	let newImageName = $state('');
 	let newProperties = $state<Record<string, any>>({});
+
+	// Reactive computed values for form bindings
+	let formValues = $derived.by(() => {
+		if (!schema) return {};
+		
+		const values: Record<string, any> = {};
+		
+		// Handle all fields uniformly
+		Object.entries(schema).forEach(([fieldName, fieldProps]: [string, any]) => {
+			if (fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default') {
+				if (properties) {
+					values[fieldName] =
+						properties[fieldName] !== undefined
+							? properties[fieldName]
+							: fieldProps.defaultValue;
+				} else {
+					values[fieldName] =
+						newProperties[fieldName] !== undefined
+							? newProperties[fieldName]
+							: fieldProps.defaultValue;
+				}
+			}
+		});
+		
+		return values;
+	});
+
+	// Function to update form values
+	function updateFormValue(fieldName: string, value: any) {
+		if (properties) {
+			// Update existing properties
+			properties = { ...properties, [fieldName]: value };
+		} else {
+			// Update new properties for unlinked image
+			newProperties = { ...newProperties, [fieldName]: value };
+		}
+	}
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -103,7 +140,12 @@
 		if (schema) {
 			const initialProps: Record<string, any> = {};
 			Object.entries(schema).forEach(([fieldName, fieldProps]: [string, any]) => {
-				if (fieldName !== 'file_name' && fieldName !== 'image_name' && fieldName !== 'last_modified' && fieldName !== 'default') {
+				if (
+					fieldName !== 'file_name' &&
+					fieldName !== 'image_name' &&
+					fieldName !== 'last_modified' &&
+					fieldName !== 'default'
+				) {
 					initialProps[fieldName] = fieldProps.defaultValue || '';
 				}
 			});
@@ -141,9 +183,44 @@
 			goto(`/edit/${newFilename}?view=${view}`);
 		}
 	}
+	
+	/**
+	 * Find the next unlinked image in the unlinked list
+	 * @param excludeCurrentImage - Whether to exclude the current image from consideration
+	 * @returns The filename of the next unlinked image, or null if none found
+	 */
+	function findNextUnlinkedImage(excludeCurrentImage: boolean = false): string | null {
+		// Always use the full unlinked list, regardless of current view
+		let unlinkedList = imageLists.inAssetsOnly;
+		
+		// If we're excluding the current image (e.g., because it's about to be linked),
+		// filter it out from the list
+		if (excludeCurrentImage && filename) {
+			unlinkedList = unlinkedList.filter(img => img !== filename);
+		}
+		
+		if (unlinkedList.length === 0) return null;
+		
+		// Find current image index in unlinked list
+		const currentUnlinkedIndex = unlinkedList.indexOf(filename || '');
+		
+		// If current image is not in unlinked list, or it's the last one, return the first unlinked image
+		if (currentUnlinkedIndex === -1 || currentUnlinkedIndex >= unlinkedList.length - 1) {
+			return unlinkedList[0] || null;
+		}
+		
+		// Return the next unlinked image
+		return unlinkedList[currentUnlinkedIndex + 1] || null;
+	}
 
 	async function handleSubmit() {
-		if (!filename || !properties) return;
+		// If this is an unlinked image (no properties), create new properties
+		if (!properties) {
+			return handleCreateProperties();
+		}
+		
+		// Otherwise, update existing properties
+		if (!filename) return;
 		saving = true;
 		saveMessage = '';
 
@@ -171,10 +248,16 @@
 		saving = true;
 		saveMessage = '';
 
+		// Check if auto-advance is enabled and get the next unlinked image BEFORE saving
+		// This is important because after saving, the current image will no longer be unlinked
+		const settings = settingsStore.getCurrentSettings();
+		const shouldAutoAdvance = settings.autoAdvanceToNextUnlinked;
+		const nextUnlinkedImage = shouldAutoAdvance ? findNextUnlinkedImage(true) : null;
+
 		// Prepare properties data for new image
 		const propertiesToSave = {
 			file_name: filename,
-			image_name: newImageName || filename,
+			image_name: newProperties.image_name || filename,
 			...newProperties
 		};
 
@@ -191,8 +274,16 @@
 			saveMessage = 'Properties created successfully!';
 			
 			// Reset the form
-			newImageName = '';
 			newProperties = {};
+			
+			// Handle auto-advance BEFORE refreshing image lists to avoid state conflicts
+			if (shouldAutoAdvance && nextUnlinkedImage && nextUnlinkedImage !== filename) {
+				// Use setTimeout to ensure navigation happens after current execution context
+				// setTimeout(() => {
+				// 	goto(`/edit/${nextUnlinkedImage}?view=unlinked`);
+				// }, 100);
+				goto(`/edit/${nextUnlinkedImage}?view=unlinked`);
+			}
 			
 			// Refresh the image lists to move this image to linked
 			await fetchImageLists();
@@ -203,7 +294,9 @@
 	}
 
 	async function handleDeleteField(fieldName: string) {
-		if (confirm(`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`)) {
+		if (
+			confirm(`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`)
+		) {
 			const response = await fetch('/api/schema', {
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' },
@@ -294,7 +387,10 @@
 		} else if (diffDays < 7) {
 			return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
 		} else {
-			return `on ${date.toLocaleDateString()} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+			return `on ${date.toLocaleDateString()} at ${date.toLocaleTimeString([], {
+				hour: '2-digit',
+				minute: '2-digit'
+			})}`;
 		}
 	}
 </script>
@@ -307,208 +403,147 @@
 			{/if}
 		</div>
 		<div class="form-column">
-			<h2>
+			<h2 class="panel-header">
 				<span class="filename-text">{filename}</span>
 			</h2>
 			
-			{#if properties}
-				<!-- Show the full form for linked images -->
-				<form on:submit|preventDefault={handleSubmit}>
-					{#if schema}
-						<!-- File name field (read-only) -->
-						{#if schema.file_name}
-							<label class="dynamic-label">
-								<span>file_name</span>
-								<div class="input-wrapper">
-									<input type="text" value={properties.file_name} readonly />
-								</div>
-							</label>
-						{/if}
-						
-						<!-- Image name field (editable) -->
-						{#if schema.image_name}
-							<label class="dynamic-label">
-								<span>image_name</span>
-								<div class="input-wrapper">
-									<input type="text" bind:value={properties.image_name} placeholder="Custom display name" />
-								</div>
-							</label>
-						{/if}
-						
-						<!-- Other dynamic fields -->
-						{#each Object.entries(schema) as [fieldName, fieldProps]}
-							{#if fieldName !== 'image_name' && fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
-								<label class="dynamic-label">
-									<span>{fieldName}</span>
-																	<div class="input-wrapper">
-									{#if fieldProps.type === 'boolean'}
-										<input type="checkbox" bind:checked={properties[fieldName]} />
-									{:else if fieldProps.type === 'number'}
-										<input type="number" bind:value={properties[fieldName]} />
-									{:else}
-										<input type="text" bind:value={properties[fieldName]} />
-									{/if}
-										{#if fieldProps.removable}
-											<button
-												type="button"
-												class="delete-field-btn"
-												on:click={() => handleDeleteField(fieldName)}
-											>
-												🗑️
-											</button>
-										{/if}
-									</div>
-								</label>
-							{/if}
-						{/each}
+			<form class="card" onsubmit={handleSubmit}>
+				{#if schema}
+					{#if !properties}
+						<p class="unlinked-message">
+							This image is not linked to properties. Add properties to include it in the
+							database.
+						</p>
 					{/if}
-					<div class="form-actions">
-						<div class="action-row primary-actions">
-							<button type="button" on:click={() => (showNewFieldForm = !showNewFieldForm)}>
-								{showNewFieldForm ? 'Cancel' : 'Create New Field'}
-							</button>
-							<button type="submit" disabled={saving}>
-								{saving ? 'Saving...' : 'Save'}
-							</button>
-						</div>
-						<div class="action-row navigation-actions">
-							<button 
-								type="button" 
-								on:click={() => navigate('prev')} 
-								disabled={currentList.length === 0 || currentIndex <= 0}
-							>
-								&larr; Previous
-							</button>
-							<button type="button" on:click={() => (showMetadataPopup = true)} class="metadata-btn">
-								Metadata
-							</button>
-							<button
-								type="button"
-								on:click={() => navigate('next')}
-								disabled={currentList.length === 0 || currentIndex === -1 || currentIndex >= currentList.length - 1}
-							>
-								Next &rarr;
-							</button>
-						</div>
-						{#if saveMessage}
-							<div class="save-message">{saveMessage}</div>
+					<!-- Dynamic fields -->
+					{#each Object.entries(schema) as [fieldName, fieldProps]}
+						{#if fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
+							<label>
+								<span>{fieldName === 'image_name' ? 'Image Name' : fieldName}</span>
+								<div class="input-wrapper">
+									{#if fieldProps.type === 'boolean'}
+										<input
+											type="checkbox"
+											class="form-checkbox"
+											checked={formValues[fieldName]}
+											onchange={(e) =>
+												updateFormValue(fieldName, (e.target as HTMLInputElement).checked)}
+										/>
+									{:else if fieldProps.type === 'number'}
+										<input
+											type="number"
+											class="form-input"
+											value={formValues[fieldName]}
+											oninput={(e) =>
+												updateFormValue(fieldName, Number((e.target as HTMLInputElement).value))}
+										/>
+									{:else}
+										<input
+											type="text"
+											class="form-input"
+											value={formValues[fieldName]}
+											oninput={(e) =>
+												updateFormValue(fieldName, (e.target as HTMLInputElement).value)}
+											placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
+										/>
+									{/if}
+									{#if fieldProps.removable && fieldName !== 'image_name'}
+										<button
+											type="button"
+											class="delete-field-btn"
+											onclick={() => handleDeleteField(fieldName)}
+										>
+											🗑️
+										</button>
+									{/if}
+								</div>
+							</label>
 						{/if}
+					{/each}
+				{/if}
+				<div class="form-actions">
+					<div class="action-row">
+						<button type="button" onclick={() => (showNewFieldForm = !showNewFieldForm)}>
+							{showNewFieldForm ? 'Cancel' : 'Create New Field'}
+						</button>
+						<button type="submit" disabled={saving}>
+							{saving ? 'Saving...' : properties?.image_name ? 'Save' : 'Save & Link Image'}
+						</button>
 					</div>
-				</form>
+					<div class="action-row">
+						<button
+							type="button"
+							onclick={() => navigate('prev')}
+							disabled={currentList.length === 0 || currentIndex <= 0}
+						>
+							&larr; Previous
+						</button>
+						<button type="button" onclick={() => (showMetadataPopup = true)} class="metadata-btn">
+							Metadata
+						</button>
+						<button
+							type="button"
+							onclick={() => navigate('next')}
+							disabled={
+								currentList.length === 0 ||
+								currentIndex === -1 ||
+								currentIndex >= currentList.length - 1
+							}
+						>
+							Next &rarr;
+						</button>
+					</div>
+					{#if saveMessage}
+						<div class="save-message">{saveMessage}</div>
+					{/if}
+				</div>
+			</form>
 
-				{#if showNewFieldForm}
-					<div class="new-field-form">
-						<h3>Create New Field</h3>
-						<label>
-							<span>Field Name</span>
-							<input type="text" bind:value={newFieldName} />
-						</label>
-						<label>
-							<span>Field Type</span>
-							<select bind:value={newFieldType}>
+			{#if showNewFieldForm}
+				<div class="card">
+					<h3 class="panel-header small">Create New Field</h3>
+					<label>
+						<span>Field Name</span>
+						<div class="input-wrapper">
+							<input type="text" bind:value={newFieldName} class="form-input" />
+						</div>
+					</label>
+					<label>
+						<span>Field Type</span>
+						<div class="input-wrapper">
+							<select bind:value={newFieldType} class="form-select">
 								<option value="string">String</option>
 								<option value="number">Number</option>
 								<option value="boolean">Boolean</option>
 							</select>
-						</label>
-						<label>
-							<span>Default Value</span>
+						</div>
+					</label>
+					<label>
+						<span>Default Value</span>
+						<div class="input-wrapper">
 							{#if newFieldType === 'boolean'}
-								<input type="checkbox" bind:checked={newFieldDefaultBoolean} />
+								<input type="checkbox" bind:checked={newFieldDefaultBoolean} class="form-checkbox" />
 							{:else if newFieldType === 'number'}
-								<input type="number" bind:value={newFieldDefaultNumber} />
+								<input type="number" bind:value={newFieldDefaultNumber} class="form-input" />
 							{:else}
-								<input type="text" bind:value={newFieldDefaultString} />
-							{/if}
-						</label>
-						<button on:click={handleAddNewField}>Add Field</button>
-					</div>
-				{/if}
-
-				{#if properties.last_modified}
-					<div class="last-modified">
-						Last modified {formatLastModified(properties.last_modified)}
-					</div>
-				{/if}
-			{:else}
-				<!-- Show properties form for unlinked images -->
-				<div class="unlinked-info">
-					<p class="unlinked-message">
-						This image is not linked to properties. Add properties to include it in the database.
-					</p>
-					<form on:submit|preventDefault={handleCreateProperties}>
-						{#if schema}
-							<!-- File name field (auto-filled) -->
-							{#if schema.file_name}
-								<label class="dynamic-label">
-									<span>file_name</span>
-									<div class="input-wrapper">
-										<input type="text" value={filename} readonly />
-									</div>
-								</label>
-							{/if}
-							
-							<!-- Image name field (editable) -->
-							{#if schema.image_name}
-								<label class="dynamic-label">
-									<span>image_name</span>
-									<div class="input-wrapper">
-										<input type="text" bind:value={newImageName} placeholder="Custom display name" />
-									</div>
-								</label>
-							{/if}
-							
-							<!-- Other dynamic fields -->
-							{#each Object.entries(schema) as [fieldName, fieldProps]}
-								{#if fieldName !== 'image_name' && fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
-									<label class="dynamic-label">
-										<span>{fieldName}</span>
-										<div class="input-wrapper">
-											{#if fieldProps.type === 'boolean'}
-												<input type="checkbox" bind:checked={newProperties[fieldName]} />
-											{:else if fieldProps.type === 'number'}
-												<input type="number" bind:value={newProperties[fieldName]} />
-											{:else}
-												<input type="text" bind:value={newProperties[fieldName]} />
-											{/if}
-										</div>
-									</label>
-								{/if}
-							{/each}
-						{/if}
-						<div class="form-actions">
-							<div class="action-row primary-actions">
-								<button type="submit" disabled={saving}>
-									{saving ? 'Saving...' : 'Save & Link Image'}
-								</button>
-							</div>
-							<div class="action-row navigation-actions">
-								<button 
-									type="button" 
-									on:click={() => navigate('prev')} 
-									disabled={currentList.length === 0 || currentIndex <= 0}
-								>
-									&larr; Previous
-								</button>
-								<button type="button" on:click={() => (showMetadataPopup = true)} class="metadata-btn">
-									View File Metadata
-								</button>
-								<button
-									type="button"
-									on:click={() => navigate('next')}
-									disabled={currentList.length === 0 || currentIndex === -1 || currentIndex >= currentList.length - 1}
-								>
-									Next &rarr;
-								</button>
-							</div>
-							{#if saveMessage}
-								<div class="save-message">{saveMessage}</div>
+								<input type="text" bind:value={newFieldDefaultString} class="form-input" />
 							{/if}
 						</div>
-					</form>
+					</label>
+					<div class="action-row">
+						<button onclick={() => (showNewFieldForm = !showNewFieldForm)}>
+							Cancel
+						</button>
+						<button onclick={handleAddNewField}>Add Field</button>
+					</div>
 				</div>
 			{/if}
 
+			{#if properties?.last_modified}
+				<div class="last-modified">
+					Last modified {formatLastModified(properties?.last_modified)}
+				</div>
+			{/if}
 			<!-- <div style="font-size: 0.8em; color: #888; margin-top: 0.5rem;">
 				Debug: currentIndex: {currentIndex}, listLength: {currentList.length}, filename: {filename}
 			</div> -->
@@ -526,6 +561,19 @@
 />
 
 <style>
+
+	/* Generic card layout shared across form & new-field-form */
+	.card {
+		background: white;
+		border-radius: 16px;
+		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+		padding: 2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+		border: 1px solid #e9ecef;
+	}
+
 	.edit-container {
 		display: flex;
 		flex-wrap: wrap;
@@ -543,7 +591,6 @@
 		border-radius: 16px;
 		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
 		padding: 1.5rem;
-		position: sticky;
 		top: 2rem;
 		height: fit-content;
 		max-height: 90vh;
@@ -579,7 +626,8 @@
 		transform: scale(1.02);
 	}
 
-	h2 {
+	/* Unified header style */
+	.panel-header {
 		margin: 0;
 		font-size: 1.5rem;
 		font-weight: 600;
@@ -599,16 +647,28 @@
 	}
 
 	/* Focus state for better accessibility */
-	h2:focus-within {
+	.panel-header:focus-within {
 		outline: 2px solid #007bff;
 		outline-offset: 2px;
 	}
 
-	h2::before {
-		content: "🖼️";
+	.panel-header::before {
+		content: '🖼️';
 		font-size: 1.2rem;
 		opacity: 0.8;
 		flex-shrink: 0;
+	}
+
+	/* Smaller variant for sub-headers */
+	.panel-header.small {
+		font-size: 1.2rem;
+		padding: 1rem;
+		color: #495057;
+	}
+
+	/* Remove emoji for small headers */
+	.panel-header.small::before {
+		content: '';
 	}
 
 	.filename-text {
@@ -631,29 +691,9 @@
 		color: #007bff;
 	}
 
-	form {
-		background: white;
-		border-radius: 16px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-		padding: 2rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		border: 1px solid #e9ecef;
-	}
-
-	.dynamic-label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.dynamic-label > span {
-		font-weight: 600;
-		color: #495057;
-		font-size: 0.9rem;
-		text-transform: capitalize;
-		letter-spacing: 0.5px;
+	/* If a <form> happens to be a .card, keep full-width responsive behaviour */
+	form.card {
+		width: 100%;
 	}
 
 	.input-wrapper {
@@ -662,48 +702,53 @@
 		gap: 0.75rem;
 	}
 
-	.input-wrapper input,
-	.input-wrapper select {
+	.form-input {
 		flex: 1;
-		min-width: 0;
-		padding: 0.75rem 1rem;
-		border: 2px solid #e9ecef;
-		border-radius: 8px;
-		font-size: 1rem;
-		transition: all 0.3s ease;
-		background: white;
 	}
 
-	.input-wrapper input:focus,
-	.input-wrapper select:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+	.form-input:focus {
 		transform: translateY(-1px);
 	}
 
-	.input-wrapper input:hover:not(:focus),
-	.input-wrapper select:hover:not(:focus) {
+	.form-checkbox {
+		width: 1.5rem;
+		height: 1.5rem;
+		border: 2px solid #e0e0e0;
+		border-radius: 4px;
+		background: white;
+		cursor: pointer;
+		appearance: none;
+		position: relative;
+		transition: all 0.2s ease;
+		margin: 0;
+		flex-shrink: 0;
+	}
+		
+	
+	.form-checkbox:checked {
+		background: #007bff;
 		border-color: #007bff;
 	}
-
-	.input-wrapper input[type='checkbox'] {
-		flex: 0;
-		width: 20px;
-		height: 20px;
-		cursor: pointer;
-		accent-color: #007bff;
+	
+	.form-checkbox:checked::after {
+		content: '✓';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		color: white;
+		font-size: 1rem;
+		font-weight: bold;
 	}
-
-	.input-wrapper input[readonly] {
-		background: #f8f9fa;
-		color: #6c757d;
-		cursor: not-allowed;
-		border-color: #dee2e6;
+	
+	.form-checkbox:focus {
+		outline: none;
+		border-color: #007bff;
+		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
 	}
-
-	.input-wrapper input[readonly]:hover {
-		border-color: #dee2e6;
+	
+	.form-checkbox:hover {
+		border-color: #007bff;
 	}
 
 	.delete-field-btn {
@@ -740,14 +785,6 @@
 		gap: 1rem;
 		align-items: center;
 		justify-content: center;
-	}
-
-	.primary-actions {
-		justify-content: flex-end;
-	}
-
-	.navigation-actions {
-		justify-content: space-between;
 	}
 
 	button {
@@ -828,49 +865,22 @@
 		}
 	}
 
-	.new-field-form {
-		margin-top: 1rem;
-		padding: 2rem;
-		background: #f8f9fa;
-		border: 2px solid #e9ecef;
-		border-radius: 12px;
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		position: relative;
-	}
-
-	.new-field-form::before {
-		content: "✨";
-		position: absolute;
-		top: -10px;
-		right: 20px;
-		font-size: 1.5rem;
-		background: #f8f9fa;
-		padding: 0 0.5rem;
-	}
-
-	.new-field-form h3 {
+	h3 {
 		margin: 0;
 		color: #495057;
 		font-size: 1.2rem;
 		font-weight: 600;
 	}
 
-	.new-field-form label {
+	label {
 		display: flex;
+		text-transform: capitalize;
 		flex-direction: column;
 		gap: 0.5rem;
 	}
 
-	.new-field-form label span {
-		font-weight: 600;
-		color: #495057;
-		font-size: 0.9rem;
-	}
-
-	.new-field-form input,
-	.new-field-form select {
+	.form-input,
+	.form-select {
 		padding: 0.75rem 1rem;
 		border: 2px solid #e9ecef;
 		border-radius: 8px;
@@ -879,11 +889,16 @@
 		background: white;
 	}
 
-	.new-field-form input:focus,
-	.new-field-form select:focus {
+	.form-input:focus,
+	.form-select:focus {
 		outline: none;
 		border-color: #007bff;
 		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+	}
+
+	.form-input:hover:not(:focus),
+	.form-select:hover:not(:focus) {
+		border-color: #007bff;
 	}
 
 	.last-modified {
@@ -900,28 +915,8 @@
 	}
 
 	.last-modified::before {
-		content: "⏰";
+		content: '⏰';
 		margin-right: 0.5rem;
-	}
-
-	.unlinked-info {
-		padding: 2.5rem;
-		background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-		border: 2px solid #ffeaa7;
-		border-radius: 16px;
-		text-align: center;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-		position: relative;
-		overflow: hidden;
-	}
-
-	.unlinked-info::before {
-		content: "🔗";
-		position: absolute;
-		top: 1rem;
-		right: 1rem;
-		font-size: 1.5rem;
-		opacity: 0.6;
 	}
 
 	.unlinked-message {
@@ -930,13 +925,6 @@
 		font-style: italic;
 		font-size: 1.1rem;
 		line-height: 1.5;
-	}
-
-	.unlinked-info form {
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-		margin-top: 1.5rem;
 	}
 
 	/* Responsive adjustments */
@@ -966,16 +954,11 @@
 			align-items: stretch;
 		}
 
-		.primary-actions,
-		.navigation-actions {
-			justify-content: stretch;
-		}
-
 		.action-row button {
 			width: 100%;
 		}
 
-		h2 {
+		.panel-header {
 			font-size: 1.2rem;
 			padding: 1rem;
 		}
@@ -986,8 +969,8 @@
 		position: relative;
 	}
 
-	button[type="submit"]:disabled::after {
-		content: "";
+	button[type='submit']:disabled::after {
+		content: '';
 		position: absolute;
 		top: 50%;
 		left: 50%;

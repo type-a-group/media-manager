@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { filteredImageList } from '$lib/stores/imageList';
 	import FiltersPopup from './FiltersPopup.svelte';
+	import SettingsPopup from './SettingsPopup.svelte';
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -21,6 +22,7 @@
 	let filterForEmpty = $state(false);
 	let schemaFields = $state<string[]>([]);
 	let showFiltersPopup = $state(false);
+	let showSettingsPopup = $state(false);
 
 	// This will hold the filenames actually displayed in the sidebar
 	let displayedFilenames = $state<string[]>([]);
@@ -312,9 +314,14 @@
 <div class="sidebar" class:collapsed>
 	<div class="sidebar-header">
 		<h2>Image Manager</h2>
-		<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
-			{collapsed ? '>' : '<'}
-		</button>
+		<div class="header-controls">
+			<button class="settings-btn" on:click={() => (showSettingsPopup = true)} title="Settings">
+				⚙️
+			</button>
+			<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
+				{collapsed ? '>' : '<'}
+			</button>
+		</div>
 	</div>
 	
 	<!-- Removed Key Section as liked/unliked fields don't exist -->
@@ -452,6 +459,12 @@
 	onClose={handleFiltersClose}
 />
 
+<!-- Settings Popup -->
+<SettingsPopup 
+	bind:isOpen={showSettingsPopup}
+	onClose={() => (showSettingsPopup = false)}
+/>
+
 <!-- Image Preview Hover -->
 {#if previewVisible && previewImage}
 	<div 
@@ -506,6 +519,12 @@
 		color: white;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 	}
+	
+	.header-controls {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+	}
 
 	.sidebar-header h2 {
 		margin: 0;
@@ -513,6 +532,7 @@
 		font-weight: 600;
 	}
 
+	.settings-btn,
 	.collapse-btn {
 		background: rgba(255, 255, 255, 0.2);
 		border: 1px solid rgba(255, 255, 255, 0.3);
@@ -527,6 +547,7 @@
 		transition: all 0.2s ease;
 	}
 
+	.settings-btn:hover,
 	.collapse-btn:hover {
 		background: rgba(255, 255, 255, 0.3);
 	}
