@@ -1,55 +1,21 @@
 <script lang="ts">
-	import Sidebar from '$lib/components/Sidebar.svelte';
+	import AppSidebar from '$lib/components/AppSidebar.svelte';
+	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 	import '../app.css';
+	import { Button } from '$lib/components/ui/button';
 
-	let collapsed = $state(false);
+	// let collapsed = $state(false);
+	let { children } = $props();
 </script>
 
-<main class:collapsed>
-	<Sidebar bind:collapsed />
-	<div class="content">
-		<slot />
-	</div>
-	{#if collapsed}
-		<button class="show-btn" on:click={() => (collapsed = !collapsed)} title="Show sidebar">
-			&gt;
-		</button>
-	{/if}
-</main>
+<Sidebar.Provider>
+	<AppSidebar />
+	<main>
+		{@render children?.()}
+		<Sidebar.Trigger/>
+	</main>
+</Sidebar.Provider>
 
 <style>
-	main {
-		display: grid;
-		grid-template-columns: 300px 1fr;
-		height: 100vh;
-		transition: grid-template-columns 0.3s ease-in-out;
-		position: relative;
-	}
 
-	main.collapsed {
-		grid-template-columns: 0px 1fr;
-	}
-
-	.content {
-		overflow-y: auto;
-	}
-
-	.show-btn {
-		position: absolute;
-		top: 1rem;
-		left: 1rem;
-		background: #007bff;
-		color: white;
-		border: none;
-		width: 40px;
-		height: 40px;
-		border-radius: 50%;
-		font-size: 1.5rem;
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 10;
-		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-	}
 </style>

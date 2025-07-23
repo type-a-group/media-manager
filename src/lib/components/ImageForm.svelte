@@ -1,10 +1,18 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { ChevronLeft, ChevronRight, Info } from 'lucide-svelte';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { goto } from '$app/navigation';
 	import { filteredImageList } from '$lib/stores/imageList';
 	import { settingsStore } from '$lib/stores/settings';
 	import { onMount, onDestroy } from 'svelte';
 	import MetadataPopup from './MetadataPopup.svelte';
+	import * as Popover from '$lib/components/ui/popover/index.js';
 
 	let { filename = null } = $props<{ filename?: string | null }>();
 
@@ -397,17 +405,30 @@
 
 <div class="edit-container">
 	{#if filename}
-		<div class="image-column">
-			{#if imageUrl}
-				<img src={imageUrl} alt={properties?.image_name || filename} class="preview-image" />
-			{/if}
+		<div class="flex flex-row gap-4 w-full">
+		<div class="flex-1/2 max-w-1/2">
+			<Card.Root>
+				<Card.Content>
+				{#if imageUrl}
+					<img src={imageUrl} alt={properties?.image_name || filename}/>
+				{/if}
+				</Card.Content>
+			</Card.Root>
 		</div>
-		<div class="form-column">
-			<h2 class="panel-header">
-				<span class="filename-text">{filename}</span>
-			</h2>
-			
-			<form class="card" onsubmit={handleSubmit}>
+		<div class="flex-1/2 max-w-1/2 flex flex-col gap-2">
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>
+						<div class="flex flex-row gap-2 items-center h-full w-full justify-between">
+							{filename}
+							<Button variant="outline" type="button" onclick={() => (showMetadataPopup = true)} size="icon">
+								<Info />
+							</Button>
+						</div>
+					</Card.Title>
+				</Card.Header>
+			<Card.Content>
+			<form onsubmit={handleSubmit} class="flex flex-col gap-2">
 				{#if schema}
 					{#if !properties}
 						<p class="unlinked-message">
@@ -418,136 +439,153 @@
 					<!-- Dynamic fields -->
 					{#each Object.entries(schema) as [fieldName, fieldProps]}
 						{#if fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
-							<label>
-								<span>{fieldName === 'image_name' ? 'Image Name' : fieldName}</span>
-								<div class="input-wrapper">
-									{#if fieldProps.type === 'boolean'}
-										<input
-											type="checkbox"
+							{#if fieldProps.type === 'boolean'}
+								<div class="flex flex-row gap-2 items-center h-full w-full justify-between">
+									<div class="flex flex-row gap-2 items-center h-full w-full">
+										<Label for={fieldName}>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Label>
+										<Checkbox
 											class="form-checkbox"
 											checked={formValues[fieldName]}
-											onchange={(e) =>
-												updateFormValue(fieldName, (e.target as HTMLInputElement).checked)}
+											onchange={(e) => updateFormValue(fieldName, (e.target as HTMLInputElement).checked)}
+											id={fieldName}
 										/>
-									{:else if fieldProps.type === 'number'}
-										<input
-											type="number"
-											class="form-input"
-											value={formValues[fieldName]}
-											oninput={(e) =>
-												updateFormValue(fieldName, Number((e.target as HTMLInputElement).value))}
-										/>
-									{:else}
-										<input
-											type="text"
-											class="form-input"
-											value={formValues[fieldName]}
-											oninput={(e) =>
-												updateFormValue(fieldName, (e.target as HTMLInputElement).value)}
-											placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
-										/>
-									{/if}
-									{#if fieldProps.removable && fieldName !== 'image_name'}
-										<button
-											type="button"
-											class="delete-field-btn"
-											onclick={() => handleDeleteField(fieldName)}
-										>
-											🗑️
-										</button>
-									{/if}
+									</div>
+									<Button
+										variant="outline"
+										size="icon"
+										onclick={() => handleDeleteField(fieldName)}
+										disabled={!fieldProps.removable || fieldName === 'image_name'}
+									>
+										️x
+									</Button>
 								</div>
-							</label>
+							{:else if fieldProps.type === 'number'}
+								<div>
+									<Label for={fieldName}>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Label>
+									<div class="flex flex-row gap-2 items-center h-full w-full">
+										<Input
+											type="number"
+											class="w-full"
+											value={formValues[fieldName]}
+											oninput={(e) => updateFormValue(fieldName, Number((e.target as HTMLInputElement).value))}
+											id={fieldName}
+										/>
+										<Button
+											variant="outline"
+											size="icon"
+											onclick={() => handleDeleteField(fieldName)}
+											disabled={!fieldProps.removable || fieldName === 'image_name'}
+										>
+											️x
+										</Button>
+									</div>
+								</div>
+							{:else}
+								<div>
+									<Label for={fieldName}>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Label>
+									<div class="flex flex-row gap-2 items-center h-full w-full">
+									<Input
+										type="text"
+										class=""
+										value={formValues[fieldName]}
+										oninput={(e) => updateFormValue(fieldName, (e.target as HTMLInputElement).value)}
+										placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
+										id={fieldName}
+									/>
+									<Button
+										variant="outline"
+										size="icon"
+										onclick={() => handleDeleteField(fieldName)}
+										disabled={!fieldProps.removable || fieldName === 'image_name'}
+									>
+										️x
+									</Button>
+									</div>
+								</div>
+							{/if}
 						{/if}
 					{/each}
 				{/if}
-				<div class="form-actions">
-					<div class="action-row">
-						<button type="button" onclick={() => (showNewFieldForm = !showNewFieldForm)}>
-							{showNewFieldForm ? 'Cancel' : 'Create New Field'}
-						</button>
-						<button type="submit" disabled={saving}>
-							{saving ? 'Saving...' : properties?.image_name ? 'Save' : 'Save & Link Image'}
-						</button>
-					</div>
-					<div class="action-row">
-						<button
-							type="button"
-							onclick={() => navigate('prev')}
-							disabled={currentList.length === 0 || currentIndex <= 0}
-						>
-							&larr; Previous
-						</button>
-						<button type="button" onclick={() => (showMetadataPopup = true)} class="metadata-btn">
-							Metadata
-						</button>
-						<button
-							type="button"
-							onclick={() => navigate('next')}
-							disabled={
-								currentList.length === 0 ||
-								currentIndex === -1 ||
-								currentIndex >= currentList.length - 1
-							}
-						>
-							Next &rarr;
-						</button>
-					</div>
-					{#if saveMessage}
-						<div class="save-message">{saveMessage}</div>
-					{/if}
+				<div class="flex flex-row gap-2 items-center h-full w-full justify-center">
+					<Button
+						variant="secondary"
+						size="icon"
+						onclick={() => navigate('prev')}
+						disabled={currentList.length === 0 || currentIndex <= 0}
+					>
+						<ChevronLeft />
+					</Button>
+					<Button variant="default" type="submit" disabled={saving}>
+						{saving ? 'Saving...' : properties?.image_name ? 'Save' : 'Save & Link Image'}
+					</Button>
+					<Button
+						variant="secondary"
+						size="icon"
+						onclick={() => navigate('next')}
+						disabled={
+							currentList.length === 0 ||
+							currentIndex === -1 ||
+							currentIndex >= currentList.length - 1
+						}
+					>
+						<ChevronRight />
+					</Button>
 				</div>
+				{#if saveMessage}
+					<div class="save-message">{saveMessage}</div>
+				{/if}
 			</form>
-
-			{#if showNewFieldForm}
-				<div class="card">
-					<h3 class="panel-header small">Create New Field</h3>
-					<label>
-						<span>Field Name</span>
-						<div class="input-wrapper">
-							<input type="text" bind:value={newFieldName} class="form-input" />
-						</div>
-					</label>
-					<label>
-						<span>Field Type</span>
-						<div class="input-wrapper">
-							<select bind:value={newFieldType} class="form-select">
-								<option value="string">String</option>
-								<option value="number">Number</option>
-								<option value="boolean">Boolean</option>
-							</select>
-						</div>
-					</label>
-					<label>
-						<span>Default Value</span>
-						<div class="input-wrapper">
-							{#if newFieldType === 'boolean'}
-								<input type="checkbox" bind:checked={newFieldDefaultBoolean} class="form-checkbox" />
-							{:else if newFieldType === 'number'}
-								<input type="number" bind:value={newFieldDefaultNumber} class="form-input" />
-							{:else}
-								<input type="text" bind:value={newFieldDefaultString} class="form-input" />
-							{/if}
-						</div>
-					</label>
-					<div class="action-row">
-						<button onclick={() => (showNewFieldForm = !showNewFieldForm)}>
-							Cancel
-						</button>
-						<button onclick={handleAddNewField}>Add Field</button>
-					</div>
-				</div>
-			{/if}
+			</Card.Content>
+			</Card.Root>
 
 			{#if properties?.last_modified}
-				<div class="last-modified">
-					Last modified {formatLastModified(properties?.last_modified)}
-				</div>
+				<Card.Root>
+					<Card.Content>
+						Last modified {formatLastModified(properties?.last_modified)}
+						<Popover.Root bind:open={showNewFieldForm}>
+							<Popover.Trigger class={buttonVariants({ variant: 'outline' })}>
+								<!-- <Button type="button" onclick={() => (showNewFieldForm = !showNewFieldForm)}>
+									{showNewFieldForm ? 'Cancel' : 'Create New Field'}
+								</Button> -->
+								Create New Field
+							</Popover.Trigger>
+							<Popover.Content class="w-60">
+								<div class="flex flex-col gap-2">
+									<h4>Create New Field</h4>
+									<Label>Field Name</Label>
+									<Input type="text" bind:value={newFieldName} />
+									<Label>Field Type</Label>
+										<Select.Root type="single" bind:value={newFieldType}>
+											<Select.Trigger class="w-full">
+												{newFieldType}
+											</Select.Trigger>
+											<Select.Content>
+												<Select.Item value="string">String</Select.Item>
+												<Select.Item value="number">Number</Select.Item>
+												<Select.Item value="boolean">Boolean</Select.Item>
+											</Select.Content>
+										</Select.Root>
+									{#if newFieldType === 'boolean'}
+										<div class="flex flex-row gap-2">
+											<Label>Default Value: </Label>
+											<Checkbox bind:checked={newFieldDefaultBoolean} class="form-checkbox" />
+										</div>
+									{:else if newFieldType === 'number'}
+										<Label>Default Value: </Label>
+										<Input type="number" bind:value={newFieldDefaultNumber} class="form-input" />
+									{:else}
+										<Label>Default Value: </Label>
+										<Input type="text" bind:value={newFieldDefaultString} class="form-input" />
+									{/if}
+									<Button onclick={handleAddNewField}>Add Field</Button>
+								</div>
+							</Popover.Content>
+						</Popover.Root>
+					</Card.Content>
+				</Card.Root>
 			{/if}
-			<!-- <div style="font-size: 0.8em; color: #888; margin-top: 0.5rem;">
-				Debug: currentIndex: {currentIndex}, listLength: {currentList.length}, filename: {filename}
-			</div> -->
 		</div>
+	</div>
 	{:else}
 		<p>Select an image from the sidebar to see its details.</p>
 	{/if}
@@ -561,19 +599,6 @@
 />
 
 <style>
-
-	/* Generic card layout shared across form & new-field-form */
-	.card {
-		background: white;
-		border-radius: 16px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-		padding: 2rem;
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		border: 1px solid #e9ecef;
-	}
-
 	.edit-container {
 		display: flex;
 		flex-wrap: wrap;
@@ -582,265 +607,6 @@
 		align-items: flex-start;
 		background: #f8f9fa;
 		min-height: 100vh;
-	}
-
-	.image-column {
-		flex: 1 1 50%;
-		min-width: 400px;
-		background: white;
-		border-radius: 16px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-		padding: 1.5rem;
-		top: 2rem;
-		height: fit-content;
-		max-height: 90vh;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border: 1px solid #e9ecef;
-		overflow: auto;
-	}
-
-	.form-column {
-		flex: 1 1 400px;
-		max-width: 500px;
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		min-width: 0;
-	}
-
-	.preview-image {
-		max-width: calc(100% - 2rem);
-		max-height: calc(85vh - 4rem);
-		width: auto;
-		height: auto;
-		object-fit: contain;
-		border-radius: 12px;
-		box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-		transition: transform 0.3s ease;
-		display: block;
-	}
-
-	.preview-image:hover {
-		transform: scale(1.02);
-	}
-
-	/* Unified header style */
-	.panel-header {
-		margin: 0;
-		font-size: 1.5rem;
-		font-weight: 600;
-		color: #2c3e50;
-		padding: 1.5rem;
-		background: white;
-		border-radius: 16px;
-		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-		border: 1px solid #e9ecef;
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		width: 100%;
-		max-width: 100%;
-		min-width: 0;
-		overflow: hidden;
-	}
-
-	/* Focus state for better accessibility */
-	.panel-header:focus-within {
-		outline: 2px solid #007bff;
-		outline-offset: 2px;
-	}
-
-	.panel-header::before {
-		content: '🖼️';
-		font-size: 1.2rem;
-		opacity: 0.8;
-		flex-shrink: 0;
-	}
-
-	/* Smaller variant for sub-headers */
-	.panel-header.small {
-		font-size: 1.2rem;
-		padding: 1rem;
-		color: #495057;
-	}
-
-	/* Remove emoji for small headers */
-	.panel-header.small::before {
-		content: '';
-	}
-
-	.filename-text {
-		overflow-x: auto;
-		white-space: nowrap;
-		flex: 1;
-		min-width: 0;
-		scrollbar-width: none;
-		-ms-overflow-style: none;
-		cursor: text;
-		user-select: text;
-		padding-right: 1rem;
-	}
-
-	.filename-text::-webkit-scrollbar {
-		display: none;
-	}
-
-	.filename-text:hover {
-		color: #007bff;
-	}
-
-	/* If a <form> happens to be a .card, keep full-width responsive behaviour */
-	form.card {
-		width: 100%;
-	}
-
-	.input-wrapper {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.form-input {
-		flex: 1;
-	}
-
-	.form-input:focus {
-		transform: translateY(-1px);
-	}
-
-	.form-checkbox {
-		width: 1.5rem;
-		height: 1.5rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 4px;
-		background: white;
-		cursor: pointer;
-		appearance: none;
-		position: relative;
-		transition: all 0.2s ease;
-		margin: 0;
-		flex-shrink: 0;
-	}
-		
-	
-	.form-checkbox:checked {
-		background: #007bff;
-		border-color: #007bff;
-	}
-	
-	.form-checkbox:checked::after {
-		content: '✓';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		color: white;
-		font-size: 1rem;
-		font-weight: bold;
-	}
-	
-	.form-checkbox:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-	}
-	
-	.form-checkbox:hover {
-		border-color: #007bff;
-	}
-
-	.delete-field-btn {
-		background: #dc3545;
-		border: none;
-		cursor: pointer;
-		padding: 0.5rem;
-		font-size: 1rem;
-		border-radius: 6px;
-		transition: all 0.2s ease;
-		color: white;
-		width: 36px;
-		height: 36px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.delete-field-btn:hover {
-		background: #c82333;
-		transform: scale(1.1);
-	}
-
-	.form-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid #e9ecef;
-	}
-
-	.action-row {
-		display: flex;
-		gap: 1rem;
-		align-items: center;
-		justify-content: center;
-	}
-
-	button {
-		padding: 0.75rem 1.5rem;
-		border: 2px solid #e9ecef;
-		background: white;
-		cursor: pointer;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		font-weight: 600;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-		position: relative;
-		overflow: hidden;
-	}
-
-	button:hover:not(:disabled) {
-		background: #f8f9fa;
-		border-color: #007bff;
-		transform: translateY(-2px);
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-	}
-
-	button:active:not(:disabled) {
-		transform: translateY(0);
-		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-	}
-
-	button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-		background: #f8f9fa;
-		color: #6c757d;
-	}
-
-	button[type='submit'] {
-		background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-		color: white;
-		border-color: #007bff;
-	}
-
-	button[type='submit']:hover:not(:disabled) {
-		background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
-		border-color: #0056b3;
-	}
-
-	.metadata-btn {
-		background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
-		color: white;
-		border-color: #17a2b8;
-	}
-
-	.metadata-btn:hover:not(:disabled) {
-		background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
-		border-color: #138496;
 	}
 
 	.save-message {
@@ -864,61 +630,6 @@
 			transform: translateY(0);
 		}
 	}
-
-	h3 {
-		margin: 0;
-		color: #495057;
-		font-size: 1.2rem;
-		font-weight: 600;
-	}
-
-	label {
-		display: flex;
-		text-transform: capitalize;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
-	.form-input,
-	.form-select {
-		padding: 0.75rem 1rem;
-		border: 2px solid #e9ecef;
-		border-radius: 8px;
-		font-size: 1rem;
-		transition: all 0.3s ease;
-		background: white;
-	}
-
-	.form-input:focus,
-	.form-select:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-	}
-
-	.form-input:hover:not(:focus),
-	.form-select:hover:not(:focus) {
-		border-color: #007bff;
-	}
-
-	.last-modified {
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-		padding: 1rem;
-		font-size: 0.9rem;
-		color: #6c757d;
-		text-align: center;
-		font-style: italic;
-		border: 1px solid #e9ecef;
-		position: relative;
-	}
-
-	.last-modified::before {
-		content: '⏰';
-		margin-right: 0.5rem;
-	}
-
 	.unlinked-message {
 		color: #856404;
 		margin-bottom: 2rem;
@@ -934,62 +645,8 @@
 			padding: 1rem;
 		}
 
-		.image-column {
-			min-width: 0;
-			position: static;
-			max-height: 60vh;
-			height: auto;
-		}
-
 		.preview-image {
 			max-height: calc(60vh - 4rem);
-		}
-
-		.form-column {
-			flex: 1 1 auto;
-		}
-
-		.action-row {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.action-row button {
-			width: 100%;
-		}
-
-		.panel-header {
-			font-size: 1.2rem;
-			padding: 1rem;
-		}
-	}
-
-	/* Loading states - only show spinner for buttons that are actually saving */
-	button[type="submit"]:disabled {
-		position: relative;
-	}
-
-	button[type='submit']:disabled::after {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		width: 16px;
-		height: 16px;
-		margin-top: -8px;
-		margin-left: -8px;
-		border: 2px solid transparent;
-		border-top-color: currentColor;
-		border-radius: 50%;
-		animation: spin 1s linear infinite;
-	}
-
-	@keyframes spin {
-		0% {
-			transform: rotate(0deg);
-		}
-		100% {
-			transform: rotate(360deg);
 		}
 	}
 </style>

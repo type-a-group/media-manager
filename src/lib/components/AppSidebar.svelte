@@ -4,6 +4,16 @@
 	import { filteredImageList } from '$lib/stores/imageList';
 	import FiltersPopup from './FiltersPopup.svelte';
 	import SettingsPopup from './SettingsPopup.svelte';
+	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+	import { Button, buttonVariants } from "$lib/components/ui/button";
+	import { Input } from '$lib/components/ui/sidebar/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
+	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
+	// import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import { ChevronDown, ChevronsUpDownIcon } from 'lucide-svelte';
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -311,115 +321,141 @@
 	}
 </script>
 
-<div class="sidebar" class:collapsed>
-	<div class="sidebar-header">
-		<h2>Image Manager</h2>
-		<div class="header-controls">
-			<button class="settings-btn" on:click={() => (showSettingsPopup = true)} title="Settings">
+<!-- <div class="sidebar" class:collapsed> -->
+ <Sidebar.Root>
+	<Sidebar.Header>
+		<div class="flex flex-row justify-between items-center">
+			<h2>Image Manager</h2>
+			<Button variant="outline" size="icon" onclick={() => (showSettingsPopup = true)} title="Settings">
 				⚙️
-			</button>
-			<button class="collapse-btn" on:click={() => (collapsed = !collapsed)} title="Toggle sidebar">
-				{collapsed ? '>' : '<'}
-			</button>
+			</Button>
 		</div>
-	</div>
+		<Sidebar.Separator />
+		<Sidebar.Group>
+			<Collapsible.Root>
+				<div class="flex flex-row gap-2 items-center justify-between">
+					<Sidebar.GroupLabel>Upload</Sidebar.GroupLabel>
+					<Collapsible.Trigger class={buttonVariants({ variant: "ghost", size: "sm", class: "w-9 p-0" })}>
+						<ChevronsUpDownIcon />
+					</Collapsible.Trigger>
+				</div>
+				<Collapsible.Content>
+					<div class="flex flex-col gap-2">
+						<Button 
+							class="upload-btn" 
+							onclick={triggerFileUpload} 
+							disabled={uploading}
+							title="Upload new image"
+						>
+							{uploading ? '⏳ Uploading...' : '📁 Upload Image'}
+						</Button>
+						<Button variant="outline" onclick={fetchImageLists} title="Refresh lists">
+							🔄 Refresh
+						</Button>
+					</div>
+					<!-- Hidden file input for image uploads -->
+					<!-- TODO wtf is this input below -->
+					<input 
+						type="file" 
+						bind:this={fileInput}
+						onchange={handleFileUpload}
+						accept="image/*"
+						style="display: none;"
+						aria-label="Upload image file"
+					/>
+					
+					<!-- Upload status message -->
+					{#if uploadMessage}
+						<div class="upload-message">
+							{uploadMessage}
+						</div>
+					{/if}
+				</Collapsible.Content>
+			</Collapsible.Root>
+		</Sidebar.Group>
+
+		<!-- Search Section -->
+		<Sidebar.Separator />
+		<Sidebar.Group>
+			<Collapsible.Root>
+				<div class="flex flex-row gap-2 items-center justify-between">
+					<Sidebar.GroupLabel>Search</Sidebar.GroupLabel>
+					<Collapsible.Trigger class={buttonVariants({ variant: "ghost", size: "sm", class: "w-9 p-0" })}>
+						<ChevronsUpDownIcon />
+					</Collapsible.Trigger>
+				</div>
+				<Collapsible.Content>
+					<div class="flex flex-col gap-2">
+						<div class="flex flex-row gap-2 items-center h-full w-full justify-between">
+							<Input
+								type="text"
+								placeholder="Search images..."
+								bind:value={searchQuery}
+								disabled={filterForEmpty}
+								class="search-input"
+							/>
+							<Button 
+								variant="outline"
+								class="clear-search-btn"
+								onclick={() => (searchQuery = '')}
+								title="Clear search"
+								size="icon"
+								disabled={searchQuery.length === 0}
+							>
+								×
+							</Button>
+						</div>
+						<Select.Root type="single" bind:value={selectedField}>
+							<Select.Trigger class="w-full">
+								<!-- <Select.Value placeholder="Select a field" /> -->
+								{selectedField}
+							</Select.Trigger>
+							<Select.Content>
+								{#each schemaFields as field}
+									<Select.Item value={field}>{field}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<div class="flex flex-row items-center gap-2">
+							<Checkbox id="filter-for-empty" bind:checked={filterForEmpty} />
+							<Label for="filter-for-empty">Filter for empty</Label>
+						</div>
+					</div>
+				</Collapsible.Content>
+			</Collapsible.Root>
+		</Sidebar.Group>
+
+		<!-- Filters Section -->
+		<Sidebar.Separator />
+		<Sidebar.Group>
+			<Sidebar.GroupLabel>Filters</Sidebar.GroupLabel>
+			<div class="filter-controls">
+				<div class="flex flex-row gap-2 items-center justify-center">
+					<Button variant={view === 'linked' ? 'default' : 'outline'} onclick={() => (view = 'linked')}>
+						Linked
+					</Button>
+					<Button variant={view === 'unlinked' ? 'default' : 'outline'} onclick={() => (view = 'unlinked')}>
+						Unlinked
+					</Button>
+				</div>
+				<!-- <Button variant="outline" onclick={() => (showFiltersPopup = true)}>
+					🔍 Advanced Filters
+				</Button> -->
+			</div>
+		</Sidebar.Group>
+		<Sidebar.Separator />
+	</Sidebar.Header>
 	
 	<!-- Removed Key Section as liked/unliked fields don't exist -->
 
 	<!-- Upload Section -->
-	<section class="sidebar-section">
-		<h3>Upload</h3>
-		<div class="upload-controls">
-			<button 
-				class="upload-btn" 
-				on:click={triggerFileUpload} 
-				disabled={uploading}
-				title="Upload new image"
-			>
-				{uploading ? '⏳ Uploading...' : '📁 Upload Image'}
-			</button>
-			<button class="sync-btn" on:click={fetchImageLists} title="Refresh lists">
-				🔄 Refresh
-			</button>
-		</div>
-		
-		<!-- Hidden file input for image uploads -->
-		<input 
-			type="file" 
-			bind:this={fileInput}
-			on:change={handleFileUpload}
-			accept="image/*"
-			style="display: none;"
-			aria-label="Upload image file"
-		/>
-		
-		<!-- Upload status message -->
-		{#if uploadMessage}
-			<div class="upload-message">
-				{uploadMessage}
-			</div>
-		{/if}
-	</section>
-
-	<!-- Search Section -->
-	<section class="sidebar-section">
-		<h3>Search</h3>
-		<div class="search-controls">
-			<div class="search-input-group">
-				<input
-					type="text"
-					placeholder="Search images..."
-					bind:value={searchQuery}
-					disabled={filterForEmpty}
-					class="search-input"
-				/>
-				<button 
-					class="clear-search-btn"
-					on:click={() => (searchQuery = '')}
-					class:visible={searchQuery.length > 0}
-					title="Clear search"
-				>
-					×
-				</button>
-			</div>
-			<select class="field-select" bind:value={selectedField}>
-				{#each schemaFields as field}
-					<option value={field}>{field}</option>
-				{/each}
-			</select>
-			<div class="search-checkbox">
-				<label>
-					<input type="checkbox" bind:checked={filterForEmpty} />
-					<span class="checkbox-label">Filter for empty</span>
-				</label>
-			</div>
-		</div>
-	</section>
-
-	<!-- Filters Section -->
-	<section class="sidebar-section">
-		<h3>Filters</h3>
-		<div class="filter-controls">
-			<div class="view-toggle">
-				<button class:active={view === 'linked'} on:click={() => (view = 'linked')}>
-					Linked
-				</button>
-				<button class:active={view === 'unlinked'} on:click={() => (view = 'unlinked')}>
-					Unlinked
-				</button>
-			</div>
-			<button 
-				class="advanced-filters-btn"
-				on:click={() => (showFiltersPopup = true)}
-			>
-				🔍 Advanced Filters
-			</button>
-		</div>
-	</section>
+	<Sidebar.Content>
 
 	<!-- Image List -->
-	<section class="sidebar-section image-list-section">
-		<h3>Images ({displayedFilenames.length})</h3>
+	 <Sidebar.Group>
+		<Sidebar.GroupLabel>
+			Images ({displayedFilenames.length})
+		</Sidebar.GroupLabel>
 		<ul class="file-list">
 			{#if loading}
 				<li class="loading">Loading...</li>
@@ -430,14 +466,15 @@
 							href="/edit/{filename}?view={view}"
 							class:selected={$page.params.filename === filename}
 						>
-							<li 
-								class="image-item"
-								on:mouseenter={(e) => handleImageMouseEnter(e, filename)}
-								on:mouseleave={handleImageMouseLeave}
-								on:mousemove={handleImageMouseMove}
+							<Button 
+								variant={$page.params.filename === filename ? 'default' : 'ghost'}
+								class="w-full justify-start"
+								onmouseenter={(e) => handleImageMouseEnter(e, filename)}
+								onmouseleave={handleImageMouseLeave}
+								onmousemove={handleImageMouseMove}
 							>
-								<span class="image-name">{getDisplayName(filename)}</span>
-							</li>
+								{getDisplayName(filename)}
+							</Button>
 						</a>
 					{/each}
 				{:else}
@@ -445,8 +482,9 @@
 				{/if}
 			{/if}
 		</ul>
-	</section>
-</div>
+	</Sidebar.Group>
+</Sidebar.Content>
+</Sidebar.Root>
 
 <!-- Filters Popup -->
 <FiltersPopup 
@@ -474,7 +512,7 @@
 		<img 
 			src="/api/images/{previewImage}" 
 			alt="Preview of {getDisplayName(previewImage)}"
-			on:error={() => {
+			onerror={() => {
 				// Hide preview if image fails to load
 				previewVisible = false;
 			}}
@@ -486,94 +524,6 @@
 {/if}
 
 <style>
-	.sidebar {
-		border-right: 1px solid #e0e0e0;
-		height: 100vh;
-		background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-		display: flex;
-		flex-direction: column;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		overflow: hidden;
-		box-shadow: 2px 0 20px rgba(0, 0, 0, 0.08);
-		backdrop-filter: blur(10px);
-	}
-
-	.sidebar.collapsed {
-		width: 0;
-	}
-
-	.sidebar.collapsed > *:not(.sidebar-header) {
-		visibility: hidden;
-	}
-	
-	.sidebar.collapsed .sidebar-header > *:not(.collapse-btn) {
-		visibility: hidden;
-	}
-
-	.sidebar-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 1rem;
-		background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
-		color: white;
-		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-	}
-	
-	.header-controls {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-	}
-
-	.sidebar-header h2 {
-		margin: 0;
-		font-size: 1.2rem;
-		font-weight: 600;
-	}
-
-	.settings-btn,
-	.collapse-btn {
-		background: rgba(255, 255, 255, 0.2);
-		border: 1px solid rgba(255, 255, 255, 0.3);
-		color: white;
-		font-size: 1.2rem;
-		cursor: pointer;
-		padding: 0.25rem 0.5rem;
-		line-height: 1;
-		border-radius: 4px;
-		min-width: 2rem;
-		flex-shrink: 0;
-		transition: all 0.2s ease;
-	}
-
-	.settings-btn:hover,
-	.collapse-btn:hover {
-		background: rgba(255, 255, 255, 0.3);
-	}
-
-	.sidebar-section {
-		padding: 1rem;
-		border-bottom: 1px solid #e0e0e0;
-	}
-
-	.sidebar-section h3 {
-		margin: 0 0 0.75rem 0;
-		font-size: 1rem;
-		font-weight: 600;
-		color: #333;
-		text-transform: uppercase;
-		letter-spacing: 0.5px;
-	}
-
-	/* Removed key-btn styles as liked/unliked functionality was removed */
-
-	.upload-controls {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-	}
-
 	.search-controls {
 		display: flex;
 		flex-direction: column;
@@ -585,76 +535,6 @@
 		display: flex;
 		align-items: center;
 	}
-
-	.search-input {
-		width: 100%;
-		padding: 0.75rem 2.5rem 0.75rem 0.75rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		background: white;
-	}
-
-	.search-input:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-	}
-
-	.search-input:disabled {
-		background: #f8f9fa;
-		color: #6c757d;
-		cursor: not-allowed;
-	}
-
-	.clear-search-btn {
-		position: absolute;
-		right: 0.5rem;
-		top: 50%;
-		transform: translateY(-50%);
-		background: none;
-		border: none;
-		font-size: 1.5rem;
-		cursor: pointer;
-		color: #6c757d;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 50%;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		opacity: 0;
-		transition: all 0.2s ease;
-		pointer-events: none;
-	}
-
-	.clear-search-btn.visible {
-		opacity: 1;
-		pointer-events: auto;
-	}
-
-	.clear-search-btn:hover {
-		background: #f8f9fa;
-		color: #333;
-	}
-
-	.field-select {
-		padding: 0.5rem 0.75rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		background: white;
-		cursor: pointer;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-	}
-
-	.field-select:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-	}
-
 	.search-checkbox {
 		display: flex;
 		align-items: center;
@@ -668,92 +548,6 @@
 		font-size: 0.9rem;
 		color: #333;
 	}
-
-	.search-checkbox input[type="checkbox"] {
-		width: 1.1rem;
-		height: 1.1rem;
-		border: 2px solid #e0e0e0;
-		border-radius: 4px;
-		background: white;
-		cursor: pointer;
-		appearance: none;
-		position: relative;
-		transition: all 0.2s ease;
-		margin: 0;
-	}
-
-	.search-checkbox input[type="checkbox"]:checked {
-		background: #007bff;
-		border-color: #007bff;
-	}
-
-	.search-checkbox input[type="checkbox"]:checked::after {
-		content: '✓';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		transform: translate(-50%, -50%);
-		color: white;
-		font-size: 0.75rem;
-		font-weight: bold;
-	}
-
-	.search-checkbox input[type="checkbox"]:focus {
-		outline: none;
-		border-color: #007bff;
-		box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-	}
-
-	.checkbox-label {
-		user-select: none;
-	}
-
-	.upload-btn {
-		padding: 0.75rem;
-		border: 2px dashed #007bff;
-		background: linear-gradient(135deg, #f8f9ff 0%, #e6f3ff 100%);
-		cursor: pointer;
-		border-radius: 8px;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		font-size: 0.9rem;
-		color: #007bff;
-		font-weight: 600;
-		position: relative;
-		overflow: hidden;
-	}
-
-	.upload-btn:hover {
-		background: linear-gradient(135deg, #e6f3ff 0%, #cce7ff 100%);
-		border-color: #0056b3;
-		transform: translateY(-2px);
-		box-shadow: 0 6px 20px rgba(0, 123, 255, 0.2);
-	}
-
-	.upload-btn:active {
-		transform: translateY(0);
-		box-shadow: 0 2px 8px rgba(0, 123, 255, 0.15);
-	}
-
-	.upload-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.sync-btn {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid #e0e0e0;
-		background: white;
-		cursor: pointer;
-		border-radius: 6px;
-		transition: all 0.2s ease;
-		font-size: 0.9rem;
-	}
-
-	.sync-btn:hover {
-		background: #f8f9fa;
-		border-color: #007bff;
-	}
-
 	.filter-controls {
 		display: flex;
 		flex-direction: column;
@@ -763,52 +557,6 @@
 	.view-toggle {
 		display: flex;
 		gap: 0.5rem;
-	}
-
-	.view-toggle button {
-		flex: 1;
-		padding: 0.5rem;
-		border: 1px solid #e0e0e0;
-		background: white;
-		cursor: pointer;
-		border-radius: 6px;
-		transition: all 0.2s ease;
-		font-size: 0.9rem;
-	}
-
-	.view-toggle button:hover {
-		background: #f8f9fa;
-		border-color: #007bff;
-	}
-
-	.view-toggle button.active {
-		background: #007bff;
-		color: white;
-		border-color: #007bff;
-	}
-
-	.advanced-filters-btn {
-		padding: 0.5rem 0.75rem;
-		border: 1px solid #007bff;
-		background: white;
-		cursor: pointer;
-		border-radius: 6px;
-		transition: all 0.2s ease;
-		font-size: 0.9rem;
-		color: #007bff;
-		font-weight: 600;
-	}
-
-	.advanced-filters-btn:hover {
-		background: #007bff;
-		color: white;
-	}
-
-	.image-list-section {
-		flex-grow: 1;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
 	}
 
 	.file-list {
@@ -823,48 +571,6 @@
 		text-decoration: none;
 		color: inherit;
 		display: block;
-	}
-
-	.image-item {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.75rem;
-		cursor: pointer;
-		border-radius: 8px;
-		margin-bottom: 0.25rem;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		background: white;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-		border: 1px solid transparent;
-		position: relative;
-		overflow: hidden;
-	}
-
-	.image-item:hover {
-		background: #f8f9fa;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-		transform: translateY(-2px);
-		border-color: #e0e0e0;
-	}
-
-	.image-item:active {
-		transform: translateY(0);
-		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-	}
-
-	.file-list a.selected .image-item {
-		background: #e6f3ff;
-		border-left: 4px solid #007bff;
-	}
-
-	.image-name {
-		font-size: 0.9rem;
-		color: #333;
-		flex-grow: 1;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
 	}
 
 	/* Removed liked-indicator styles as liked functionality was removed */
@@ -889,23 +595,10 @@
 
 	/* Responsive adjustments */
 	@media (max-width: 768px) {
-		.sidebar {
-			width: 100%;
-			position: fixed;
-			z-index: 100;
-		}
-		
-		.upload-controls,
 		.search-controls,
 		.filter-controls {
 			flex-direction: row;
 			flex-wrap: wrap;
-		}
-		
-		.upload-btn,
-		.sync-btn {
-			flex: 1;
-			min-width: 0;
 		}
 	}
 
