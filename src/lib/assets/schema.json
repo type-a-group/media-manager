@@ -29,6 +29,11 @@
       "type": "string",
       "removable": true,
       "defaultValue": ""
+    },
+    "stars": {
+      "type": "number",
+      "removable": true,
+      "defaultValue": 0
     }
   }
 }

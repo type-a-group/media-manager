@@ -7,7 +7,8 @@
       "default": false,
       "active": false,
       "location": "outside",
-      "Description": ""
+      "Description": "",
+      "stars": 0
     },
     {
       "file_name": "pexels-omar-markhieh-637410-1447252-2.jpg",
@@ -15,7 +16,8 @@
       "last_modified": "2025-07-03T15:30:30.006Z",
       "active": true,
       "location": "",
-      "Description": ""
+      "Description": "",
+      "stars": 0
     },
     {
       "file_name": "pexels-cottonbro-5082573-2.jpg",
@@ -23,15 +25,45 @@
       "last_modified": "2025-07-06T15:30:37.591Z",
       "active": true,
       "location": "",
-      "Description": ""
+      "Description": "",
+      "stars": 0
     },
     {
       "file_name": "ariel_nicholas_muffins_deceptionpass.jpg",
       "image_name": "the muffin men",
-      "last_modified": "2025-07-06T15:43:20.636Z",
+      "last_modified": "2025-07-24T03:27:14.727Z",
       "active": true,
       "location": "",
-      "Description": ""
+      "Description": "",
+      "stars": 0
+    },
+    {
+      "file_name": "image.png",
+      "image_name": "slug",
+      "active": true,
+      "location": "santa cruz",
+      "Description": "",
+      "last_modified": "2025-08-21T02:13:49.895Z",
+      "stars": 5
+    },
+    {
+      "file_name": "pexels-shvets-production-9743169-2.jpg",
+      "image_name": "math",
+      "active": true,
+      "location": "",
+      "Description": "",
+      "last_modified": "2025-07-24T02:16:42.473Z",
+      "stars": 0
+    },
+    {
+      "file_name": "drawing432-HW1-drawing.excalidraw.png",
+      "default": false,
+      "image_name": "la mapa",
+      "active": false,
+      "location": "",
+      "Description": "",
+      "stars": 0,
+      "last_modified": "2025-08-21T02:13:58.868Z"
     }
   ]
 }

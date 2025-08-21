@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import LightDarkModeButton from './LightDarkModeButton.svelte';
 	import { onMount } from 'svelte';
 	import { filteredImageList } from '$lib/stores/imageList';
-	import FiltersPopup from './FiltersPopup.svelte';
-	import SettingsPopup from './SettingsPopup.svelte';
 	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 	import { Button, buttonVariants } from "$lib/components/ui/button";
 	import { Input } from '$lib/components/ui/sidebar/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
-	// import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { ChevronDown, ChevronsUpDownIcon } from 'lucide-svelte';
+	import { ChevronsUpDownIcon } from 'lucide-svelte';
+	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
+	import { toast } from 'svelte-sonner';
+	import SettingsButton from './SettingsButton.svelte';
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -32,7 +32,6 @@
 	let filterForEmpty = $state(false);
 	let schemaFields = $state<string[]>([]);
 	let showFiltersPopup = $state(false);
-	let showSettingsPopup = $state(false);
 
 	// This will hold the filenames actually displayed in the sidebar
 	let displayedFilenames = $state<string[]>([]);
@@ -43,14 +42,8 @@
 	// Upload-related state variables
 	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input
 	let uploading = $state(false); // Track upload status
-	let uploadMessage = $state(''); // Status messages for uploads
 
 	// Removed liked/unliked functionality as those fields don't exist
-
-	// Image preview hover state
-	let previewImage = $state<string | null>(null);
-	let previewPosition = $state<{ x: number; y: number }>({ x: 0, y: 0 });
-	let previewVisible = $state(false);
 
 	/**
 	 * Fetches the schema fields from the API
@@ -210,13 +203,11 @@
 		// Client-side validation for file type
 		const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml'];
 		if (!allowedTypes.includes(file.type)) {
-			uploadMessage = 'Error: Please select a valid image file (JPEG, PNG, GIF, or SVG)';
-			setTimeout(() => uploadMessage = '', 3000);
+			toast("Error: Please select a valid image file (JPEG, PNG, GIF, or SVG)");
 			return;
 		}
 
 		uploading = true;
-		uploadMessage = 'Uploading...';
 
 		try {
 			// Create FormData to send the file
@@ -230,8 +221,7 @@
 			});
 
 			if (response.ok) {
-				const result = await response.json();
-				uploadMessage = `✅ ${result.message}`;
+				toast("Uploaded successfully");
 				
 				// Refresh the image lists to show the new upload
 				await fetchImageLists();
@@ -239,16 +229,13 @@
 				// Clear the file input for future uploads
 				target.value = '';
 			} else {
-				const errorData = await response.json();
-				uploadMessage = `❌ Upload failed: ${errorData.message || 'Unknown error'}`;
+				toast("Upload failed");
 			}
 		} catch (error) {
 			console.error('Upload error:', error);
-			uploadMessage = '❌ Upload failed: Network error';
+			toast("Upload failed");
 		} finally {
 			uploading = false;
-			// Clear message after 3 seconds
-			setTimeout(() => uploadMessage = '', 3000);
 		}
 	}
 
@@ -260,75 +247,15 @@
 	function handleFiltersClose() {
 		showFiltersPopup = false;
 	}
-
-	/**
-	 * Handles mouse entering an image item to show preview
-	 * @param event - The mouse event
-	 * @param filename - The filename of the image to preview
-	 */
-	function handleImageMouseEnter(event: MouseEvent, filename: string) {
-		previewImage = filename;
-		updatePreviewPosition(event);
-		previewVisible = true;
-	}
-
-	/**
-	 * Handles mouse leaving an image item to hide preview
-	 */
-	function handleImageMouseLeave() {
-		previewVisible = false;
-		previewImage = null;
-	}
-
-	/**
-	 * Updates the preview position based on mouse coordinates
-	 * @param event - The mouse event
-	 */
-	function updatePreviewPosition(event: MouseEvent) {
-		const offset = 20;
-		const previewWidth = 200;
-		const previewHeight = 200;
-		const padding = 10;
-		
-		let x = event.clientX + offset;
-		let y = event.clientY + offset;
-		
-		// Check if preview would go off-screen horizontally
-		if (x + previewWidth > window.innerWidth - padding) {
-			x = event.clientX - previewWidth - offset;
-		}
-		
-		// Check if preview would go off-screen vertically
-		if (y + previewHeight > window.innerHeight - padding) {
-			y = event.clientY - previewHeight - offset;
-		}
-		
-		// Ensure preview doesn't go off-screen on left or top
-		x = Math.max(padding, x);
-		y = Math.max(padding, y);
-		
-		previewPosition = { x, y };
-	}
-
-	/**
-	 * Handles mouse movement over an image item to update preview position
-	 * @param event - The mouse event
-	 */
-	function handleImageMouseMove(event: MouseEvent) {
-		if (previewVisible) {
-			updatePreviewPosition(event);
-		}
-	}
 </script>
 
 <!-- <div class="sidebar" class:collapsed> -->
  <Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex flex-row justify-between items-center">
-			<h2>Image Manager</h2>
-			<Button variant="outline" size="icon" onclick={() => (showSettingsPopup = true)} title="Settings">
-				⚙️
-			</Button>
+			<h2 class="text-lg font-bold">Image Manager</h2>
+			<SettingsButton/>
+			<LightDarkModeButton />
 		</div>
 		<Sidebar.Separator />
 		<Sidebar.Group>
@@ -363,13 +290,6 @@
 						style="display: none;"
 						aria-label="Upload image file"
 					/>
-					
-					<!-- Upload status message -->
-					{#if uploadMessage}
-						<div class="upload-message">
-							{uploadMessage}
-						</div>
-					{/if}
 				</Collapsible.Content>
 			</Collapsible.Root>
 		</Sidebar.Group>
@@ -438,9 +358,6 @@
 						Unlinked
 					</Button>
 				</div>
-				<!-- <Button variant="outline" onclick={() => (showFiltersPopup = true)}>
-					🔍 Advanced Filters
-				</Button> -->
 			</div>
 		</Sidebar.Group>
 		<Sidebar.Separator />
@@ -456,9 +373,9 @@
 		<Sidebar.GroupLabel>
 			Images ({displayedFilenames.length})
 		</Sidebar.GroupLabel>
-		<ul class="file-list">
+		<ul>
 			{#if loading}
-				<li class="loading">Loading...</li>
+				<li class="italic flex justify-center">Loading...</li>
 			{:else}
 				{#if displayedFilenames.length > 0}
 					{#each displayedFilenames as filename (filename)}
@@ -466,199 +383,31 @@
 							href="/edit/{filename}?view={view}"
 							class:selected={$page.params.filename === filename}
 						>
-							<Button 
-								variant={$page.params.filename === filename ? 'default' : 'ghost'}
-								class="w-full justify-start"
-								onmouseenter={(e) => handleImageMouseEnter(e, filename)}
-								onmouseleave={handleImageMouseLeave}
-								onmousemove={handleImageMouseMove}
-							>
-								{getDisplayName(filename)}
-							</Button>
+							<HoverCard.Root openDelay={100} closeDelay={0}>
+								<HoverCard.Trigger>
+									<Button 
+										variant={$page.params.filename === filename ? 'default' : 'ghost'}
+										class="w-full justify-start"
+									>
+										{getDisplayName(filename)}
+									</Button>
+								</HoverCard.Trigger>
+								{#if $page.params.filename !== filename}
+									<HoverCard.Content side="right" align="center" class='pointer-events-none flex flex-col gap-2'>
+										<img src="/api/images/{filename}" alt="Preview of {getDisplayName(filename)}" />
+										<p class="text-sm text-gray-500 break-all">{filename}</p>
+									</HoverCard.Content>
+								{/if}
+							</HoverCard.Root>
 						</a>
 					{/each}
 				{:else}
-					<li class="no-images">No {view} images found.</li>
+					<li class="italic flex justify-center">No {view} images found.</li>
 				{/if}
 			{/if}
 		</ul>
 	</Sidebar.Group>
 </Sidebar.Content>
 </Sidebar.Root>
-
-<!-- Filters Popup -->
-<FiltersPopup 
-	bind:show={showFiltersPopup}
-	bind:searchQuery
-	bind:selectedField
-	bind:filterForEmpty
-	{schemaFields}
-	onApply={() => {}}
-	onClose={handleFiltersClose}
-/>
-
-<!-- Settings Popup -->
-<SettingsPopup 
-	bind:isOpen={showSettingsPopup}
-	onClose={() => (showSettingsPopup = false)}
-/>
-
-<!-- Image Preview Hover -->
-{#if previewVisible && previewImage}
-	<div 
-		class="image-preview"
-		style="left: {previewPosition.x}px; top: {previewPosition.y}px;"
-	>
-		<img 
-			src="/api/images/{previewImage}" 
-			alt="Preview of {getDisplayName(previewImage)}"
-			onerror={() => {
-				// Hide preview if image fails to load
-				previewVisible = false;
-			}}
-		/>
-		<div class="preview-info">
-			<span class="preview-name">{getDisplayName(previewImage)}</span>
-		</div>
-	</div>
-{/if}
-
 <style>
-	.search-controls {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.search-input-group {
-		position: relative;
-		display: flex;
-		align-items: center;
-	}
-	.search-checkbox {
-		display: flex;
-		align-items: center;
-	}
-
-	.search-checkbox label {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		cursor: pointer;
-		font-size: 0.9rem;
-		color: #333;
-	}
-	.filter-controls {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.view-toggle {
-		display: flex;
-		gap: 0.5rem;
-	}
-
-	.file-list {
-		list-style: none;
-		padding: 0;
-		margin: 0;
-		overflow-y: auto;
-		flex-grow: 1;
-	}
-
-	.file-list a {
-		text-decoration: none;
-		color: inherit;
-		display: block;
-	}
-
-	/* Removed liked-indicator styles as liked functionality was removed */
-
-	.loading,
-	.no-images {
-		padding: 1rem;
-		text-align: center;
-		color: #666;
-		font-style: italic;
-	}
-
-	.upload-message {
-		background: #f0f8ff;
-		border: 1px solid #cce5ff;
-		border-radius: 6px;
-		padding: 0.5rem;
-		margin-top: 0.5rem;
-		font-size: 0.9rem;
-		text-align: center;
-	}
-
-	/* Responsive adjustments */
-	@media (max-width: 768px) {
-		.search-controls,
-		.filter-controls {
-			flex-direction: row;
-			flex-wrap: wrap;
-		}
-	}
-
-	/* Image Preview Hover Styles */
-	.image-preview {
-		position: fixed;
-		z-index: 2000;
-		background: white;
-		border-radius: 12px;
-		box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 8px 25px rgba(0, 0, 0, 0.1);
-		overflow: hidden;
-		max-width: 200px;
-		max-height: 200px;
-		pointer-events: none;
-		transform: translateZ(0) scale(0.9);
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-		border: 2px solid #f0f0f0;
-		backdrop-filter: blur(10px);
-		animation: previewSlideIn 0.3s ease-out;
-	}
-
-	@keyframes previewSlideIn {
-		from {
-			opacity: 0;
-			transform: translateZ(0) scale(0.8) translateY(10px);
-		}
-		to {
-			opacity: 1;
-			transform: translateZ(0) scale(1) translateY(0);
-		}
-	}
-
-	.image-preview img {
-		width: 100%;
-		height: auto;
-		max-height: 150px;
-		object-fit: cover;
-		display: block;
-		transition: transform 0.3s ease;
-	}
-
-	.image-preview:hover img {
-		transform: scale(1.05);
-	}
-
-	.preview-info {
-		padding: 0.75rem;
-		background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-		border-top: 1px solid #e0e0e0;
-	}
-
-	.preview-name {
-		font-size: 0.85rem;
-		color: #333;
-		font-weight: 600;
-		display: block;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-		max-width: 100%;
-		letter-spacing: 0.25px;
-	}
 </style>
