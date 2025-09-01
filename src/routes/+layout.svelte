@@ -6,6 +6,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import Header from '$lib/components/Header.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { TOOLTIP_DELAY_MS } from '$lib/utils.js';
 
 	// let collapsed = $state(false);
 	let { children } = $props();
@@ -16,7 +18,9 @@
 	<AppSidebar />
 	<main class="w-full">
 		<Header />
-		{@render children?.()}
+		<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
+			{@render children?.()}
+		</Tooltip.Provider>
 	</main>
 </Sidebar.Provider>
 <Toaster />

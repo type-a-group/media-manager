@@ -10,10 +10,12 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { ChevronsUpDownIcon } from 'lucide-svelte';
+	import { ChevronsUpDownIcon, RefreshCwIcon, UploadIcon } from 'lucide-svelte';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
 	import { toast } from 'svelte-sonner';
 	import SettingsButton from './SettingsButton.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { TOOLTIP_DELAY_MS } from '$lib/utils.js';
 
 	let imageLists = $state<{
 		inBoth: string[];
@@ -247,6 +249,18 @@
 	function handleFiltersClose() {
 		showFiltersPopup = false;
 	}
+
+	/**
+	 * Manually refreshes the image lists using the current filters and view.
+	 * Use case: Triggered by the Sync button in the Filters section to reload files and listings.
+	 *
+	 * Future improvements:
+	 * - Optionally re-fetch schema while preserving the selected field if it still exists.
+	 * - Add visual loading indicator on the button itself.
+	 */
+	async function syncImageLists() {
+		await fetchImageLists();
+	}
 </script>
 
 <!-- <div class="sidebar" class:collapsed> -->
@@ -258,44 +272,15 @@
 			<LightDarkModeButton />
 		</div>
 		<Sidebar.Separator />
-		<Sidebar.Group>
-			<Collapsible.Root>
-				<div class="flex flex-row gap-2 items-center justify-between">
-					<Sidebar.GroupLabel>Upload</Sidebar.GroupLabel>
-					<Collapsible.Trigger class={buttonVariants({ variant: "ghost", size: "sm", class: "w-9 p-0" })}>
-						<ChevronsUpDownIcon />
-					</Collapsible.Trigger>
-				</div>
-				<Collapsible.Content>
-					<div class="flex flex-col gap-2">
-						<Button 
-							class="upload-btn" 
-							onclick={triggerFileUpload} 
-							disabled={uploading}
-							title="Upload new image"
-						>
-							{uploading ? '⏳ Uploading...' : '📁 Upload Image'}
-						</Button>
-						<Button variant="outline" onclick={fetchImageLists} title="Refresh lists">
-							🔄 Refresh
-						</Button>
-					</div>
-					<!-- Hidden file input for image uploads -->
-					<!-- TODO wtf is this input below -->
-					<input 
-						type="file" 
-						bind:this={fileInput}
-						onchange={handleFileUpload}
-						accept="image/*"
-						style="display: none;"
-						aria-label="Upload image file"
-					/>
-				</Collapsible.Content>
-			</Collapsible.Root>
-		</Sidebar.Group>
-
-		<!-- Search Section -->
-		<Sidebar.Separator />
+		<!-- Hidden file input for image uploads (triggered by header button) -->
+		<input 
+			type="file" 
+			bind:this={fileInput}
+			onchange={handleFileUpload}
+			accept="image/*"
+			style="display: none;"
+			aria-label="Upload image file"
+		/>
 		<Sidebar.Group>
 			<Collapsible.Root>
 				<div class="flex flex-row gap-2 items-center justify-between">
@@ -371,7 +356,43 @@
 	<!-- Image List -->
 	 <Sidebar.Group>
 		<Sidebar.GroupLabel>
-			Images ({displayedFilenames.length})
+			<div class="flex items-center justify-between gap-2 w-full">
+				<span class="ml-2">Images ({displayedFilenames.length})</span>
+				<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
+					<div class="flex items-center gap-2">
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<Button
+									variant="ghost"
+									size="icon"
+									title="Reload images"
+									onclick={syncImageLists}
+									disabled={loading}
+									class="h-7 w-7"
+								>
+									<RefreshCwIcon class="h-4 w-4" />
+								</Button>
+							</Tooltip.Trigger>
+							<Tooltip.Content>Sync image lists</Tooltip.Content>
+						</Tooltip.Root>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								<Button
+									variant="ghost"
+									size="icon"
+									title="Upload image"
+									onclick={triggerFileUpload}
+									disabled={uploading}
+									class="h-7 w-7"
+								>
+									<UploadIcon class="h-4 w-4" />
+								</Button>
+							</Tooltip.Trigger>
+							<Tooltip.Content>Upload image</Tooltip.Content>
+						</Tooltip.Root>
+					</div>
+				</Tooltip.Provider>
+			</div>
 		</Sidebar.GroupLabel>
 		<ul>
 			{#if loading}

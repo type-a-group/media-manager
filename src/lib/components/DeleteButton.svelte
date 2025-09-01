@@ -2,16 +2,30 @@
     import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button';
 	import { Trash } from 'lucide-svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
-	let { title, description, onDelete } = $props<{ title: string, description: string, onDelete: () => void }>();
+	let { title, description, onDelete, actionText = 'Delete', tooltip }: {
+		title: string;
+		description: string;
+		onDelete: () => void;
+		actionText?: string;
+		tooltip?: string;
+	} = $props();
 </script>
 
 <AlertDialog.Root>
-	<AlertDialog.Trigger>
-		<Button variant="outline" size="icon">
-			<Trash />
-		</Button>
-	</AlertDialog.Trigger>
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			<AlertDialog.Trigger>
+				<Button variant="outline" size="icon" title={tooltip ?? title}>
+					<Trash />
+				</Button>
+			</AlertDialog.Trigger>
+		</Tooltip.Trigger>
+		<Tooltip.Content side="top" sideOffset={6}>
+			{tooltip ?? title}
+		</Tooltip.Content>
+	</Tooltip.Root>
 	<AlertDialog.Content>
 		<AlertDialog.Title>{title}</AlertDialog.Title>
 		<AlertDialog.Description>
@@ -20,7 +34,7 @@
         <div class="flex justify-end">
             <form onsubmit={onDelete}>
                 <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-                <AlertDialog.Action type="submit">Delete</AlertDialog.Action>
+                <AlertDialog.Action type="submit">{actionText}</AlertDialog.Action>
             </form>
 		</div>
 	</AlertDialog.Content>

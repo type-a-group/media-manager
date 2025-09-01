@@ -11,6 +11,7 @@
 	import { filteredImageList } from '$lib/stores/imageList';
 	import { onMount, onDestroy } from 'svelte';
 	import MetadataButton from '$lib/components/MetadataButton.svelte';
+	import DeleteButton from '$lib/components/DeleteButton.svelte';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -284,6 +285,41 @@
 			})}`;
 		}
 	}
+
+	/**
+	 * Delete the current image and its properties, then navigate to a neighbor.
+	 * Chooses next item if available; otherwise previous; otherwise home.
+	 */
+	async function handleUnlinkImage() {
+		if (!filename) return;
+
+		const current = filename;
+		const nextCandidate = (() => {
+			if (currentList.length === 0 || currentIndex === -1) return null as string | null;
+			if (currentIndex < currentList.length - 1) return currentList[currentIndex + 1];
+			if (currentIndex > 0) return currentList[currentIndex - 1];
+			return null as string | null;
+		})();
+
+		try {
+			const res = await fetch(`/api/images/${current}`, { method: 'DELETE' });
+			if (!res.ok) {
+				toast("Failed to unlink image");
+				return;
+			}
+			toast("Image unlinked");
+			await fetchImageLists();
+			const view = $page.url.searchParams.get('view') || 'linked';
+			if (nextCandidate) {
+				goto(`/edit/${nextCandidate}?view=${view}`);
+			} else {
+				goto(`/?view=${view}`);
+			}
+		} catch (e) {
+			console.error('Delete failed', e);
+			toast("Unlink failed");
+		}
+	}
 </script>
 
 <div class="flex flex-wrap gap-4 p-4 items-start min-h-screen">
@@ -332,6 +368,15 @@
 					>
 						<ChevronRight />
 					</Button>
+					<div class="ml-auto inline-flex">
+						<DeleteButton
+							title="Unlink Image"
+							description="This will remove this image's properties only. The file remains on disk."
+							actionText="Unlink"
+							tooltip="Unlink this image (keep file)"
+							onDelete={handleUnlinkImage}
+						/>
+					</div>
 				</Card.Content>
 				</Card.Root>
 				{#if properties?.last_modified}

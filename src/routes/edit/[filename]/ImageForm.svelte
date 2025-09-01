@@ -12,10 +12,8 @@
 			superForm,
 		} from "sveltekit-superforms";
 	import { fetchSchema, fetchUISchema, type FormSchema } from "./imageform_schema.js";
-	// import { goto } from '$app/navigation';
 
 	let uiSchema = $state<Record<string, any> | null>(null);
-	// let imageUrl = $state<string | null>(null);
 	let saving = $state(false);
 	
 	let { data }: { data: { form: SuperValidated<Infer<FormSchema>>, filename: string } } =
@@ -60,9 +58,6 @@
 		})();
 	});
 	
-	// State for creating new properties on unlinked images
-	let newProperties = $state<Record<string, any>>({});
-
 	// Reactive computed values for form bindings
 	let imageLists = $state<{
 		inBoth: string[];
@@ -102,8 +97,6 @@
 	}
 
 	async function handleSubmit() {
-		// Otherwise, update existing properties
-		// if (!filename) return;
 		saving = true;
         
         // Build payload from current form data value
@@ -144,72 +137,75 @@
 	}
 </script>
 
-    <!-- <form onsubmit={handleSubmit} class="flex flex-col gap-2"> -->
 <form method="POST" use:enhance action="?/default">
     {#if uiSchema}
-        <!-- Dynamic fields -->
-        {#each Object.entries(uiSchema) as [fieldName, fieldProps]}
-            {#if fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
-                <Form.Field {form} name={fieldName as never}>
-                    <Form.Control>
-                        {#snippet children({ props })}
-                            {#if fieldProps.type === 'boolean'}
-                                <div class="flex flex-row gap-2 items-center h-full w-full justify-between">
-                                    <div class="flex flex-row gap-2 items-center h-full w-full">
-                                        <Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
-                                        <Checkbox
-                                            class="form-checkbox"
-                                            {...props}
-                                            bind:checked={$formData[fieldName as never]}
-                                        />
-                                    </div>
-                                    <DeleteButton
-                                        title="Delete Field"
-                                        description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
-                                        onDelete={() => handleDeleteField(fieldName)}
-                                    />
-                                </div>
-                            {:else if fieldProps.type === 'number'}
-                                <div>
-                                    <Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
-                                    <div class="flex flex-row gap-2 items-center h-full w-full">
-                                        <Input
-                                            type="number"
-                                            class="w-full"
-                                            {...props}
-                                            bind:value={$formData[fieldName as never]}
-                                        />
-                                        <DeleteButton
-                                            title="Delete Field"
-                                            description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
-                                            onDelete={() => handleDeleteField(fieldName)}
-                                        />
-                                    </div>
-                                </div>
-                            {:else}
-                                <div>
-                                    <Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
-                                    <div class="flex flex-row gap-2 items-center h-full w-full">
-                                    <Input
-                                        type="text"
-                                        class=""
-                                        {...props}
-                                        bind:value={$formData[fieldName as never]}
-                                        placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
-                                    />
-                                    <DeleteButton
-                                        title="Delete Field"
-                                        description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
-                                        onDelete={() => handleDeleteField(fieldName)}
-                                    />
-                                    </div>
-                                </div>
-                            {/if}
-                        {/snippet}
-                    </Form.Control>
-                </Form.Field>
-            {/if}
-        {/each}
+		<div class="flex flex-col gap-2 h-full w-full">
+			{#each Object.entries(uiSchema) as [fieldName, fieldProps]}
+				{#if fieldName !== 'file_name' && fieldName !== 'last_modified' && fieldName !== 'default'}
+					<Form.Field {form} name={fieldName as never}>
+						<Form.Control>
+							{#snippet children({ props })}
+								{#if fieldProps.type === 'boolean'}
+									<div class="flex flex-row gap-2 items-center h-full w-full justify-between">
+										<div class="flex flex-row gap-2 items-center h-full w-full">
+											<Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
+											<Checkbox
+												class="form-checkbox"
+												{...props}
+												bind:checked={$formData[fieldName as never]}
+											/>
+										</div>
+										<DeleteButton
+											title="Delete Field"
+											description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
+											onDelete={() => handleDeleteField(fieldName)}
+											tooltip="Delete this field from schema"
+										/>
+									</div>
+								{:else if fieldProps.type === 'number'}
+									<div>
+										<Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
+										<div class="flex flex-row gap-2 items-center h-full w-full">
+											<Input
+												type="number"
+												class="w-full"
+												{...props}
+												bind:value={$formData[fieldName as never]}
+											/>
+											<DeleteButton
+												title="Delete Field"
+												description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
+												onDelete={() => handleDeleteField(fieldName)}
+												tooltip="Delete this field from schema"
+											/>
+										</div>
+									</div>
+								{:else}
+									<div>
+										<Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
+										<div class="flex flex-row gap-2 items-center h-full w-full">
+										<Input
+											type="text"
+											class=""
+											{...props}
+											bind:value={$formData[fieldName as never]}
+											placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
+										/>
+										<DeleteButton
+											title="Delete Field"
+											description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
+											onDelete={() => handleDeleteField(fieldName)}
+											tooltip="Delete this field from schema"
+										/>
+										</div>
+									</div>
+								{/if}
+							{/snippet}
+						</Form.Control>
+					</Form.Field>
+				{/if}
+			{/each}
+		</div>
     {/if}
     <div class="flex flex-row gap-2 items-center h-full w-full justify-center">
         <Button variant="default" type="submit" disabled={saving}>

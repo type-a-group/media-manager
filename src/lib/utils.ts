@@ -5,6 +5,8 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
+export const TOOLTIP_DELAY_MS = 400;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
