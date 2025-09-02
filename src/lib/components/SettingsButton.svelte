@@ -72,7 +72,7 @@
 	<Dialog.Content>
 		<Dialog.Title>Settings</Dialog.Title>
 		<Dialog.Description>
-			Manage your settings here.
+			Manage your settings here. (WIP)
 		</Dialog.Description>
 		<div class="flex flex-col gap-2">
 			<h3 class="text-lg font-bold">Navigation</h3>

@@ -22,12 +22,12 @@ export const GET: RequestHandler = ({ params }) => {
 		if (imageProperties) {
 			return json(imageProperties);
 		} else {
-			// Return a default object if not found, as per user story
+			// Return a default object if not found to avoid 404 noise for unlinked images
 			const defaultData = jsonImagesData.find((img: { default: boolean }) => img.default === true);
 			if (defaultData) {
 				return json({ ...defaultData, file_name: filename, default: false });
 			}
-			throw error(404, { message: 'Image properties not found and no default available' });
+			return json({ file_name: filename, default: true });
 		}
 	} catch (err) {
 		console.error(err);

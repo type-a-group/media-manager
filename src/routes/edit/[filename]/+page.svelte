@@ -20,6 +20,7 @@
 		} from "sveltekit-superforms";
 	import { fetchUISchema, type FormSchema } from "./imageform_schema.js";
 	import ImageForm from './ImageForm.svelte';
+	import NewFieldForm from './NewFieldForm.svelte';
 
 	// let filename = $derived($page.params.filename);
 	let properties = $state<Record<string, any> | null>(null);
@@ -32,11 +33,6 @@
 	let filename = $derived(data.filename);
 
 	let showNewFieldForm = $state(false);
-	let newFieldName = $state('');
-	let newFieldType = $state('string');
-	let newFieldDefaultString = $state('');
-	let newFieldDefaultNumber = $state(0);
-	let newFieldDefaultBoolean = $state(false);
 	
 	let showMetadataPopup = $state(false);
 
@@ -210,54 +206,38 @@
 		return unlinkedList[currentUnlinkedIndex + 1] || null;
 	}
 
-	async function handleAddNewField() {
-		// Basic validation
-		if (!newFieldName.trim()) {
-			alert('Field name is required.');
-			return;
-		}
+	/**
+	 * Handles successful field addition by updating the local schema and properties.
+	 * Called when the NewFieldForm component successfully creates a new field.
+	 * 
+	 * @param fieldName - The name of the newly created field
+	 * @param fieldType - The type of the newly created field
+	 * @param defaultValue - The default value for the newly created field
+	 */
+	async function handleFieldAdded(fieldName: string, fieldType: string, defaultValue: any) {
+		try {
+			// Refresh the schema from the server to get the latest changes
+			const updatedSchema = await fetchUISchema();
+			schema = updatedSchema;
 
-		let defaultValue: string | number | boolean;
-		switch (newFieldType) {
-			case 'boolean':
-				defaultValue = newFieldDefaultBoolean;
-				break;
-			case 'number':
-				defaultValue = newFieldDefaultNumber;
-				break;
-			default:
-				defaultValue = newFieldDefaultString;
-		}
-
-		const response = await fetch('/api/schema', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				fieldName: newFieldName,
-				fieldType: newFieldType,
-				defaultValue: defaultValue
-			})
-		});
-
-		if (response.ok) {
-			const result = await response.json();
-			schema = result.schema;
-
+			// Add the new field to current properties if they exist
 			if (properties) {
-				properties[newFieldName] = defaultValue;
+				properties[fieldName] = defaultValue;
 			}
 
-			// Reset form, hide it
+			// Hide the form
 			showNewFieldForm = false;
-			newFieldName = '';
-			newFieldType = 'string';
-			newFieldDefaultString = '';
-			newFieldDefaultNumber = 0;
-			newFieldDefaultBoolean = false;
-		} else {
-			const result = await response.json();
-			alert(`Error adding field: ${result.message}`);
+		} catch (error) {
+			console.error('Error refreshing schema after field addition:', error);
+			toast.error('Field added but failed to refresh interface. Please reload the page.');
 		}
+	}
+
+	/**
+	 * Handles form cancellation by hiding the new field form.
+	 */
+	function handleFieldFormCancel() {
+		showNewFieldForm = false;
 	}
 
 	function formatLastModified(timestamp: string): string {
@@ -388,36 +368,11 @@
 									<Popover.Trigger class={buttonVariants({ variant: 'outline' })}>
 										Create New Field
 									</Popover.Trigger>
-									<Popover.Content class="w-60">
-										<div class="flex flex-col gap-2">
-											<h4>Create New Field</h4>
-											<Label>Field Name</Label>
-											<Input type="text" bind:value={newFieldName} />
-											<Label>Field Type</Label>
-												<Select.Root type="single" bind:value={newFieldType}>
-													<Select.Trigger class="w-full">
-														{newFieldType}
-													</Select.Trigger>
-													<Select.Content>
-														<Select.Item value="string">String</Select.Item>
-														<Select.Item value="number">Number</Select.Item>
-														<Select.Item value="boolean">Boolean</Select.Item>
-													</Select.Content>
-												</Select.Root>
-											{#if newFieldType === 'boolean'}
-												<div class="flex flex-row gap-2">
-													<Label>Default Value: </Label>
-													<Checkbox bind:checked={newFieldDefaultBoolean} class="form-checkbox" />
-												</div>
-											{:else if newFieldType === 'number'}
-												<Label>Default Value: </Label>
-												<Input type="number" bind:value={newFieldDefaultNumber} class="form-input" />
-											{:else}
-												<Label>Default Value: </Label>
-												<Input type="text" bind:value={newFieldDefaultString} class="form-input" />
-											{/if}
-											<Button onclick={handleAddNewField}>Add Field</Button>
-										</div>
+									<Popover.Content class="w-80">
+										<NewFieldForm 
+											onFieldAdded={handleFieldAdded}
+											onCancel={handleFieldFormCancel}
+										/>
 									</Popover.Content>
 								</Popover.Root>
 							</div>
