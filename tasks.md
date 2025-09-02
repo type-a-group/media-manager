@@ -5,20 +5,13 @@
 - im thinking we can try to get it to comment on code that might be confusing AS its making it
 
 # General
+- when you save and link a previously unlinked image, move onto the next unlinked image
 - optionally organize by timestamp
-- search/filter results
-    - add an option to search by field
-    - make this fast
-    - make sure prev/next buttons go through this - this needs some state reorganization to make it work, I don't know if using a store is ok or messy just yet
 - filtering - filter for images with missing fields
 - templating - apply a change to many images - some sort of menu to mass select images?
     - do we only do this for unlinked images?
 - view image metadata
     - optionally delete or modify image metadata
-    - able to grab metadata from image (eg camera information)
-    - able to display metadata also
-- Some kind of way to preview images on list
-    - Show thumbnail on hover or just on the side already
 -  Verbose mode: like not compact at all, images are displayed as the sidebar, so you can visually search through the data
     - Option to look at the images in a larger grid view (like lightroom) and select one in case you REALLY need to search for something visually
 
