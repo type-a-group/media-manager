@@ -137,7 +137,7 @@
 	}
 </script>
 
-<form method="POST" use:enhance action="?/default">
+<form method="POST" use:enhance action="?/default" class="flex flex-col gap-2">
     {#if uiSchema}
 		<div class="flex flex-col gap-2 h-full w-full">
 			{#each Object.entries(uiSchema) as [fieldName, fieldProps]}
@@ -163,7 +163,7 @@
 										/>
 									</div>
 								{:else if fieldProps.type === 'number'}
-									<div>
+									<div class="flex flex-col gap-2">
 										<Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
 										<div class="flex flex-row gap-2 items-center h-full w-full">
 											<Input
@@ -181,22 +181,22 @@
 										</div>
 									</div>
 								{:else}
-									<div>
+									<div class="flex flex-col gap-2">
 										<Form.Label>{fieldName === 'image_name' ? 'Image Name' : fieldName}</Form.Label>
 										<div class="flex flex-row gap-2 items-center h-full w-full">
-										<Input
-											type="text"
-											class=""
-											{...props}
-											bind:value={$formData[fieldName as never]}
-											placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
-										/>
-										<DeleteButton
-											title="Delete Field"
-											description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
-											onDelete={() => handleDeleteField(fieldName)}
-											tooltip="Delete this field from schema"
-										/>
+											<Input
+												type="text"
+												class=""
+												{...props}
+												bind:value={$formData[fieldName as never]}
+												placeholder={fieldName === 'image_name' ? 'Custom display name' : ''}
+											/>
+											<DeleteButton
+												title="Delete Field"
+												description={`Are you sure you want to delete the "${fieldName}" field? This will remove it from all images.`}
+												onDelete={() => handleDeleteField(fieldName)}
+												tooltip="Delete this field from schema"
+											/>
 										</div>
 									</div>
 								{/if}

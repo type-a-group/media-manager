@@ -12,6 +12,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import MetadataButton from '$lib/components/MetadataButton.svelte';
 	import DeleteButton from '$lib/components/DeleteButton.svelte';
+	import { Eraser } from 'lucide-svelte';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
@@ -327,35 +328,42 @@
 						</Card.Title>
 					</Card.Header>
 				<Card.Content>
+					<div class="flex flex-col gap-2">
 					<ImageForm {data} />
-					<Button
-						variant="secondary"
-						size="icon"
-						onclick={() => navigate('prev')}
-						disabled={currentList.length === 0 || currentIndex <= 0}
-					>
-						<ChevronLeft />
-					</Button>
-					<Button
-						variant="secondary"
-						size="icon"
-						onclick={() => navigate('next')}
-						disabled={
-							currentList.length === 0 ||
-							currentIndex === -1 ||
-							currentIndex >= currentList.length - 1
-						}
-					>
-						<ChevronRight />
-					</Button>
-					<div class="ml-auto inline-flex">
-						<DeleteButton
-							title="Unlink Image"
-							description="This will remove this image's properties only. The file remains on disk."
-							actionText="Unlink"
-							tooltip="Unlink this image (keep file)"
-							onDelete={handleUnlinkImage}
-						/>
+						<div class="flex flex-row gap-2">
+							<div>
+								<Button
+									variant="secondary"
+									size="icon"
+									onclick={() => navigate('prev')}
+									disabled={currentList.length === 0 || currentIndex <= 0}
+								>
+									<ChevronLeft />
+								</Button>
+								<Button
+									variant="secondary"
+									size="icon"
+									onclick={() => navigate('next')}
+									disabled={
+										currentList.length === 0 ||
+										currentIndex === -1 ||
+										currentIndex >= currentList.length - 1
+									}
+								>
+									<ChevronRight />
+								</Button>
+							</div>
+							<div class="ml-auto inline-flex">
+								<DeleteButton
+									title="Unlink Image"
+									description="This will remove this image's properties only. The file remains on disk."
+									actionText="Unlink"
+									tooltip="Unlink this image (keep file)"
+									onDelete={handleUnlinkImage}
+									icon={Eraser}
+								/>
+							</div>
+						</div>
 					</div>
 				</Card.Content>
 				</Card.Root>

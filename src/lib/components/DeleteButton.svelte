@@ -4,12 +4,13 @@
 	import { Trash } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
-	let { title, description, onDelete, actionText = 'Delete', tooltip }: {
+	let { title, description, onDelete, actionText = 'Delete', tooltip, icon: Icon }: {
 		title: string;
 		description: string;
 		onDelete: () => void;
 		actionText?: string;
 		tooltip?: string;
+		icon?: typeof Trash;
 	} = $props();
 </script>
 
@@ -18,7 +19,11 @@
 		<Tooltip.Trigger>
 			<AlertDialog.Trigger>
 				<Button variant="outline" size="icon" title={tooltip ?? title}>
-					<Trash />
+					{#if Icon}
+						<Icon />
+					{:else}
+						<Trash />
+					{/if}
 				</Button>
 			</AlertDialog.Trigger>
 		</Tooltip.Trigger>
