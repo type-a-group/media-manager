@@ -21,3 +21,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Build fallback (when MEDIA_MANAGER_ROOT is not set)
+.media-manager-build

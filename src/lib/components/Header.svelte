@@ -4,7 +4,7 @@
 </script>
 
 <header class="flex flex-row justify-between items-center">
-	<h2 class="text-lg font-bold pl-2">Image Manager</h2>
+	<h2 class="text-lg font-bold pl-2">Media Manager</h2>
 	<div class="flex flex-row gap-2">
         <Sidebar.Trigger/>
 	</div>

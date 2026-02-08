@@ -2,20 +2,21 @@ import { error, type RequestHandler, json } from '@sveltejs/kit';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const imagesDirPath = 'src/lib/assets/images';
-const imageDataPath = 'src/lib/assets/image-data.json';
+import { imageRepo } from '$lib/server/imageRepo.js';
+import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 
 export const GET: RequestHandler = ({ params }) => {
 	const { filename } = params;
 	if (!filename) {
 		throw error(400, 'Filename is required');
 	}
-	const filePath = path.join(imagesDirPath, filename);
+	const safe = assertSafeImageFilename(filename);
+	const filePath = path.join(imageRepo.paths.imagesDir, safe);
 
 	try {
 		if (fs.existsSync(filePath)) {
 			const imageBuffer = fs.readFileSync(filePath);
-			const fileExtension = path.extname(filename).toLowerCase();
+			const fileExtension = path.extname(safe).toLowerCase();
 			let contentType = 'application/octet-stream'; // Default content type
 
 			switch (fileExtension) {
@@ -42,8 +43,7 @@ export const GET: RequestHandler = ({ params }) => {
 		} else {
 			throw error(404, 'Image not found');
 		}
-	} catch (err) {
-		console.error(err);
+	} catch {
 		throw error(500, 'Server error');
 	}
 }; 
@@ -55,22 +55,14 @@ export const DELETE: RequestHandler = async ({ params }) => {
     }
 
     try {
-        // Only unlink: remove properties entry from image-data.json if present
-        if (fs.existsSync(imageDataPath)) {
-            const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
-            const allData = JSON.parse(jsonData);
-            const imagesArray = Array.isArray(allData.images) ? allData.images : [];
-
-            const filtered = imagesArray.filter((img: { file_name: string }) => img.file_name !== filename);
-            if (filtered.length !== imagesArray.length) {
-                allData.images = filtered;
-                fs.writeFileSync(imageDataPath, JSON.stringify(allData, null, 2));
-            }
-        }
+		const safe = assertSafeImageFilename(filename);
+		const rec = await imageRepo.getRecordByFilename(safe);
+		if (rec) {
+			await imageRepo.unlinkById(rec.id);
+		}
 
         return json({ success: true, unlinked: true });
-    } catch (err) {
-        console.error(err);
+    } catch {
         throw error(500, 'Failed to unlink image');
     }
 };

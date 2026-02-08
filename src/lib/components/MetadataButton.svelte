@@ -6,33 +6,43 @@
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { ChevronsUpDownIcon } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	
-	let { filename = null } = $props();
-	
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import { toast } from 'svelte-sonner';
+	import {
+		apiGetFileMetadataById,
+		apiGetFileMetadataByIdForType,
+		apiStripFileMetadataById,
+		apiStripFileMetadataByIdForType
+	} from '$lib/api/client.js';
+	import type { ImageId } from '$lib/core/ids.js';
+
+	/** Image record id (required for fetching by-id). Media type id when in media-type context. Filename for display only. */
+	let { id = undefined as ImageId | undefined, typeId = undefined as string | undefined, filename = undefined as string | undefined } = $props();
+
 	let isOpen = $state(false);
 	let metadata = $state<Record<string, any> | null>(null);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	
+	let stripLoading = $state(false);
+	let confirmClearAllOpen = $state(false);
+	let confirmClearGpsOpen = $state(false);
+
 	/**
-	 * Fetch metadata from the API when filename changes
-	 * Handles loading states and error cases
-	 * 
-	 * @param filename - The image filename to fetch metadata for
+	 * Fetch metadata from the API by image id (and optional typeId).
+	 * Uses type-scoped or default file-metadata endpoint.
+	 *
+	 * @param imageId - Image record id
+	 * @param mediaTypeId - Optional media type id for type-scoped API
 	 */
-	async function fetchMetadata(filename: string) {
+	async function fetchMetadata(imageId: ImageId, mediaTypeId?: string) {
 		loading = true;
 		error = null;
 		metadata = null;
-		
+
 		try {
-			const response = await fetch(`/api/images/file-metadata/${filename}`);
-			
-			if (!response.ok) {
-				throw new Error(`Failed to fetch metadata: ${response.status}`);
-			}
-			
-			metadata = await response.json();
+			metadata = mediaTypeId
+				? await apiGetFileMetadataByIdForType(mediaTypeId, imageId)
+				: await apiGetFileMetadataById(imageId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to fetch metadata';
 			console.error('Error fetching metadata:', err);
@@ -68,9 +78,20 @@
 	}
 	
 	/**
+	 * Human-readable format name for an extension (e.g. .jpg -> JPEG).
+	 */
+	function formatLabel(ext: string): string {
+		const e = (ext || '').toLowerCase();
+		if (e === '.jpg' || e === '.jpeg') return 'JPEG';
+		if (e === '.png') return 'PNG';
+		if (e === '.webp') return 'WebP';
+		return ext || 'unknown';
+	}
+
+	/**
 	 * Get display label for metadata keys
 	 * Converts camelCase to readable format
-	 * 
+	 *
 	 * @param key - The metadata key
 	 * @returns Human-readable label
 	 */
@@ -106,10 +127,52 @@
 		return labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 	}
 	
-	// Fetch metadata when filename changes and popup is open
+	/**
+	 * Strip all metadata from the image, then refetch.
+	 */
+	async function handleStripAll() {
+		if (!id) return;
+		stripLoading = true;
+		confirmClearAllOpen = false;
+		try {
+			if (typeId) {
+				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'all');
+			} else {
+				metadata = await apiStripFileMetadataById(id, 'all');
+			}
+			toast.success('All metadata removed');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to strip metadata');
+		} finally {
+			stripLoading = false;
+		}
+	}
+
+	/**
+	 * Strip only GPS/location metadata, then refetch.
+	 */
+	async function handleStripGps() {
+		if (!id) return;
+		stripLoading = true;
+		confirmClearGpsOpen = false;
+		try {
+			if (typeId) {
+				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'gps');
+			} else {
+				metadata = await apiStripFileMetadataById(id, 'gps');
+			}
+			toast.success('GPS metadata removed');
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to strip GPS metadata');
+		} finally {
+			stripLoading = false;
+		}
+	}
+
+	// Fetch metadata when dialog opens and we have an id
 	$effect(() => {
-		if (isOpen && filename) {
-			fetchMetadata(filename);
+		if (isOpen && id) {
+			fetchMetadata(id, typeId);
 		}
 	});
 </script>
@@ -117,10 +180,12 @@
 <Dialog.Root bind:open={isOpen}>
 	<Tooltip.Root>
 		<Tooltip.Trigger>
-			<Dialog.Trigger>
-				<Button variant="outline" size="icon" title="Metadata">
-					<InfoIcon />
-				</Button>
+			<Dialog.Trigger
+				class={buttonVariants({ variant: 'outline', size: 'icon' })}
+				title="Metadata"
+				aria-label="Metadata"
+			>
+				<InfoIcon />
 			</Dialog.Trigger>
 		</Tooltip.Trigger>
 		<Tooltip.Content side="top" sideOffset={6}>View file metadata</Tooltip.Content>
@@ -130,6 +195,48 @@
 		<Dialog.Description>
 			View detailed information about the image file.
 		</Dialog.Description>
+		<div class="flex flex-wrap gap-2 py-2">
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={stripLoading || loading || !metadata}
+				onclick={() => (confirmClearAllOpen = true)}
+			>
+				Clear all metadata
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={stripLoading || loading || !metadata}
+				onclick={() => (confirmClearGpsOpen = true)}
+			>
+				Clear GPS only
+			</Button>
+		</div>
+		<AlertDialog.Root bind:open={confirmClearAllOpen}>
+			<AlertDialog.Content>
+				<AlertDialog.Title>Clear all metadata</AlertDialog.Title>
+				<AlertDialog.Description>
+					Remove all EXIF and other metadata from the file? This cannot be undone.
+				</AlertDialog.Description>
+				<div class="flex justify-end gap-2 mt-4">
+					<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+					<Button type="button" onclick={handleStripAll}>Clear all</Button>
+				</div>
+			</AlertDialog.Content>
+		</AlertDialog.Root>
+		<AlertDialog.Root bind:open={confirmClearGpsOpen}>
+			<AlertDialog.Content>
+				<AlertDialog.Title>Clear GPS only</AlertDialog.Title>
+				<AlertDialog.Description>
+					Remove only GPS/location data? Other metadata will be kept.
+				</AlertDialog.Description>
+				<div class="flex justify-end gap-2 mt-4">
+					<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+					<Button type="button" onclick={handleStripGps}>Clear GPS</Button>
+				</div>
+			</AlertDialog.Content>
+		</AlertDialog.Root>
 		<ScrollArea class="h-[500px]">
 		<div class="space-y-6">
 			{#if loading}
@@ -151,6 +258,24 @@
 				</div>
 			{:else if metadata}
 				<div class="space-y-6">
+					<!-- Warning when file extension doesn't match image data -->
+					{#if metadata.extensionMismatch && metadata.fileExtension != null && metadata.detectedFormatExtension != null}
+						<div class="rounded-md p-4 border border-amber-500/50 bg-amber-500/10">
+							<div class="flex">
+								<svg class="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mr-2" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+									<path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+								</svg>
+								<div>
+									<h3 class="text-sm font-medium text-amber-800 dark:text-amber-200">Extension doesn't match image data</h3>
+									<p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+										This file has a <code class="px-1 py-0.5 rounded bg-amber-500/20 text-xs">{metadata.fileExtension}</code> extension
+										but the content appears to be {formatLabel(metadata.detectedFormatExtension)}.
+										Consider renaming the file to avoid compatibility issues with some tools.
+									</p>
+								</div>
+							</div>
+						</div>
+					{/if}
 					<!-- Info banner about image format -->
 					<div class="rounded-md p-4 border bg-accent/20">
 						<div class="flex">
@@ -293,6 +418,11 @@
 										</dd>
 									</div>
 								</div>
+							</div>
+						{:else if metadata.exif && Object.keys(metadata.exif).length > 0}
+							<div class="rounded-md p-4 bg-muted">
+								<p class="text-xs text-muted-foreground mb-2">Parsed tags (exiftool-vendored; no raw EXIF buffer). All metadata read from file:</p>
+								<pre class="text-xs text-foreground whitespace-pre-wrap max-h-64 overflow-y-auto">{formatValue(metadata.exif)}</pre>
 							</div>
 						{:else}
 							<div class="rounded-md p-4 border bg-muted">

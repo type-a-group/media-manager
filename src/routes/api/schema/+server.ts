@@ -1,103 +1,90 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import * as fs from 'node:fs';
-
-const imageDataPath = 'src/lib/assets/image-data.json';
-const schemaPath = 'src/lib/assets/schema.json';
+import { imageRepo } from '$lib/server/imageRepo.js';
+import {
+	AddFieldRequestSchema,
+	DeleteFieldRequestSchema,
+	UpdateFieldRequestSchema
+} from '$lib/core/types.js';
+import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 
 // GET handler to retrieve the schema
-export const GET: RequestHandler = () => {
-    try {
-        const schemaData = fs.readFileSync(schemaPath, 'utf-8');
-        const data = JSON.parse(schemaData);
-        return json(data.schema || {});
-    } catch (err) {
-        console.error(err);
-        throw error(500, { message: 'Failed to read schema' });
-    }
+export const GET: RequestHandler = async () => {
+	try {
+		const schema = await imageRepo.getSchema();
+		return json(schema);
+	} catch {
+		throw error(500, { message: 'Failed to read schema' });
+	}
 };
 
 // POST handler to add a new field to the schema
 export const POST: RequestHandler = async ({ request }) => {
-    try {
-        const { fieldName, fieldType, defaultValue } = await request.json();
+	try {
+		const body = await request.json();
+		const parsed = AddFieldRequestSchema.safeParse(body);
+		if (!parsed.success) throw error(400, 'Invalid schema field payload');
 
-        if (!fieldName || !fieldType) {
-            throw error(400, 'Field name and type are required');
-        }
+		const result = await imageRepo.addSchemaField(
+			parsed.data.fieldName,
+			parsed.data.fieldType,
+			parsed.data.defaultValue,
+			parsed.data.options,
+			parsed.data.itemTypes,
+			parsed.data.multiselect
+		);
+		return json({ success: true, schema: result.schema });
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err as any;
+		throw error(500, { message: 'Failed to update schema' });
+	}
+};
 
-        // Read schema
-        const schemaData = fs.readFileSync(schemaPath, 'utf-8');
-        const schemaJson = JSON.parse(schemaData);
+// PATCH handler to update/rename a field in the schema
+export const PATCH: RequestHandler = async ({ request }) => {
+	try {
+		const body = await request.json();
+		const parsed = UpdateFieldRequestSchema.safeParse(body);
+		if (!parsed.success) throw error(400, 'Invalid update payload');
 
-		// Add new field to schema
-		schemaJson.schema[fieldName] = {
-			type: fieldType,
-			removable: true, // New fields are always removable
-			defaultValue: defaultValue
-		};
+		const key = parsed.data.fieldName;
+		if (isProtectedSchemaKey(key)) throw error(400, 'This field cannot be modified');
 
-        fs.writeFileSync(schemaPath, JSON.stringify(schemaJson, null, 2));
-
-        // Read image data and update all images
-        const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
-        const data = JSON.parse(jsonData);
-
-        data.images.forEach((image: any) => {
-            image[fieldName] = defaultValue;
-        });
-
-        fs.writeFileSync(imageDataPath, JSON.stringify(data, null, 2));
-
-         return json({ success: true, schema: schemaJson.schema });
-    } catch (err) {
-        console.error(err);
-        throw error(500, { message: 'Failed to update schema' });
-    }
+		const result = await imageRepo.updateSchemaField(key, {
+			newKey: parsed.data.newFieldName,
+			type: parsed.data.fieldType,
+			defaultValue: parsed.data.defaultValue,
+			options: parsed.data.options,
+			itemTypes: parsed.data.itemTypes,
+			multiselect: parsed.data.multiselect
+		});
+		return json({ success: true, schema: result.schema });
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err as any;
+		const msg = (err as any)?.message;
+		if (msg === 'Field not found') throw error(404, 'Field not found in schema');
+		if (msg === 'Field not modifiable') throw error(400, 'This field cannot be modified');
+		throw error(500, { message: 'Failed to update field' });
+	}
 };
 
 // DELETE handler to remove a field from the schema
 export const DELETE: RequestHandler = async ({ request }) => {
-    try {
-        const { fieldName } = await request.json();
+	try {
+		const body = await request.json();
+		const parsed = DeleteFieldRequestSchema.safeParse(body);
+		if (!parsed.success) throw error(400, 'Invalid delete payload');
 
-        if (!fieldName) {
-            throw error(400, 'Field name is required');
-        }
+		const key = parsed.data.fieldName;
+		if (isProtectedSchemaKey(key)) throw error(400, 'This field cannot be removed');
 
-        // Read schema
-        const schemaData = fs.readFileSync(schemaPath, 'utf-8');
-        const schemaJson = JSON.parse(schemaData);
-
-        if (!schemaJson.schema[fieldName]) {
-            throw error(404, 'Field not found in schema');
-        }
-
-        if (schemaJson.schema[fieldName].removable === false) {
-            throw error(400, 'This field cannot be removed');
-        }
-
-        // Remove field from schema
-        delete schemaJson.schema[fieldName];
-
-        fs.writeFileSync(schemaPath, JSON.stringify(schemaJson, null, 2));
-
-        // Remove field from all existing images
-        const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
-        const data = JSON.parse(jsonData);
-
-        data.images.forEach((image: any) => {
-            delete image[fieldName];
-        });
-
-        fs.writeFileSync(imageDataPath, JSON.stringify(data, null, 2));
-
-        return json({ success: true, schema: schemaJson.schema });
-    } catch (err) {
-        console.error(err);
-        if (err && typeof err === 'object' && 'status' in err) {
-            throw err;
-        }
-        throw error(500, { message: 'Failed to delete field' });
-    }
+		const result = await imageRepo.deleteSchemaField(key, parsed.data.removeFromImages);
+		return json({ success: true, schema: result.schema });
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err as any;
+		const msg = (err as any)?.message;
+		if (msg === 'Field not found') throw error(404, 'Field not found in schema');
+		if (msg === 'Field not removable') throw error(400, 'This field cannot be removed');
+		throw error(500, { message: 'Failed to delete field' });
+	}
 };

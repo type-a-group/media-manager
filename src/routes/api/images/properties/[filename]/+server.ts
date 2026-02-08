@@ -1,38 +1,22 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import * as fs from 'node:fs';
-
-const imageDataPath = 'src/lib/assets/image-data.json';
+import { imageRepo } from '$lib/server/imageRepo.js';
+import { assertSafeImageFilename } from '$lib/storage/filenames.js';
+import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
 
 export const GET: RequestHandler = ({ params }) => {
 	const { filename } = params;
 	if (!filename) {
 		throw error(400, 'Filename is required');
 	}
+	const safe = assertSafeImageFilename(filename);
 
-	try {
-		const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
-		const allData = JSON.parse(jsonData);
-		const jsonImagesData = allData.images;
-
-		const imageProperties = jsonImagesData.find(
-			(img: { file_name: string }) => img.file_name === filename
-		);
-
-		if (imageProperties) {
-			return json(imageProperties);
-		} else {
-			// Return a default object if not found to avoid 404 noise for unlinked images
-			const defaultData = jsonImagesData.find((img: { default: boolean }) => img.default === true);
-			if (defaultData) {
-				return json({ ...defaultData, file_name: filename, default: false });
-			}
-			return json({ file_name: filename, default: true });
-		}
-	} catch (err) {
-		console.error(err);
-		throw error(500, { message: 'Failed to read or parse image properties' });
-	}
+	return imageRepo
+		.ensureRecordForFilename(safe)
+		.then((rec) => json(rec))
+		.catch(() => {
+			throw error(500, { message: 'Failed to read image properties' });
+		});
 };
 
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -42,44 +26,16 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	try {
-		const newProperties = await request.json();
-		console.log('[properties POST] filename:', filename, 'incoming:', newProperties);
-		const jsonData = fs.readFileSync(imageDataPath, 'utf-8');
-		const allData = JSON.parse(jsonData);
-		const jsonImagesData = allData.images;
+		const safe = assertSafeImageFilename(filename);
+		const rec = await imageRepo.ensureRecordForFilename(safe);
+		const body = await request.json();
+		const patch = UpdatePropertiesRequestSchema.safeParse(body);
+		if (!patch.success) throw error(400, 'Invalid properties payload');
 
-		// Add current timestamp to properties
-		const propertiesWithTimestamp = { 
-			...newProperties, 
-			last_modified: new Date().toISOString() 
-		};
-
-		const imageIndex = jsonImagesData.findIndex(
-			(img: { file_name: string }) => img.file_name === filename
-		);
-
-		if (imageIndex > -1) {
-			// Update existing properties
-			jsonImagesData[imageIndex] = { ...jsonImagesData[imageIndex], ...propertiesWithTimestamp };
-			console.log('[properties POST] updated index', imageIndex, '->', jsonImagesData[imageIndex]);
-		} else {
-			// Add new properties (ensure file_name and default flag are set)
-			const created = {
-				file_name: filename,
-				default: false,
-				...propertiesWithTimestamp
-			};
-			jsonImagesData.push(created);
-			console.log('[properties POST] created new entry ->', created);
-		}
-
-		allData.images = jsonImagesData;
-		fs.writeFileSync(imageDataPath, JSON.stringify(allData, null, 2));
-		console.log('[properties POST] wrote file');
-
-		return json({ success: true, properties: jsonImagesData.find((img: { file_name: string }) => img.file_name === filename) });
+		const updated = await imageRepo.updatePropertiesById(rec.id, patch.data);
+		return json({ success: true, properties: updated });
 	} catch (err) {
-		console.error(err);
+		if (err && typeof err === 'object' && 'status' in err) throw err as any;
 		throw error(500, { message: 'Failed to save image properties' });
 	}
 }; 

@@ -1,4 +1,4 @@
-import adapter from '@sveltejs/adapter-auto';
+import adapter from '@sveltejs/adapter-node';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 /** @type {import('@sveltejs/kit').Config} */
@@ -8,10 +8,15 @@ const config = {
 	preprocess: vitePreprocess(),
 
 	kit: {
-		// adapter-auto only supports some environments, see https://svelte.dev/docs/kit/adapter-auto for a list.
-		// If your environment is not supported, or you settled on a specific environment, switch out the adapter.
-		// See https://svelte.dev/docs/kit/adapters for more information about adapters.
-		adapter: adapter()
+		// Node adapter enables a simple `node build` server, which is also convenient for CLI/npx packaging.
+		adapter: adapter(),
+
+		// This app is intended to run locally (often via CLI) and accepts multipart uploads.
+		// SvelteKit's default CSRF origin check can reject uploads in some local setups
+		// (e.g. when host/origin differ due to proxies or hostnames).
+		csrf: {
+			checkOrigin: false
+		}
 	}
 };
 

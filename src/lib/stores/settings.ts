@@ -1,82 +1,112 @@
 import { writable } from 'svelte/store';
 
 /**
- * Settings store for managing application preferences
- * 
- * @param autoAdvanceToNextUnlinked - When true, after saving an unlinked image, 
- * automatically navigate to the next unlinked image in the current list
+ * Settings stored in settings.json (folder-based).
+ * Excludes legacy file-name overrides (imageDataFileName, schemaFileName); those are no longer configurable in UI.
+ *
+ * @param autoAdvanceToNextUnlinked - When true, after saving an unlinked image,
+ *   automatically navigate to the next unlinked image in the current list
+ * @param autoSaveOnAdvance - When true, save current edits before navigating to prev/next image
+ * @param gridSize - Grid cell size: small | medium | large
  */
 export interface AppSettings {
 	autoAdvanceToNextUnlinked: boolean;
+	autoSaveOnAdvance: boolean;
+	gridSize: 'small' | 'medium' | 'large';
 }
 
 /**
  * Default settings configuration
  */
 const defaultSettings: AppSettings = {
-	autoAdvanceToNextUnlinked: false
+	autoAdvanceToNextUnlinked: false,
+	autoSaveOnAdvance: false,
+	gridSize: 'medium'
 };
 
 /**
- * Create the settings store with default values
- * Settings are persisted in localStorage and restored on page load
+ * Create the settings store.
+ * Settings are persisted in settings.json (via API) and fetched on init.
+ *
+ * Concerns / future improvements:
+ * - Add loading/error state for fetch failures.
  */
 function createSettingsStore() {
-	// Try to load settings from localStorage
-	const storedSettings = typeof window !== 'undefined' ? localStorage.getItem('image-manager-settings') : null;
-	let initialSettings = defaultSettings;
-	
-	if (storedSettings) {
+	const { subscribe, set, update } = writable<AppSettings>(defaultSettings);
+
+	/**
+	 * Fetch settings from the API and update the store.
+	 */
+	async function fetchSettings(): Promise<void> {
 		try {
-			initialSettings = { ...defaultSettings, ...JSON.parse(storedSettings) };
-		} catch (error) {
-			console.warn('Failed to parse stored settings, using defaults:', error);
+			const res = await fetch('/api/config/settings');
+			if (res.ok) {
+				const data = await res.json();
+				set({
+					autoAdvanceToNextUnlinked: data.autoAdvanceToNextUnlinked ?? false,
+					autoSaveOnAdvance: data.autoSaveOnAdvance ?? false,
+					gridSize: ['small', 'medium', 'large'].includes(data.gridSize) ? data.gridSize : 'medium'
+				});
+			}
+		} catch (err) {
+			console.warn('Failed to fetch settings, using defaults:', err);
 		}
 	}
-	
-	const { subscribe, set, update } = writable<AppSettings>(initialSettings);
-	
+
+	/**
+	 * Update a setting and persist to the server.
+	 */
+	async function updateSetting<K extends keyof AppSettings>(
+		key: K,
+		value: AppSettings[K]
+	): Promise<void> {
+		update((s) => ({ ...s, [key]: value }));
+		try {
+			await fetch('/api/config/settings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ [key]: value })
+			});
+		} catch (err) {
+			console.warn('Failed to persist setting:', err);
+		}
+	}
+
+	/**
+	 * Reset all settings to defaults and persist.
+	 */
+	async function resetToDefaults(): Promise<void> {
+		set(defaultSettings);
+		try {
+			await fetch('/api/config/settings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(defaultSettings)
+			});
+		} catch (err) {
+			console.warn('Failed to reset settings:', err);
+		}
+	}
+
+	/**
+	 * Get current settings synchronously (from store state).
+	 */
+	function getCurrentSettings(): AppSettings {
+		let current = defaultSettings;
+		const unsub = subscribe((s) => {
+			current = s;
+		});
+		unsub();
+		return current;
+	}
+
 	return {
 		subscribe,
-		
-		/**
-		 * Update a specific setting
-		 * @param key - The setting key to update
-		 * @param value - The new value for the setting
-		 */
-		updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
-			update(settings => {
-				const newSettings = { ...settings, [key]: value };
-				// Persist to localStorage
-				if (typeof window !== 'undefined') {
-					localStorage.setItem('image-manager-settings', JSON.stringify(newSettings));
-				}
-				return newSettings;
-			});
-		},
-		
-		/**
-		 * Reset all settings to default values
-		 */
-		resetToDefaults: () => {
-			if (typeof window !== 'undefined') {
-				localStorage.removeItem('image-manager-settings');
-			}
-			set(defaultSettings);
-		},
-		
-		/**
-		 * Get the current settings value synchronously
-		 */
-		getCurrentSettings: (): AppSettings => {
-			let currentSettings = defaultSettings;
-			const unsubscribe = subscribe(settings => {
-				currentSettings = settings;
-			});
-			unsubscribe();
-			return currentSettings;
-		}
+		fetchSettings,
+		updateSetting,
+		resetToDefaults,
+		getCurrentSettings
 	};
 }
 
-export const settingsStore = createSettingsStore(); 
+export const settingsStore = createSettingsStore();

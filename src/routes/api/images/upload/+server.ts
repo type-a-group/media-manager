@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-
-// Define the target directory for uploaded images
-const imagesDirPath = 'src/lib/assets/images';
+import * as fs from 'node:fs';
+import { imageRepo } from '$lib/server/imageRepo.js';
+import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
+import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 
 /**
  * POST handler for uploading image files
@@ -19,6 +19,7 @@ const imagesDirPath = 'src/lib/assets/images';
  * - Error handling: Could be more granular for different failure types
  */
 export const POST: RequestHandler = async ({ request }) => {
+	const imagesDirPath = imageRepo.paths.imagesDir;
 	try {
 		// Parse the multipart form data
 		const formData = await request.formData();
@@ -30,8 +31,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		// Validate file type - only allow common image formats
-		const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml'];
-		if (!allowedTypes.includes(imageFile.type)) {
+		if (!(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
 			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, and SVG images are allowed.');
 		}
 
@@ -43,9 +43,10 @@ export const POST: RequestHandler = async ({ request }) => {
 			fs.mkdirSync(imagesDirPath, { recursive: true });
 		}
 
-		// Get the file extension and create target path
-		const fileName = imageFile.name;
-		const targetPath = path.join(imagesDirPath, fileName);
+		// Validate and normalize the filename.
+		// This also enforces an extension allowlist (matches our filesystem sync rules).
+		const safeFileName = assertSafeImageFilename(imageFile.name);
+		const targetPath = path.join(imagesDirPath, safeFileName);
 
 		// #NOTE: Filename conflict handling - currently overwrites existing files
 		// Future enhancement: Could add timestamp or hash to avoid conflicts
@@ -57,10 +58,12 @@ export const POST: RequestHandler = async ({ request }) => {
 		
 		fs.writeFileSync(targetPath, buffer);
 
-		// Return success response with filename
-		return json({ 
-			success: true, 
-			filename: fileName,
+		// Do not add to catalog; file appears in unlinked list. User can "Link to catalog" to add.
+		const unlinkedId = `unlinked:${encodeURIComponent(safeFileName)}`;
+		return json({
+			success: true,
+			id: unlinkedId,
+			filename: safeFileName,
 			message: 'Image uploaded successfully'
 		});
 
@@ -71,8 +74,18 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (err && typeof err === 'object' && 'status' in err) {
 			throw err; // Re-throw SvelteKit errors
 		}
-		
-		// Handle unexpected errors
-		throw error(500, 'Failed to upload image');
+
+		// Return a structured error response.
+		// Note: throwing `error(500, ...)` will be masked to "Internal Error" in prod builds,
+		// which makes local CLI debugging painful.
+		const e = err as any;
+		return json(
+			{
+				message: e?.message ?? 'Upload failed',
+				code: e?.code ?? null,
+				imagesDir: imagesDirPath
+			},
+			{ status: 500 }
+		);
 	}
 }; 

@@ -1,35 +1,55 @@
 {
-	"name": "image-manager",
-	"private": true,
+	"name": "media-manager",
+	"private": false,
 	"version": "0.0.1",
 	"type": "module",
+	"bin": {
+		"media-manager": "bin/media-manager.js"
+	},
+	"files": [
+		"build",
+		"bin",
+		"README.md",
+		"package.json"
+	],
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
+		"start": "node build",
+		"prepublishOnly": "npm run build",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",
-		"lint": "prettier --check ."
+		"lint:prettier": "prettier --check .",
+		"lint:eslint": "eslint .",
+		"lint": "npm run lint:prettier && npm run lint:eslint",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"devDependencies": {
 		"@internationalized/date": "^3.8.2",
 		"@lucide/svelte": "^0.515.0",
-		"@sveltejs/adapter-auto": "^6.0.0",
+		"@sveltejs/adapter-node": "^5.5.2",
 		"@sveltejs/kit": "^2.16.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
 		"@tailwindcss/forms": "^0.5.9",
 		"@tailwindcss/typography": "^0.5.15",
 		"@tailwindcss/vite": "^4.0.0",
 		"@types/node": "^24.0.10",
+		"@typescript-eslint/eslint-plugin": "^8.54.0",
+		"@typescript-eslint/parser": "^8.54.0",
 		"bits-ui": "^2.8.11",
 		"clsx": "^2.1.1",
+		"eslint": "^9.39.2",
+		"eslint-plugin-svelte": "^3.14.0",
 		"formsnap": "^2.0.1",
 		"prettier": "^3.4.2",
 		"prettier-plugin-svelte": "^3.3.3",
 		"svelte": "^5.0.0",
 		"svelte-check": "^4.0.0",
+		"svelte-eslint-parser": "^1.4.1",
 		"svelte-sonner": "^1.0.5",
 		"sveltekit-superforms": "^2.27.1",
 		"tailwind-merge": "^3.3.1",
@@ -37,10 +57,11 @@
 		"tailwindcss": "^4.0.0",
 		"tw-animate-css": "^1.3.5",
 		"typescript": "^5.0.0",
-		"vite": "^6.2.6"
+		"vite": "^6.2.6",
+		"vitest": "^4.0.18"
 	},
 	"dependencies": {
-		"exifr": "^7.1.3",
+		"exiftool-vendored": "^25.0.0",
 		"lucide-svelte": "^0.525.0",
 		"mode-watcher": "^1.1.0",
 		"sharp": "^0.34.2"

@@ -1,6 +1,6 @@
 <script lang="ts">
     import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { Button } from '$lib/components/ui/button';
+	import { buttonVariants } from '$lib/components/ui/button';
 	import { Trash } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
@@ -16,10 +16,12 @@
 <AlertDialog.Root>
 	<Tooltip.Root>
 		<Tooltip.Trigger>
-			<AlertDialog.Trigger>
-				<Button variant="outline" size="icon" title={tooltip ?? title}>
-					<Trash />
-				</Button>
+			<AlertDialog.Trigger
+				class={buttonVariants({ variant: 'outline', size: 'icon' })}
+				title={tooltip ?? title}
+				aria-label={tooltip ?? title}
+			>
+				<Trash />
 			</AlertDialog.Trigger>
 		</Tooltip.Trigger>
 		<Tooltip.Content side="top" sideOffset={6}>
