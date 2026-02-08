@@ -190,11 +190,11 @@
 	 *
 	 * @param item - The clicked image list item
 	 */
-	function handleImageClick(item: ImageListItem) {
+	async function handleImageClick(item: ImageListItem) {
 		if (selection.gridSelectMode) {
 			selection.toggleMultiselect(item.id);
 		} else {
-			selection.setGridViewActive(false);
+			await selection.setGridViewActive(false);
 			selection.selectImage(item.id);
 		}
 	}

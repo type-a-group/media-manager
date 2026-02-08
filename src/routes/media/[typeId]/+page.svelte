@@ -27,7 +27,7 @@
 		loading = true;
 		error = null;
 		apiGetMediaType(id)
-			.then((info) => {
+			.then(async (info) => {
 				typeInfo = {
 					id: info.id,
 					displayName: info.displayName ?? info.id,
@@ -39,7 +39,7 @@
 					displayName: info.displayName
 				});
 				selection.selectImage(null);
-				selection.setGridViewActive(true);
+				await selection.setGridViewActive(true);
 			})
 			.catch((e) => {
 				error = (e as Error)?.message ?? 'Failed to load media type';

@@ -312,7 +312,7 @@
 	 */
 	$effect(() => {
 		const unregister = selection.registerBeforeSelectAnother(async () => {
-			const s = settingsStore.getCurrentSettings();
+			const s = typeId ? await apiGetSettingsForType(typeId) : settingsStore.getCurrentSettings();
 			if (record && s.autoSaveOnAdvance && isDirty) await save();
 		});
 		return () => unregister();
@@ -425,7 +425,7 @@
 		if (idx === -1) return;
 		const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
 		if (nextIdx < 0 || nextIdx >= selection.visibleImageIds.length) return;
-		const settings = settingsStore.getCurrentSettings();
+		const settings = typeId ? await apiGetSettingsForType(typeId) : settingsStore.getCurrentSettings();
 		if (settings.autoSaveOnAdvance && isDirty) {
 			await save();
 		}

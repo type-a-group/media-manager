@@ -344,8 +344,8 @@
 		await fetchImageLists();
 	}
 
-	function openImage(item: ImageListItem) {
-		selection.setGridViewActive(false);
+	async function openImage(item: ImageListItem) {
+		await selection.setGridViewActive(false);
 		selection.selectImage(item.id);
 	}
 
@@ -367,10 +367,10 @@
 	}
 
 	/**
-	 * Toggle grid view. When entering grid view, clears selection and multiselect.
+	 * Toggle grid view. When entering grid view, runs save-before-navigate hook then clears selection and multiselect.
 	 */
-	function toggleGridView() {
-		selection.setGridViewActive(!selection.gridViewActive);
+	async function toggleGridView() {
+		await selection.setGridViewActive(!selection.gridViewActive);
 	}
 </script>
 

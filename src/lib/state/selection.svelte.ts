@@ -135,11 +135,14 @@ export class SelectionState {
 
 	/**
 	 * Set whether grid view is active.
-	 * When entering grid view, clears selection and multiselect.
+	 * When entering grid view, runs the save-before-navigate hook (if registered) then clears selection and multiselect.
 	 *
 	 * @param active - Whether grid view should be active.
 	 */
-	setGridViewActive = (active: boolean) => {
+	setGridViewActive = async (active: boolean) => {
+		if (active && this._beforeSelectAnother) {
+			await this._beforeSelectAnother();
+		}
 		this.gridViewActive = active;
 		if (active) {
 			this.selectedImageId = null;

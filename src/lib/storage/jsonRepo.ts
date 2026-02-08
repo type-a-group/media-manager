@@ -156,6 +156,7 @@ function evaluateClause(
 
 	const str = raw != null ? String(raw).toLowerCase() : '';
 	const filterStr = value != null ? String(value).toLowerCase() : '';
+	// contains with empty filterStr matches all (str.includes('') is true for any string)
 	switch (operator) {
 		case OPERATORS.equals:
 			return str === filterStr;

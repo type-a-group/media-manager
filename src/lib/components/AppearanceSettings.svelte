@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
-	import { setMode, resetMode } from 'mode-watcher';
+	import { setMode, resetMode, userPrefersMode } from 'mode-watcher';
 
 	/**
 	 * Reusable Appearance section for global settings.
 	 * Renders Light / Dark / System theme buttons using mode-watcher.
+	 * Highlights the button for the currently selected theme (user preference).
 	 *
 	 * Use case: Shared in root-page Global settings dialog and in project-view
 	 * Settings dialog (Global settings tab).
@@ -18,13 +19,25 @@
 <div class="flex flex-col gap-2">
 	<h3 class="text-lg font-bold">Appearance</h3>
 	<div class="flex flex-row gap-2">
-		<Button variant="outline" size="sm" onclick={() => setMode('light')}>
+		<Button
+			variant={userPrefersMode.current === 'light' ? 'default' : 'outline'}
+			size="sm"
+			onclick={() => setMode('light')}
+		>
 			Light
 		</Button>
-		<Button variant="outline" size="sm" onclick={() => setMode('dark')}>
+		<Button
+			variant={userPrefersMode.current === 'dark' ? 'default' : 'outline'}
+			size="sm"
+			onclick={() => setMode('dark')}
+		>
 			Dark
 		</Button>
-		<Button variant="outline" size="sm" onclick={() => resetMode()}>
+		<Button
+			variant={userPrefersMode.current === 'system' ? 'default' : 'outline'}
+			size="sm"
+			onclick={() => resetMode()}
+		>
 			System
 		</Button>
 	</div>

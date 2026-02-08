@@ -29,7 +29,7 @@
 
 {#if isEditor}
 	<Sidebar.Provider>
-		<ModeWatcher />
+		<ModeWatcher defaultMode="system" />
 		<AppSidebar />
 		<main class="w-full relative">
 			<SidebarTriggerOverlay />

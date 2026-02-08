@@ -48,10 +48,10 @@ export const OPERATOR_LABELS: Record<OperatorId, string> = {
 	[OPERATORS.does_not_contain]: 'does not contain'
 };
 
-/** Operators available for string/url fields. */
+/** Operators available for string/url fields. Default (first) is contains for new filter rows. */
 export const STRING_OPERATORS: OperatorId[] = [
-	OPERATORS.equals,
 	OPERATORS.contains,
+	OPERATORS.equals,
 	OPERATORS.starts_with,
 	OPERATORS.ends_with,
 	OPERATORS.is_empty,
