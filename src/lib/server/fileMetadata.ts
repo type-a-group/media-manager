@@ -6,11 +6,25 @@ import path from 'node:path';
 const OVERWRITE_ORIGINAL = '-overwrite_original';
 
 /** Magic bytes for common image formats. ExifTool rejects files when extension doesn't match content. Check longer signatures first. */
-const MAGIC: { bytes: number[]; ext: string }[] = [
+const MAGIC: { bytes: number[]; ext: string; offset?: number }[] = [
 	{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], ext: '.png' },
 	{ bytes: [0xff, 0xd8, 0xff], ext: '.jpg' },
 	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' } // RIFF
 ];
+
+/** HEIC/HEIF ftyp brands (at byte offset 4). */
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'mif1', 'msf1', 'hevx'];
+
+/**
+ * Check if a buffer represents a HEIC/HEIF file by looking for an ftyp box.
+ */
+function isHeicBuffer(buf: Buffer, bytesRead: number): boolean {
+	if (bytesRead < 12) return false;
+	// ftyp box: bytes 4-7 should be 'ftyp'
+	if (buf[4] !== 0x66 || buf[5] !== 0x74 || buf[6] !== 0x79 || buf[7] !== 0x70) return false;
+	const brand = buf.subarray(8, 12).toString('ascii');
+	return HEIC_BRANDS.includes(brand);
+}
 
 /**
  * Detect the actual image format from file magic bytes so we can use the correct extension for ExifTool.
@@ -28,6 +42,7 @@ async function detectExtensionFromMagic(filePath: string): Promise<string | null
 		for (const { bytes, ext } of MAGIC) {
 			if (bytes.length <= bytesRead && bytes.every((b, i) => buf[i] === b)) return ext;
 		}
+		if (isHeicBuffer(buf, bytesRead)) return '.heic';
 		return null;
 	} finally {
 		await fd.close();
@@ -206,6 +221,27 @@ export async function stripImageFileMetadata(
 		const err = new Error('Failed to replace file after metadata strip');
 		(err as any).cause = e;
 		throw err;
+	}
+}
+
+/**
+ * Read only the width and height of an image file using exiftool.
+ * Returns { width, height } or undefined values if not available.
+ *
+ * @param filePath - Absolute path to the image file
+ * @returns Object with width and height (numbers or undefined)
+ */
+export async function readImageDimensions(
+	filePath: string
+): Promise<{ width: number | undefined; height: number | undefined }> {
+	try {
+		const tags = await exiftool.read(filePath);
+		return {
+			width: typeof tags.ImageWidth === 'number' ? tags.ImageWidth : undefined,
+			height: typeof tags.ImageHeight === 'number' ? tags.ImageHeight : undefined
+		};
+	} catch {
+		return { width: undefined, height: undefined };
 	}
 }
 

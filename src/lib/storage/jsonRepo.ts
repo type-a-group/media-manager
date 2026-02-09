@@ -371,7 +371,8 @@ export function createJsonRepoForType(typeId: string) {
 		defaultValue: unknown,
 		options?: string[],
 		itemTypes?: string[],
-		multiselect?: boolean
+		multiselect?: boolean,
+		long?: boolean
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
@@ -387,7 +388,8 @@ export function createJsonRepoForType(typeId: string) {
 				defaultValue: defaultValue as never,
 				...(parsedType === 'dropdown' && options?.length ? { options } : {}),
 				...(parsedType === 'dropdown' && multiselect ? { multiselect: true } : {}),
-				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {})
+				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {}),
+				...(parsedType === 'string' && long ? { long: true } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 
@@ -432,6 +434,7 @@ export function createJsonRepoForType(typeId: string) {
 			options?: string[];
 			itemTypes?: string[];
 			multiselect?: boolean;
+			long?: boolean;
 		}
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
@@ -475,6 +478,8 @@ export function createJsonRepoForType(typeId: string) {
 			}
 
 			const schema = { ...settings.schema };
+			const long = type === 'string' ? (updates.long ?? (def as any).long ?? false) : false;
+
 			delete schema[key];
 			schema[newKey] = {
 				type,
@@ -482,7 +487,8 @@ export function createJsonRepoForType(typeId: string) {
 				defaultValue: defaultValue as never,
 				...(options?.length ? { options } : {}),
 				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
+				...(type === 'dropdown' && multiselect ? { multiselect: true } : {}),
+				...(type === 'string' && long ? { long: true } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 

@@ -1,19 +1,22 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
-	import { InfoIcon } from 'lucide-svelte';
+	import { InfoIcon, PencilIcon } from 'lucide-svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { ChevronsUpDownIcon } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		apiGetFileMetadataById,
 		apiGetFileMetadataByIdForType,
 		apiStripFileMetadataById,
-		apiStripFileMetadataByIdForType
+		apiStripFileMetadataByIdForType,
+		apiRenameFileByIdForType
 	} from '$lib/api/client.js';
+	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { ImageId } from '$lib/core/ids.js';
 
 	/** Image record id (required for fetching by-id). Media type id when in media-type context. Filename for display only. */
@@ -26,6 +29,15 @@
 	let stripLoading = $state(false);
 	let confirmClearAllOpen = $state(false);
 	let confirmClearGpsOpen = $state(false);
+
+	// Fix extension state
+	let fixExtLoading = $state(false);
+
+	// Rename state
+	let renameMode = $state(false);
+	let renameValue = $state('');
+	let renameLoading = $state(false);
+	let renameError = $state<string | null>(null);
 
 	/**
 	 * Fetch metadata from the API by image id (and optional typeId).
@@ -50,10 +62,10 @@
 			loading = false;
 		}
 	}
-	
+
 	/**
 	 * Format a value for display, handling various data types
-	 * 
+	 *
 	 * @param value - The value to format
 	 * @returns Formatted string representation
 	 */
@@ -61,22 +73,22 @@
 		if (value === null || value === undefined) {
 			return 'N/A';
 		}
-		
+
 		if (typeof value === 'boolean') {
 			return value ? 'Yes' : 'No';
 		}
-		
+
 		if (value instanceof Date) {
 			return value.toLocaleString();
 		}
-		
+
 		if (typeof value === 'object') {
 			return JSON.stringify(value, null, 2);
 		}
-		
+
 		return String(value);
 	}
-	
+
 	/**
 	 * Human-readable format name for an extension (e.g. .jpg -> JPEG).
 	 */
@@ -85,6 +97,7 @@
 		if (e === '.jpg' || e === '.jpeg') return 'JPEG';
 		if (e === '.png') return 'PNG';
 		if (e === '.webp') return 'WebP';
+		if (e === '.heic' || e === '.heif') return 'HEIC';
 		return ext || 'unknown';
 	}
 
@@ -123,10 +136,10 @@
 			aspectRatio: 'Aspect Ratio',
 			megapixels: 'Megapixels'
 		};
-		
+
 		return labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 	}
-	
+
 	/**
 	 * Strip all metadata from the image, then refetch.
 	 */
@@ -169,10 +182,72 @@
 		}
 	}
 
+	/**
+	 * Fix the file extension to match the detected format.
+	 */
+	async function handleFixExtension() {
+		if (!id || !typeId || !metadata?.extensionMismatch) return;
+		const currentName = metadata.filename as string;
+		const detectedExt = metadata.detectedFormatExtension as string;
+		const baseName = currentName.replace(/\.[^.]+$/, '');
+		const newFilename = baseName + detectedExt;
+
+		fixExtLoading = true;
+		try {
+			await apiRenameFileByIdForType(typeId, id, newFilename);
+			toast.success(`Renamed to ${newFilename}`);
+			triggerImageListRefresh();
+			await fetchMetadata(id, typeId);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : 'Failed to fix extension';
+			if (msg.includes('409') || msg.includes('already exists')) {
+				toast.error(`Cannot rename: ${newFilename} already exists`);
+			} else {
+				toast.error(msg);
+			}
+		} finally {
+			fixExtLoading = false;
+		}
+	}
+
+	/**
+	 * Rename the file (base name only, extension locked).
+	 */
+	async function handleRename() {
+		if (!id || !typeId || !renameValue.trim() || !metadata?.filename) return;
+		const currentExt = (metadata.filename as string).substring(
+			(metadata.filename as string).lastIndexOf('.')
+		);
+		const newFilename = renameValue.trim() + currentExt;
+
+		renameLoading = true;
+		renameError = null;
+		try {
+			const result = await apiRenameFileByIdForType(typeId, id, newFilename);
+			toast.success(`Renamed to ${result.record.file_name}`);
+			triggerImageListRefresh();
+			renameMode = false;
+			await fetchMetadata(id, typeId);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : 'Rename failed';
+			if (msg.includes('409') || msg.includes('already exists')) {
+				renameError = 'A file with that name already exists';
+			} else {
+				renameError = msg;
+			}
+		} finally {
+			renameLoading = false;
+		}
+	}
+
 	// Fetch metadata when dialog opens and we have an id
 	$effect(() => {
 		if (isOpen && id) {
 			fetchMetadata(id, typeId);
+		}
+		if (!isOpen) {
+			renameMode = false;
+			renameError = null;
 		}
 	});
 </script>
@@ -270,8 +345,16 @@
 									<p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
 										This file has a <code class="px-1 py-0.5 rounded bg-amber-500/20 text-xs">{metadata.fileExtension}</code> extension
 										but the content appears to be {formatLabel(metadata.detectedFormatExtension)}.
-										Consider renaming the file to avoid compatibility issues with some tools.
 									</p>
+									<Button
+										variant="outline"
+										size="sm"
+										class="mt-2"
+										disabled={fixExtLoading || stripLoading}
+										onclick={handleFixExtension}
+									>
+										{fixExtLoading ? 'Renaming...' : `Fix extension to ${metadata.detectedFormatExtension}`}
+									</Button>
 								</div>
 							</div>
 						</div>
@@ -304,13 +387,57 @@
 								{#if metadata[key] !== undefined}
 									<div class="rounded-md p-3 bg-muted">
 										<dt class="text-sm font-medium text-muted-foreground">{getDisplayLabel(key)}</dt>
-										<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
+										{#if key === 'filename'}
+											{#if renameMode}
+												<div class="flex flex-col gap-1 mt-1">
+													<div class="flex gap-1 items-center">
+														<Input
+															type="text"
+															bind:value={renameValue}
+															class="text-sm h-7 flex-1"
+															placeholder="New name"
+															onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') { renameMode = false; renameError = null; } }}
+														/>
+														<span class="text-sm text-muted-foreground shrink-0">{(metadata.filename as string).substring((metadata.filename as string).lastIndexOf('.'))}</span>
+													</div>
+													<div class="flex gap-1 justify-end">
+														<Button variant="outline" size="sm" onclick={handleRename} disabled={renameLoading || !renameValue.trim()}>
+															{renameLoading ? '...' : 'Save'}
+														</Button>
+														<Button variant="ghost" size="sm" onclick={() => { renameMode = false; renameError = null; }}>
+															Cancel
+														</Button>
+													</div>
+												</div>
+												{#if renameError}
+													<p class="text-xs text-destructive mt-1">{renameError}</p>
+												{/if}
+											{:else}
+												<dd class="text-sm text-foreground mt-1 flex items-center gap-2">
+													{formatValue(metadata[key])}
+													{#if typeId}
+														<button
+															class="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-accent"
+															title="Rename file"
+															onclick={() => {
+																renameValue = (metadata?.filename as string).replace(/\.[^.]+$/, '');
+																renameMode = true;
+															}}
+														>
+															<PencilIcon class="h-3 w-3" />
+														</button>
+													{/if}
+												</dd>
+											{/if}
+										{:else}
+											<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
+										{/if}
 									</div>
 								{/if}
 							{/each}
 						</div>
 					</div>
-					
+
 					<!-- Image Properties -->
 					<div>
 						<h3 class="text-lg font-semibold text-foreground mb-3">Image Properties</h3>
@@ -325,7 +452,7 @@
 							{/each}
 						</div>
 					</div>
-					
+
 					<!-- Color Information -->
 					<div>
 						<h3 class="text-lg font-semibold text-foreground mb-3">Color Information</h3>
@@ -340,7 +467,7 @@
 							{/each}
 						</div>
 					</div>
-					
+
 					<!-- Technical Details -->
 					<div>
 						<h3 class="text-lg font-semibold text-foreground mb-3">Technical Details</h3>
@@ -355,7 +482,7 @@
 							{/each}
 						</div>
 					</div>
-					
+
 					<!-- EXIF Data -->
 					 <Collapsible.Root>
 						<div class="flex flex-row gap-2 items-center justify-between">
@@ -388,7 +515,7 @@
 						{/if}
 						</Collapsible.Content>
 					</Collapsible.Root>
-					
+
 					<!-- Raw EXIF Data (Debug) -->
 					<Collapsible.Root>
 						<div class="flex flex-row gap-2 items-center justify-between">
@@ -450,4 +577,4 @@
 
 <style>
 	/* Content-specific styles are now handled by Tailwind CSS classes in the template */
-</style> 
+</style>

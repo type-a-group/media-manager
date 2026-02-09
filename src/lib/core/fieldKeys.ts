@@ -10,7 +10,9 @@ export const RESERVED_FIELD_KEYS = new Set([
 	'file_name',
 	'last_modified',
 	'default',
-	'is_template'
+	'is_template',
+	'width',
+	'height'
 ]);
 
 /**
@@ -60,6 +62,8 @@ export function fieldLabel(key: string): string {
 	if (key === 'name') return 'Name';
 	if (key === 'file_name') return 'File Name';
 	if (key === 'last_modified') return 'Last Modified';
+	if (key === 'width') return 'Width';
+	if (key === 'height') return 'Height';
 
 	// Prefer snake_case to title case; also tolerate legacy camelCase/mixed case.
 	const snake = key

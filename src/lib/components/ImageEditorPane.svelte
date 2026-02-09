@@ -29,7 +29,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';
-	import { triggerImageListRefresh, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
+	import { triggerImageListRefresh, schemaRefreshTrigger, refreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import ImageViewGrid from './ImageViewGrid.svelte';
 	import MetadataButton from './MetadataButton.svelte';
@@ -268,6 +268,13 @@
 
 	$effect(() => {
 		const unsub = schemaRefreshTrigger.subscribe(() => {
+			if (selection.selectedImageId) refresh();
+		});
+		return unsub;
+	});
+
+	$effect(() => {
+		const unsub = refreshTrigger.subscribe(() => {
 			if (selection.selectedImageId) refresh();
 		});
 		return unsub;
@@ -626,6 +633,9 @@
 			<!-- Scrollable content: filename + metadata form -->
 			<div class="flex-1 overflow-y-auto">
 				<p class="p-3 text-sm text-muted-foreground break-all">{record?.file_name ?? unlinkedFilename}</p>
+				{#if record?.width != null && record?.height != null}
+					<p class="px-3 pb-1 text-sm text-muted-foreground">{record.width} &times; {record.height} px</p>
+				{/if}
 				{#if loading}
 					<p class="px-3 pb-3 italic">Loading…</p>
 				{:else if schema}
@@ -801,6 +811,12 @@
 												</Button>
 											</div>
 										</div>
+									{:else if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long}
+										<textarea
+											bind:value={formValues[key]}
+											rows="4"
+											class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+										></textarea>
 									{:else}
 										<Input type="text" bind:value={formValues[key]} />
 									{/if}

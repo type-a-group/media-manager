@@ -24,6 +24,7 @@
 		OPERATORS,
 		type OperatorId
 	} from '$lib/core/filters.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import {
 		apiCreateRecordForType,
 		apiGetConfig,
@@ -32,6 +33,8 @@
 		apiImageUrlByIdForType,
 		apiListRecordsForType,
 		apiUploadImageForType,
+		apiCheckUploadConflictsForType,
+		apiUploadImageForTypeWithResolution,
 		type AppConfig
 	} from '$lib/api/client.js';
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
@@ -70,6 +73,16 @@
 	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input (multiple files)
 	let folderInput: HTMLInputElement | undefined; // Reference to hidden folder input (webkitdirectory)
 	let uploading = $state(false); // Track upload status
+
+	// Upload conflict dialog state
+	let uploadConflictFile = $state<File | null>(null);
+	let uploadConflictOpen = $state(false);
+	let uploadConflictResolve = $state<((resolution: 'overwrite' | 'auto-rename' | 'skip') => void) | null>(null);
+
+	// HEIC conversion warning dialog state
+	let heicWarningOpen = $state(false);
+	let heicWarningCount = $state(0);
+	let heicWarningResolve = $state<((proceed: boolean) => void) | null>(null);
 
 	// Removed liked/unliked functionality as those fields don't exist
 
@@ -222,10 +235,53 @@
 		else if (mode === 'folder' && folderInput) folderInput.click();
 	}
 
+	/** HEIC/HEIF MIME types. */
+	const HEIC_MIME_TYPES = ['image/heic', 'image/heif'];
+
+	/** Check if a file is HEIC/HEIF. */
+	function isHeicFile(f: File): boolean {
+		if (HEIC_MIME_TYPES.includes(f.type.toLowerCase())) return true;
+		const ext = f.name.toLowerCase().split('.').pop();
+		return ext === 'heic' || ext === 'heif';
+	}
+
+	/** Wait for user to resolve a filename conflict. */
+	function waitForConflictResolution(file: File): Promise<'overwrite' | 'auto-rename' | 'skip'> {
+		return new Promise((resolve) => {
+			uploadConflictFile = file;
+			uploadConflictResolve = resolve;
+			uploadConflictOpen = true;
+		});
+	}
+
+	/** Resolve a filename conflict from the dialog. */
+	function resolveConflict(resolution: 'overwrite' | 'auto-rename' | 'skip') {
+		uploadConflictOpen = false;
+		uploadConflictFile = null;
+		uploadConflictResolve?.(resolution);
+		uploadConflictResolve = null;
+	}
+
+	/** Wait for user to confirm HEIC conversion. */
+	function waitForHeicConfirmation(count: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			heicWarningCount = count;
+			heicWarningResolve = resolve;
+			heicWarningOpen = true;
+		});
+	}
+
+	/** Resolve the HEIC warning dialog. */
+	function resolveHeicWarning(proceed: boolean) {
+		heicWarningOpen = false;
+		heicWarningResolve?.(proceed);
+		heicWarningResolve = null;
+	}
+
 	/**
 	 * Handles file(s) or folder upload after user selects.
-	 * Validates each file type, uploads each to the server, refreshes list once.
-	 * Shows a single "Uploading…" state and toast when complete (e.g. "Uploaded 5 images").
+	 * Validates each file type, checks for conflicts and HEIC files,
+	 * uploads each to the server, refreshes list once.
 	 *
 	 * @param event - change event from the file input
 	 */
@@ -238,10 +294,10 @@
 		const toUpload: File[] = [];
 		for (let i = 0; i < files.length; i++) {
 			const f = files[i];
-			if (allowed.includes(f.type)) toUpload.push(f);
+			if (allowed.includes(f.type) || isHeicFile(f)) toUpload.push(f);
 		}
 		if (toUpload.length === 0) {
-			toast('Error: Please select valid image files (JPEG, PNG, GIF, or SVG)');
+			toast('Error: Please select valid image files (JPEG, PNG, GIF, SVG, WebP, or HEIC)');
 			target.value = '';
 			return;
 		}
@@ -249,14 +305,70 @@
 			toast(`Skipped ${files.length - toUpload.length} non-image file(s).`);
 		}
 
+		// Check for HEIC files and warn
+		const heicFiles = toUpload.filter(isHeicFile);
+		if (heicFiles.length > 0) {
+			const proceed = await waitForHeicConfirmation(heicFiles.length);
+			if (!proceed) {
+				// Remove HEIC files from the upload list
+				const heicSet = new Set(heicFiles);
+				const remaining = toUpload.filter((f) => !heicSet.has(f));
+				if (remaining.length === 0) {
+					target.value = '';
+					return;
+				}
+				toUpload.length = 0;
+				toUpload.push(...remaining);
+			}
+		}
+
 		uploading = true;
 		let ok = 0;
 		let fail = 0;
+		let skipped = 0;
 		let lastUploadedId: ImageId | null = null;
+
 		try {
-			for (const file of toUpload) {
+			// Check for filename conflicts
+			let conflictSet = new Set<string>();
+			if (typeId) {
+				const filenames = toUpload.map((f) => {
+					// For HEIC files, the server will rename to .jpg
+					if (isHeicFile(f)) {
+						const base = f.name.replace(/\.[^.]+$/, '');
+						return `${base}.jpg`;
+					}
+					return f.name;
+				});
 				try {
-					const result = typeId ? await apiUploadImageForType(typeId, file) : await Promise.reject(new Error('No media type'));
+					const { conflicts } = await apiCheckUploadConflictsForType(typeId, filenames);
+					conflictSet = new Set(conflicts);
+				} catch {
+					// If conflict check fails, proceed without it
+				}
+			}
+
+			for (const file of toUpload) {
+				const effectiveName = isHeicFile(file)
+					? `${file.name.replace(/\.[^.]+$/, '')}.jpg`
+					: file.name;
+
+				let resolution: 'overwrite' | 'auto-rename' | null = null;
+				if (conflictSet.has(effectiveName)) {
+					const choice = await waitForConflictResolution(file);
+					if (choice === 'skip') {
+						skipped++;
+						continue;
+					}
+					resolution = choice;
+				}
+
+				try {
+					const result = typeId
+						? resolution
+							? await apiUploadImageForTypeWithResolution(typeId, file, resolution)
+							: await apiUploadImageForType(typeId, file)
+						: await Promise.reject(new Error('No media type'));
 					if (result?.id) {
 						ok++;
 						lastUploadedId = result.id;
@@ -270,9 +382,11 @@
 				selection.setViewMode('unlinked');
 				selection.selectImage(lastUploadedId);
 			}
-			if (fail > 0) toast(`Uploaded ${ok} image(s); ${fail} failed.`);
-			else if (ok === 1) toast('Uploaded successfully');
-			else toast(`Uploaded ${ok} images`);
+			const parts: string[] = [];
+			if (ok > 0) parts.push(`Uploaded ${ok} image(s)`);
+			if (fail > 0) parts.push(`${fail} failed`);
+			if (skipped > 0) parts.push(`${skipped} skipped`);
+			if (parts.length > 0) toast(parts.join('; '));
 		} catch (error) {
 			console.error('Upload error:', error);
 			toast('Upload failed');
@@ -401,7 +515,7 @@
 			multiple
 			bind:this={fileInput}
 			onchange={handleFileUpload}
-			accept="image/*"
+			accept="image/*,.heic,.heif"
 			style="display: none;"
 			aria-label="Upload image files"
 		/>
@@ -672,7 +786,7 @@
 			{:else}
 				{#if displayedItems.length > 0}
 					{#each displayedItems as item (item.id)}
-						<HoverCard.Root openDelay={100} closeDelay={0}>
+						<HoverCard.Root openDelay={300} closeDelay={0}>
 							<HoverCard.Trigger
 								class={buttonVariants({
 									variant: selection.selectedImageId === item.id ? 'default' : 'ghost',
@@ -700,5 +814,37 @@
 	</Sidebar.Group>
 </Sidebar.Content>
 </Sidebar.Root>
+
+<!-- Upload filename conflict dialog -->
+<AlertDialog.Root bind:open={uploadConflictOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Title>File already exists</AlertDialog.Title>
+		<AlertDialog.Description>
+			A file named "{uploadConflictFile?.name}" already exists. What would you like to do?
+		</AlertDialog.Description>
+		<div class="flex justify-end gap-2 mt-4">
+			<Button variant="outline" onclick={() => resolveConflict('skip')}>Skip</Button>
+			<Button variant="outline" onclick={() => resolveConflict('auto-rename')}>Auto-rename</Button>
+			<Button onclick={() => resolveConflict('overwrite')}>Overwrite</Button>
+		</div>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<!-- HEIC conversion warning dialog -->
+<AlertDialog.Root bind:open={heicWarningOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Title>HEIC files detected</AlertDialog.Title>
+		<AlertDialog.Description>
+			{heicWarningCount === 1
+				? 'This file is in HEIC format, which cannot be displayed in most browsers. It will be converted to JPEG.'
+				: `${heicWarningCount} files are in HEIC format, which cannot be displayed in most browsers. They will be converted to JPEG.`}
+		</AlertDialog.Description>
+		<div class="flex justify-end gap-2 mt-4">
+			<Button variant="outline" onclick={() => resolveHeicWarning(false)}>Cancel</Button>
+			<Button onclick={() => resolveHeicWarning(true)}>Convert and upload</Button>
+		</div>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
 <style>
 </style>

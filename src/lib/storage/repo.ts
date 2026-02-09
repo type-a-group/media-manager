@@ -15,6 +15,7 @@ import {
 	writeMediaTypeSettingsFile
 } from './settingsFile.js';
 import { createJsonRepoForType, type JsonRepo } from './jsonRepo.js';
+import { readImageDimensions } from '$lib/server/fileMetadata.js';
 
 import {
 	SchemaFileSchema,
@@ -177,8 +178,32 @@ export function createImageRepo(typeId?: string) {
 			await fs.mkdir(paths.imagesDir, { recursive: true });
 		}
 
-		// Do not add disk-only files to the JSON. Linked = in JSON, unlinked = on disk but not in JSON.
-		return { imageData, changed: false };
+		// Backfill width/height for records missing dimensions.
+		let changed = false;
+		const images = await Promise.all(
+			imageData.images.map(async (img) => {
+				if (img.width != null && img.height != null) return img;
+				if ((img as any).is_template) return img;
+				const filePath = path.join(paths.imagesDir, img.file_name);
+				if (!fssync.existsSync(filePath)) return img;
+				try {
+					const dims = await readImageDimensions(filePath);
+					if (dims.width != null || dims.height != null) {
+						changed = true;
+						return ImageRecordSchema.parse({
+							...img,
+							width: dims.width,
+							height: dims.height
+						});
+					}
+				} catch {
+					// skip
+				}
+				return img;
+			})
+		);
+
+		return { imageData: { images }, changed };
 	}
 
 	async function writeImageData(imageData: ImageDataFile): Promise<void> {
@@ -506,14 +531,18 @@ export function createImageRepo(typeId?: string) {
 										: '');
 			}
 
-			const stats = await fs.stat(path.join(paths.imagesDir, safe)).catch(() => null);
+			const filePath = path.join(paths.imagesDir, safe);
+			const stats = await fs.stat(filePath).catch(() => null);
+			const dimensions = await readImageDimensions(filePath);
 
 			const created = ImageRecordSchema.parse({
 				id: newImageId(),
 				file_name: safe,
 				image_name: '',
 				last_modified: stats ? stats.mtime.toISOString() : undefined,
-				...defaults
+				...defaults,
+				width: dimensions.width,
+				height: dimensions.height
 			});
 
 			await writeImageData({ images: [...base.images, created] });
@@ -538,6 +567,8 @@ export function createImageRepo(typeId?: string) {
 			allowedKeys.delete('default');
 			allowedKeys.delete('id');
 			allowedKeys.delete('is_template');
+			allowedKeys.delete('width');
+			allowedKeys.delete('height');
 			allowedKeys.add('image_name');
 
 			const next: any = { ...record };
@@ -546,7 +577,7 @@ export function createImageRepo(typeId?: string) {
 					next[k] = v;
 				} else if (
 					k in record &&
-					!['id', 'file_name', 'last_modified', 'is_template'].includes(k) &&
+					!['id', 'file_name', 'last_modified', 'is_template', 'width', 'height'].includes(k) &&
 					v === null
 				) {
 					// Allow removing custom/orphaned keys by setting to null.
@@ -586,7 +617,8 @@ export function createImageRepo(typeId?: string) {
 		defaultValue: unknown,
 		options?: string[],
 		itemTypes?: string[],
-		multiselect?: boolean
+		multiselect?: boolean,
+		long?: boolean
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
@@ -615,6 +647,7 @@ export function createImageRepo(typeId?: string) {
 				if (multiselect) def.multiselect = true;
 			}
 			if (parsedType === 'list' && itemTypes?.length) def.itemTypes = itemTypes;
+			if (parsedType === 'string' && long) def.long = true;
 			schemaFile.schema[key] = def;
 
 			if (typeId) {
@@ -673,6 +706,7 @@ export function createImageRepo(typeId?: string) {
 			options?: string[];
 			itemTypes?: string[];
 			multiselect?: boolean;
+			long?: boolean;
 		}
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
@@ -728,6 +762,8 @@ export function createImageRepo(typeId?: string) {
 				throw new Error('List default must be an array');
 			}
 
+			const long = type === 'string' ? (updates.long ?? (def as any).long ?? false) : false;
+
 			delete schemaFile.schema[key];
 			schemaFile.schema[newKey] = {
 				type,
@@ -735,7 +771,8 @@ export function createImageRepo(typeId?: string) {
 				defaultValue: defaultValue as any,
 				...(options?.length ? { options } : {}),
 				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
+				...(type === 'dropdown' && multiselect ? { multiselect: true } : {}),
+				...(type === 'string' && long ? { long: true } : {})
 			};
 
 			if (typeId) {
@@ -911,6 +948,62 @@ export function createImageRepo(typeId?: string) {
 		});
 	}
 
+	/**
+	 * Rename an image file on disk and update its record in image-data.json.
+	 *
+	 * @param id - Image record id (UUID)
+	 * @param newFilename - New filename (validated via assertSafeImageFilename)
+	 * @returns Updated ImageRecord
+	 * @throws Error if record not found, target exists, or rename fails
+	 */
+	async function renameFileById(id: ImageId, newFilename: string): Promise<ImageRecord> {
+		const safe = assertSafeImageFilename(newFilename);
+		const paths = p();
+
+		// Get current record
+		const data = await loadAndMigrateImageData();
+		const rec = data.images.find((r) => r.id === id);
+		if (!rec) throw new Error('Image record not found');
+
+		const oldFilename = rec.file_name;
+		if (safe === oldFilename) return rec;
+
+		const oldPath = path.join(paths.imagesDir, oldFilename);
+		const newPath = path.join(paths.imagesDir, safe);
+
+		// Check target doesn't already exist
+		if (fssync.existsSync(newPath)) {
+			const err = new Error('Target filename already exists');
+			(err as any).status = 409;
+			throw err;
+		}
+
+		// Rename physical file first
+		await fs.rename(oldPath, newPath);
+
+		// Update record in JSON
+		try {
+			return await withFileLock(`${paths.imageDataPath}.lock`, async () => {
+				const base = await loadAndMigrateImageDataUnlocked();
+				const idx = base.images.findIndex((r) => r.id === id);
+				if (idx === -1) throw new Error('Image record not found');
+
+				const next = { ...base.images[idx] as any };
+				next.file_name = safe;
+				next.last_modified = new Date().toISOString();
+				const parsed = ImageRecordSchema.parse(next);
+				const images = [...base.images];
+				images[idx] = parsed;
+				await writeImageData({ images });
+				return parsed;
+			});
+		} catch (err) {
+			// Best-effort rollback: rename file back
+			await fs.rename(newPath, oldPath).catch(() => {});
+			throw err;
+		}
+	}
+
 	return {
 		get paths() {
 			return typeId ? getPathsForType(typeId) : getAssetPaths();
@@ -927,7 +1020,8 @@ export function createImageRepo(typeId?: string) {
 		getFilenameForId,
 		updatePropertiesById,
 		unlinkById,
-		deleteFromDiskById
+		deleteFromDiskById,
+		renameFileById
 	};
 }
 
@@ -942,5 +1036,25 @@ export function createMediaTypeRepo(typeId: string): ImageRepo | JsonRepo {
 	const paths = getMediaTypePaths(typeId);
 	if (paths.kind === 'images') return createImageRepo(typeId);
 	return createJsonRepoForType(typeId);
+}
+
+/**
+ * Generate a unique filename by appending (1), (2), etc. if the name already exists.
+ *
+ * @param baseFilename - The desired filename (e.g. "photo.jpg")
+ * @param dir - Directory to check for existing files
+ * @returns A filename guaranteed to not exist in dir
+ */
+export function generateUniqueFilename(baseFilename: string, dir: string): string {
+	if (!fssync.existsSync(path.join(dir, baseFilename))) return baseFilename;
+	const ext = path.extname(baseFilename);
+	const name = path.basename(baseFilename, ext);
+	let n = 1;
+	while (n <= 999) {
+		const candidate = `${name} (${n})${ext}`;
+		if (!fssync.existsSync(path.join(dir, candidate))) return candidate;
+		n++;
+	}
+	throw new Error('Too many filename conflicts');
 }
 

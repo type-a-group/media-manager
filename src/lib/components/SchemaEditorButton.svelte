@@ -39,6 +39,7 @@
 	let addOptionInput = $state('');
 	let addItemType = $state<ListItemType>('string');
 	let addMultiselect = $state(false);
+	let addLong = $state(false);
 
 	// Edit state
 	let editingKey = $state<string | null>(null);
@@ -51,6 +52,7 @@
 	let editOptionInput = $state('');
 	let editItemType = $state<ListItemType>('string');
 	let editMultiselect = $state(false);
+	let editLong = $state(false);
 
 	// Delete confirmation
 	let deleteConfirmOpen = $state(false);
@@ -137,7 +139,8 @@
 				defaultValue,
 				options: addFieldType === 'dropdown' ? addOptions : undefined,
 				itemTypes: addFieldType === 'list' ? [addItemType] : undefined,
-				multiselect: addFieldType === 'dropdown' ? addMultiselect : undefined
+				multiselect: addFieldType === 'dropdown' ? addMultiselect : undefined,
+				long: addFieldType === 'string' ? addLong : undefined
 			});
 			toast.success('Field added');
 			addFieldName = '';
@@ -147,6 +150,7 @@
 			addOptions = [];
 			addItemType = 'string';
 			addMultiselect = false;
+			addLong = false;
 			triggerImageListRefresh();
 			triggerSchemaRefresh();
 			await fetchSchema();
@@ -209,6 +213,7 @@
 		editOptions = def.options ?? [];
 		editOptionInput = '';
 		if (def.type !== 'dropdown') editMultiselect = false;
+		editLong = (def as { long?: boolean }).long ?? false;
 	}
 
 	function cancelEdit() {
@@ -293,7 +298,8 @@
 				defaultValue,
 				options: editFieldType === 'dropdown' ? editOptions : undefined,
 				itemTypes: editFieldType === 'list' ? [editItemType] : undefined,
-				multiselect: editFieldType === 'dropdown' ? editMultiselect : undefined
+				multiselect: editFieldType === 'dropdown' ? editMultiselect : undefined,
+				long: editFieldType === 'string' ? editLong : undefined
 			});
 			toast.success('Field updated');
 			editingKey = null;
@@ -384,7 +390,13 @@
 											</Select.Content>
 										</Select.Root>
 									</div>
-									{#if editFieldType === 'url'}
+									{#if editFieldType === 'string'}
+									<div class="flex flex-row items-center gap-2">
+										<Checkbox id="edit-long" bind:checked={editLong} />
+										<Label for="edit-long" class="text-sm font-normal cursor-pointer">Long text (multiline)</Label>
+									</div>
+								{/if}
+								{#if editFieldType === 'url'}
 										<div class="flex flex-col gap-2">
 											<div class="flex flex-row gap-2 items-center">
 												<Label class="w-20 shrink-0">Default display name</Label>
@@ -465,7 +477,7 @@
 									<div class="flex flex-col min-w-0">
 										<span class="font-medium">{fieldLabel(key)}</span>
 										<span class="text-xs text-muted-foreground">
-											{schema[key]?.type}
+											{schema[key]?.type}{#if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long} (long){/if}
 											{#if schema[key]?.type === 'dropdown' && schema[key]?.options?.length}
 												— {schema[key].options.join(', ')}
 												{#if (schema[key] as { multiselect?: boolean }).multiselect}
@@ -537,7 +549,13 @@
 								Add
 							</Button>
 						</div>
-						{#if addFieldType === 'url'}
+						{#if addFieldType === 'string'}
+						<div class="flex flex-row items-center gap-2">
+							<Checkbox id="add-long" bind:checked={addLong} />
+							<Label for="add-long" class="text-sm font-normal cursor-pointer">Long text (multiline)</Label>
+						</div>
+					{/if}
+					{#if addFieldType === 'url'}
 							<div class="flex flex-col gap-2 sm:flex-row sm:items-center flex-wrap">
 								<div class="flex items-center gap-2">
 									<Label class="text-sm w-32 shrink-0">Default display name</Label>
