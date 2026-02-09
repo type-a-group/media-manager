@@ -639,3 +639,65 @@ export async function apiUpdateSettingsForType(
 	return await res.json();
 }
 
+/**
+ * Rename an image file (type-scoped). Updates both disk and image-data.json.
+ */
+export async function apiRenameFileByIdForType(
+	typeId: string,
+	id: ImageId,
+	newFilename: string,
+	fetchFn: typeof fetch = fetch
+) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(
+		`/api/media-types/${encodeURIComponent(typeId)}/records/by-id/${encodeURIComponent(id)}/rename`,
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ new_filename: newFilename })
+		}
+	);
+	await assertOk(res, 'Failed to rename file');
+	return await res.json();
+}
+
+/**
+ * Check which filenames would conflict with existing files on disk.
+ */
+export async function apiCheckUploadConflictsForType(
+	typeId: string,
+	filenames: string[],
+	fetchFn: typeof fetch = fetch
+): Promise<{ conflicts: string[] }> {
+	const res = await fetchFn(
+		`/api/media-types/${encodeURIComponent(typeId)}/upload/check`,
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filenames })
+		}
+	);
+	await assertOk(res, 'Failed to check upload conflicts');
+	return await res.json();
+}
+
+/**
+ * Upload an image with explicit conflict resolution.
+ */
+export async function apiUploadImageForTypeWithResolution(
+	typeId: string,
+	file: File,
+	conflictResolution?: 'overwrite' | 'auto-rename',
+	fetchFn: typeof fetch = fetch
+) {
+	const form = new FormData();
+	form.append('image', file);
+	if (conflictResolution) form.append('conflict_resolution', conflictResolution);
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/upload`, {
+		method: 'POST',
+		body: form
+	});
+	await assertOk(res, 'Failed to upload image');
+	return await res.json();
+}
+

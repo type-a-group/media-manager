@@ -33,7 +33,9 @@ export const GET: RequestHandler = async ({ params }) => {
 						? 'image/gif'
 						: ext === '.svg'
 							? 'image/svg+xml'
-							: 'application/octet-stream';
+							: ext === '.webp'
+								? 'image/webp'
+								: 'application/octet-stream';
 		return new Response(imageBuffer, { headers: { 'Content-Type': contentType } });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
