@@ -215,7 +215,9 @@ export function createImageRepo(typeId?: string) {
 		return {
 			id: rec.id,
 			file_name: rec.file_name,
-			image_name: rec.image_name || undefined
+			image_name: rec.image_name || undefined,
+			width: rec.width,
+			height: rec.height
 		};
 	}
 
@@ -224,7 +226,9 @@ export function createImageRepo(typeId?: string) {
 		return {
 			id: (`unlinked:${encodeURIComponent(filename)}`) as ImageId,
 			file_name: filename,
-			image_name: undefined
+			image_name: undefined,
+			width: undefined,
+			height: undefined
 		};
 	}
 
@@ -453,8 +457,8 @@ export function createImageRepo(typeId?: string) {
 					.map((item: unknown) =>
 						item != null && typeof item === 'object' && 'url' in (item as object)
 							? ((item as { display_name?: string; url?: string }).display_name ?? '').trim() ||
-								(item as { url: string }).url ||
-								''
+							(item as { url: string }).url ||
+							''
 							: String(item)
 					)
 					.join(', ');
@@ -999,7 +1003,7 @@ export function createImageRepo(typeId?: string) {
 			});
 		} catch (err) {
 			// Best-effort rollback: rename file back
-			await fs.rename(newPath, oldPath).catch(() => {});
+			await fs.rename(newPath, oldPath).catch(() => { });
 			throw err;
 		}
 	}

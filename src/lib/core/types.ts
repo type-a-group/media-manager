@@ -219,7 +219,9 @@ export const ImageListItemSchema = z.object({
 	image_name: z.string().optional(),
 	group_by_value: z
 		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
-		.optional()
+		.optional(),
+	width: z.number().optional(),
+	height: z.number().optional()
 });
 export type ImageListItem = z.infer<typeof ImageListItemSchema>;
 

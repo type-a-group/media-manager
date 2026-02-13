@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { BalancedMasonryGrid, Frame } from '@masonry-grid/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -34,7 +35,9 @@
 	let setFieldDialogOpen = $state(false);
 	let setFieldSchema = $state<SchemaDefinition | null>(null);
 	let setFieldKey = $state('');
-	let setFieldValue = $state<string | number | boolean | string[] | { display_name: string; url: string }>('');
+	let setFieldValue = $state<
+		string | number | boolean | string[] | { display_name: string; url: string }
+	>('');
 	let gridSchemaFields = $state<string[]>([]);
 	/** Local value for Group by dropdown ('' = None); synced with selection.gridGroupByField. */
 	let groupByValue = $state('');
@@ -66,9 +69,11 @@
 
 	$effect(() => {
 		if (typeId) {
-			apiGetSchemaForType(typeId).then((s) => {
-				gridSchemaFields = getOrderedEditableKeys(s);
-			}).catch(() => {});
+			apiGetSchemaForType(typeId)
+				.then((s) => {
+					gridSchemaFields = getOrderedEditableKeys(s);
+				})
+				.catch(() => {});
 		}
 	});
 
@@ -77,7 +82,9 @@
 	 */
 	function getOrderedEditableKeys(s: SchemaDefinition): string[] {
 		const keys = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'image_name');
-		return keys.sort((a, b) => (a === 'image_name' ? -1 : b === 'image_name' ? 1 : a.localeCompare(b)));
+		return keys.sort((a, b) =>
+			a === 'image_name' ? -1 : b === 'image_name' ? 1 : a.localeCompare(b)
+		);
 	}
 
 	/**
@@ -109,7 +116,13 @@
 	/**
 	 * Coerces the current setFieldValue into the correct type for the selected field.
 	 */
-	function getCoercedValue(): string | number | boolean | string[] | { display_name: string; url: string } | null {
+	function getCoercedValue():
+		| string
+		| number
+		| boolean
+		| string[]
+		| { display_name: string; url: string }
+		| null {
 		if (!setFieldSchema || !setFieldKey) return null;
 		const def = setFieldSchema[setFieldKey];
 		const type = def?.type ?? 'string';
@@ -122,9 +135,18 @@
 		if (type === 'dropdown' && (def as { multiselect?: boolean }).multiselect) {
 			return Array.isArray(raw) ? (raw as string[]) : [];
 		}
-		if (type === 'list') return Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+		if (type === 'list')
+			return Array.isArray(raw)
+				? raw
+				: typeof raw === 'string'
+					? raw
+							.split(',')
+							.map((s) => s.trim())
+							.filter(Boolean)
+					: [];
 		if (type === 'url') {
-			if (raw != null && typeof raw === 'object' && 'url' in raw) return raw as { display_name: string; url: string };
+			if (raw != null && typeof raw === 'object' && 'url' in raw)
+				return raw as { display_name: string; url: string };
 			return { display_name: '', url: typeof raw === 'string' ? raw : '' };
 		}
 		return raw === null || raw === undefined ? '' : String(raw);
@@ -297,11 +319,42 @@
 		});
 		return sections;
 	});
+
+	/**
+	 * Helper to get width/height for Frame.
+	 * For linked images: use actual dims.
+	 * For unlinked: use default 100x100 (square).
+	 */
+	/**
+	 * Helper to get width/height for Frame.
+	 * For linked images: use actual dims.
+	 * For unlinked: use default 100x100 (square).
+	 *
+	 * Adds extra height to account for the fixed-height footer (text + padding + border).
+	 * We calculate this relative to gridMinPx so that at the minimum column width,
+	 * we have enough pixels. As the column grows, we'll have slightly more than enough.
+	 */
+	function getItemDims(item: ImageListItem, minPx: number): { width: number; height: number } {
+		const w = item.width ?? 100;
+		const h = item.height ?? 100;
+
+		// Footer: border-2 (4px) + p-2 (16px) + text-xs (16px line-height) ~= 36px.
+		// Add a small buffer -> 40px.
+		const FOOTER_HEIGHT = 36;
+
+		// extra_h / w = FOOTER_HEIGHT / minPx
+		// extra_h = w * FOOTER_HEIGHT / minPx
+		const extraH = (w * FOOTER_HEIGHT) / minPx;
+
+		return { width: w, height: h + extraH };
+	}
 </script>
 
 <div class="flex flex-col h-full w-full">
 	<!-- Grid header: sticky so it stays visible when scrolling -->
-	<div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border shrink-0 bg-background">
+	<div
+		class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border shrink-0 bg-background"
+	>
 		<div class="flex items-center gap-2 flex-wrap">
 			<Button
 				variant={selection.gridSelectMode ? 'default' : 'outline'}
@@ -317,12 +370,21 @@
 				{/if}
 			</Button>
 			{#if selection.gridSelectMode && selection.multiselectedIds.length > 0}
-				<Button variant="ghost" size="sm" onclick={() => { selection.clearMultiselect(); selection.setGridSelectMode(false); }}>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => {
+						selection.clearMultiselect();
+						selection.setGridSelectMode(false);
+					}}
+				>
 					Done
 				</Button>
 			{/if}
 			<div class="flex items-center gap-2">
-				<Label for="grid-group-by" class="text-sm text-muted-foreground whitespace-nowrap">Group by</Label>
+				<Label for="grid-group-by" class="text-sm text-muted-foreground whitespace-nowrap"
+					>Group by</Label
+				>
 				<Select.Root type="single" bind:value={groupByValue}>
 					<Select.Trigger id="grid-group-by" class="w-[140px]">
 						{groupByValue ? fieldLabel(groupByValue) : 'None'}
@@ -364,20 +426,14 @@
 				<span class="text-sm text-muted-foreground">
 					{selection.multiselectedIds.length} selected
 				</span>
-				<Button variant="outline" size="sm" onclick={openSetFieldDialog}>
-					Set field…
-				</Button>
+				<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
 				{#if hasLinkedSelected}
 					<Button variant="outline" size="sm" onclick={() => (unlinkConfirmOpen = true)}>
 						<Unlink class="h-4 w-4 mr-1" />
 						Unlink
 					</Button>
 				{/if}
-				<Button
-					variant="destructive"
-					size="sm"
-					onclick={() => (deleteFromDiskOpen = true)}
-				>
+				<Button variant="destructive" size="sm" onclick={() => (deleteFromDiskOpen = true)}>
 					<Trash2 class="h-4 w-4 mr-1" />
 					Delete from disk
 				</Button>
@@ -390,13 +446,12 @@
 			{@const linkedCount = selection.multiselectedIds.length}
 			<AlertDialog.Title>Unlink images</AlertDialog.Title>
 			<AlertDialog.Description>
-				Unlink {linkedCount} image{linkedCount === 1 ? '' : 's'}? Metadata will be cleared but the file{linkedCount === 1 ? '' : 's'} will stay on disk.
+				Unlink {linkedCount} image{linkedCount === 1 ? '' : 's'}? Metadata will be cleared but the
+				file{linkedCount === 1 ? '' : 's'} will stay on disk.
 			</AlertDialog.Description>
 			<div class="flex justify-end gap-2 mt-4">
 				<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-				<Button type="button" onclick={handleUnlink}>
-					Unlink
-				</Button>
+				<Button type="button" onclick={handleUnlink}>Unlink</Button>
 			</div>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
@@ -406,7 +461,8 @@
 			{@const deleteCount = selection.multiselectedIds.length}
 			<AlertDialog.Title>Delete from disk</AlertDialog.Title>
 			<AlertDialog.Description>
-				This will permanently delete {deleteCount} image {deleteCount === 1 ? 'file' : 'files'} and remove {deleteCount === 1 ? 'it' : 'them'} from the database. This cannot be undone.
+				This will permanently delete {deleteCount} image {deleteCount === 1 ? 'file' : 'files'} and remove
+				{deleteCount === 1 ? 'it' : 'them'} from the database. This cannot be undone.
 			</AlertDialog.Description>
 			<div class="flex justify-end gap-2 mt-4">
 				<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
@@ -421,7 +477,10 @@
 		<Dialog.Content>
 			<Dialog.Title>Set field for selected images</Dialog.Title>
 			<Dialog.Description>
-				Choose a field and value. This will update all {selection.multiselectedIds.length} selected image{selection.multiselectedIds.length === 1 ? '' : 's'}.
+				Choose a field and value. This will update all {selection.multiselectedIds.length} selected image{selection
+					.multiselectedIds.length === 1
+					? ''
+					: 's'}.
 			</Dialog.Description>
 			{#if setFieldSchema}
 				<div class="flex flex-col gap-4 py-4">
@@ -450,7 +509,9 @@
 										checked={typeof setFieldValue === 'boolean' ? setFieldValue : false}
 										onchange={(e) => (setFieldValue = (e.target as HTMLInputElement).checked)}
 									/>
-									<Label for="set-field-value" class="font-normal">{(def?.type === 'boolean' && setFieldValue) ? 'Yes' : 'No'}</Label>
+									<Label for="set-field-value" class="font-normal"
+										>{def?.type === 'boolean' && setFieldValue ? 'Yes' : 'No'}</Label
+									>
 								</div>
 							{:else if type === 'dropdown' && def?.options?.length}
 								{#if (def as { multiselect?: boolean }).multiselect}
@@ -490,31 +551,48 @@
 								<Input
 									id="set-field-value"
 									type="number"
-									value={typeof setFieldValue === 'number' ? setFieldValue : setFieldValue === '' ? '' : Number(setFieldValue)}
-									oninput={(e) => (setFieldValue = (e.target as HTMLInputElement).valueAsNumber ?? 0)}
+									value={typeof setFieldValue === 'number'
+										? setFieldValue
+										: setFieldValue === ''
+											? ''
+											: Number(setFieldValue)}
+									oninput={(e) =>
+										(setFieldValue = (e.target as HTMLInputElement).valueAsNumber ?? 0)}
 								/>
 							{:else if type === 'list'}
 								<Input
 									id="set-field-value"
 									type="text"
 									placeholder="Comma-separated values"
-									value={Array.isArray(setFieldValue) ? setFieldValue.join(', ') : String(setFieldValue ?? '')}
+									value={Array.isArray(setFieldValue)
+										? setFieldValue.join(', ')
+										: String(setFieldValue ?? '')}
 									oninput={(e) => (setFieldValue = (e.target as HTMLInputElement).value)}
 								/>
 							{:else if type === 'url'}
-								{@const urlObj = setFieldValue != null && typeof setFieldValue === 'object' && 'url' in setFieldValue ? (setFieldValue as { display_name: string; url: string }) : { display_name: '', url: '' }}
+								{@const urlObj =
+									setFieldValue != null &&
+									typeof setFieldValue === 'object' &&
+									'url' in setFieldValue
+										? (setFieldValue as { display_name: string; url: string })
+										: { display_name: '', url: '' }}
 								<div class="flex flex-col gap-2">
 									<Input
 										type="text"
 										placeholder="Display name"
 										value={urlObj.display_name ?? ''}
-										oninput={(e) => (setFieldValue = { ...urlObj, display_name: (e.target as HTMLInputElement).value })}
+										oninput={(e) =>
+											(setFieldValue = {
+												...urlObj,
+												display_name: (e.target as HTMLInputElement).value
+											})}
 									/>
 									<Input
 										type="url"
 										placeholder="https://..."
 										value={urlObj.url ?? ''}
-										oninput={(e) => (setFieldValue = { ...urlObj, url: (e.target as HTMLInputElement).value })}
+										oninput={(e) =>
+											(setFieldValue = { ...urlObj, url: (e.target as HTMLInputElement).value })}
 									/>
 								</div>
 							{:else}
@@ -531,9 +609,7 @@
 			{/if}
 			<div class="flex justify-end gap-2">
 				<Dialog.Close type="button">Cancel</Dialog.Close>
-				<Button type="button" onclick={handleSetFieldSubmit}>
-					Apply
-				</Button>
+				<Button type="button" onclick={handleSetFieldSubmit}>Apply</Button>
 			</div>
 		</Dialog.Content>
 	</Dialog.Root>
@@ -549,48 +625,61 @@
 				<div class="mb-6">
 					{#if section.label !== null}
 						<h3 class="text-sm font-semibold text-muted-foreground mb-2">
-							{selection.gridGroupByField ? fieldLabel(selection.gridGroupByField) + ': ' : ''}{section.label}
+							{selection.gridGroupByField
+								? fieldLabel(selection.gridGroupByField) + ': '
+								: ''}{section.label}
 						</h3>
 					{/if}
-					<div
-						class="grid gap-3"
-						style="grid-template-columns: repeat(auto-fill, minmax({gridMinPx}px, 1fr))"
-					>
+
+					<BalancedMasonryGrid frameWidth={gridMinPx} gap={12}>
 						{#each section.items as item (item.id)}
+							{@const dims = getItemDims(item, gridMinPx)}
 							{@const isSelected = selection.multiselectedIds.includes(item.id)}
-							<button
-								type="button"
-								class="relative flex flex-col rounded-lg overflow-hidden border-2 transition-colors focus:outline-none focus:ring-0 {isSelected
-									? 'border-primary bg-primary/10'
-									: 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/50'}"
-								onclick={() => handleImageClick(item)}
-							>
-								<div class="aspect-square w-full bg-muted flex items-center justify-center overflow-hidden">
-									<img
-										src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
-										alt={getDisplayName(item)}
-										class="w-full h-full object-contain"
-									/>
-								</div>
-								{#if selection.gridSelectMode}
-									<div
-										class="absolute top-1 left-1 p-0.5 rounded bg-background/80 {isSelected
-											? 'text-primary'
-											: 'text-muted-foreground'}"
-									>
-										{#if isSelected}
-											<CheckSquare class="h-4 w-4" />
-										{:else}
-											<Square class="h-4 w-4" />
-										{/if}
+							{@const isUnlinked = !item.width || !item.height}
+							<Frame width={dims.width} height={dims.height}>
+								<button
+									type="button"
+									class="relative flex flex-col rounded-lg overflow-hidden border-2 transition-colors focus:outline-none focus:ring-0 w-full {isSelected
+										? 'border-primary bg-primary/10'
+										: 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/50'}"
+									onclick={() => handleImageClick(item)}
+								>
+									<!-- 
+										We don't need padding-bottom hack here because Frame handles sizing.
+										But we want to ensure the image fits nicely.
+									-->
+									<div class="w-full relative {isUnlinked ? 'aspect-square' : ''}">
+										<img
+											src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
+											alt={getDisplayName(item)}
+											class="w-full {isUnlinked
+												? 'h-full object-cover absolute inset-0'
+												: 'h-auto object-contain block'}"
+										/>
 									</div>
-								{/if}
-								<p class="p-2 text-xs text-muted-foreground truncate text-left" title={getDisplayName(item)}>
-									{getDisplayName(item)}
-								</p>
-							</button>
+									{#if selection.gridSelectMode}
+										<div
+											class="absolute top-1 left-1 p-0.5 rounded bg-background/80 {isSelected
+												? 'text-primary'
+												: 'text-muted-foreground'}"
+										>
+											{#if isSelected}
+												<CheckSquare class="h-4 w-4" />
+											{:else}
+												<Square class="h-4 w-4" />
+											{/if}
+										</div>
+									{/if}
+									<p
+										class="p-2 text-xs text-muted-foreground truncate text-left w-full"
+										title={getDisplayName(item)}
+									>
+										{getDisplayName(item)}
+									</p>
+								</button>
+							</Frame>
 						{/each}
-					</div>
+					</BalancedMasonryGrid>
 				</div>
 			{/each}
 		{/if}
