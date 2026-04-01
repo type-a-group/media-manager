@@ -9,7 +9,7 @@ import { RESERVED_FIELD_KEYS } from './fieldKeys.js';
  * - Used by the schema editor and dynamic form rendering to decide which input control to show.
  * - Used by validation/migrations to ensure schema values are coherent.
  */
-export const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
+export const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
 
 /**
@@ -231,7 +231,9 @@ export type ImageListItem = z.infer<typeof ImageListItemSchema>;
 export const ImageListResponseSchema = z.object({
 	linked: z.array(ImageListItemSchema).default([]),
 	unlinked: z.array(ImageListItemSchema).default([]),
-	missing_files: z.array(ImageListItemSchema).default([])
+	missing_files: z.array(ImageListItemSchema).default([]),
+	excluded: z.array(ImageListItemSchema).default([]),
+	excluded_missing_files: z.array(z.string()).default([])
 });
 export type ImageListResponse = z.infer<typeof ImageListResponseSchema>;
 

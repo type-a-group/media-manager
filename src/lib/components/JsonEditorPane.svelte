@@ -9,6 +9,7 @@
 	import { ChevronLeft, ChevronRight, Trash2, X } from 'lucide-svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import JsonRecordGrid from '$lib/components/JsonRecordGrid.svelte';
+	import FilePicker from '$lib/components/FilePicker.svelte';
 	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -54,7 +55,9 @@
 	}
 
 	function addListItem(key: string) {
-		const itemType = (schema?.[key] as { itemTypes?: ('string'|'number'|'url')[] })?.itemTypes?.[0] ?? 'string';
+		const itemType =
+			(schema?.[key] as { itemTypes?: ('string' | 'number' | 'url')[] })?.itemTypes?.[0] ??
+			'string';
 		const arr = [...(Array.isArray(formValues[key]) ? (formValues[key] as unknown[]) : [])];
 		let value: string | number | { display_name: string; url: string };
 		if (itemType === 'url') {
@@ -109,7 +112,11 @@
 									: '');
 			if (type === 'url') value = normalizeUrlValue(value);
 			if (type === 'dropdown' && (def as { multiselect?: boolean }).multiselect) {
-				value = Array.isArray(value) ? value : typeof value === 'string' && value !== '' ? [value] : [];
+				value = Array.isArray(value)
+					? value
+					: typeof value === 'string' && value !== ''
+						? [value]
+						: [];
 			}
 			next[key] = type === 'number' ? String(value ?? '') : value;
 		}
@@ -126,9 +133,10 @@
 				const n = Number(current);
 				patch[key] = Number.isNaN(n) ? 0 : n;
 			} else if (def?.type === 'url') {
-				const urlVal = current != null && typeof current === 'object' && 'url' in (current as object)
-					? (current as { display_name?: string; url?: string })
-					: normalizeUrlValue(current);
+				const urlVal =
+					current != null && typeof current === 'object' && 'url' in (current as object)
+						? (current as { display_name?: string; url?: string })
+						: normalizeUrlValue(current);
 				patch[key] = { display_name: urlVal.display_name ?? '', url: urlVal.url ?? '' };
 			} else {
 				patch[key] = current;
@@ -194,7 +202,11 @@
 		if (!typeId || !selection.selectedImageId || !schema) return;
 		saving = true;
 		try {
-			const updated = await apiUpdatePropertiesByIdForType(typeId, selection.selectedImageId, buildPatch());
+			const updated = await apiUpdatePropertiesByIdForType(
+				typeId,
+				selection.selectedImageId,
+				buildPatch()
+			);
 			record = updated as Record<string, unknown>;
 			initFormValues(schema, record);
 			lastSavedPatch = buildPatch();
@@ -237,7 +249,8 @@
 		const ids = selection.visibleImageIds;
 		const idx = ids.indexOf(selection.selectedImageId!);
 		if (direction === 'prev' && idx > 0) selection.selectImage(ids[idx - 1]);
-		if (direction === 'next' && idx >= 0 && idx < ids.length - 1) selection.selectImage(ids[idx + 1]);
+		if (direction === 'next' && idx >= 0 && idx < ids.length - 1)
+			selection.selectImage(ids[idx + 1]);
 	}
 </script>
 
@@ -245,7 +258,9 @@
 	<JsonRecordGrid />
 {:else if !selection.selectedImageId}
 	<div class="flex flex-col items-center justify-center h-full w-full p-8 gap-4">
-		<p class="text-base text-muted-foreground text-center italic">Select a record from the sidebar or use New record in the sidebar.</p>
+		<p class="text-base text-muted-foreground text-center italic">
+			Select a record from the sidebar or use New record in the sidebar.
+		</p>
 	</div>
 {:else}
 	<div class="flex flex-col h-dvh w-full">
@@ -262,11 +277,10 @@
 				variant="secondary"
 				size="icon"
 				onclick={() => navigate('next')}
-				disabled={
-					saving ||
+				disabled={saving ||
 					selection.visibleImageIds.indexOf(selection.selectedImageId) === -1 ||
-					selection.visibleImageIds.indexOf(selection.selectedImageId) >= selection.visibleImageIds.length - 1
-				}
+					selection.visibleImageIds.indexOf(selection.selectedImageId) >=
+						selection.visibleImageIds.length - 1}
 			>
 				<ChevronRight />
 			</Button>
@@ -281,7 +295,9 @@
 				</AlertDialog.Trigger>
 				<AlertDialog.Content>
 					<AlertDialog.Title>Delete record</AlertDialog.Title>
-					<AlertDialog.Description>Remove this record? This cannot be undone.</AlertDialog.Description>
+					<AlertDialog.Description
+						>Remove this record? This cannot be undone.</AlertDialog.Description
+					>
 					<div class="flex justify-end gap-2 mt-4">
 						<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
 						<Button variant="destructive" type="button" onclick={deleteRecord}>Delete</Button>
@@ -314,7 +330,11 @@
 											id={key}
 											type="number"
 											value={formValues[key] ?? ''}
-											oninput={(e) => (formValues = { ...formValues, [key]: (e.currentTarget as HTMLInputElement).valueAsNumber ?? 0 })}
+											oninput={(e) =>
+												(formValues = {
+													...formValues,
+													[key]: (e.currentTarget as HTMLInputElement).valueAsNumber ?? 0
+												})}
 										/>
 									{:else if type === 'dropdown' && def?.options?.length}
 										{#if (def as { multiselect?: boolean }).multiselect}
@@ -351,11 +371,15 @@
 											</Select.Root>
 										{/if}
 									{:else if type === 'list'}
-										{@const itemType = (def as { itemTypes?: ('string'|'number'|'url')[] })?.itemTypes?.[0] ?? 'string'}
+										{@const itemType =
+											(def as { itemTypes?: ('string' | 'number' | 'url')[] })?.itemTypes?.[0] ??
+											'string'}
 										<div class="flex flex-col gap-2">
 											<div class="flex flex-wrap gap-1">
 												{#each Array.isArray(formValues[key]) ? (formValues[key] as unknown[]) : [] as item, i}
-													<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm">
+													<span
+														class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm"
+													>
 														{listItemDisplayText(item)}
 														<button
 															type="button"
@@ -378,15 +402,30 @@
 														type="text"
 														placeholder="Display name"
 														value={newListItemUrlDisplayName[key] ?? ''}
-														oninput={(e) => { newListItemUrlDisplayName = { ...newListItemUrlDisplayName, [key]: (e.target as HTMLInputElement).value }; }}
+														oninput={(e) => {
+															newListItemUrlDisplayName = {
+																...newListItemUrlDisplayName,
+																[key]: (e.target as HTMLInputElement).value
+															};
+														}}
 														class="w-32"
 													/>
 													<Input
 														type="url"
 														placeholder="https://..."
 														value={newListItemUrlUrl[key] ?? ''}
-														oninput={(e) => { newListItemUrlUrl = { ...newListItemUrlUrl, [key]: (e.target as HTMLInputElement).value }; }}
-														onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addListItem(key); } }}
+														oninput={(e) => {
+															newListItemUrlUrl = {
+																...newListItemUrlUrl,
+																[key]: (e.target as HTMLInputElement).value
+															};
+														}}
+														onkeydown={(e) => {
+															if (e.key === 'Enter') {
+																e.preventDefault();
+																addListItem(key);
+															}
+														}}
 														class="flex-1 min-w-0"
 													/>
 												{:else}
@@ -394,18 +433,38 @@
 														type={itemType === 'number' ? 'number' : 'text'}
 														placeholder="Add item"
 														value={newListItemValues[key] ?? ''}
-														oninput={(e) => { newListItemValues = { ...newListItemValues, [key]: (e.target as HTMLInputElement).value }; }}
-														onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addListItem(key); } }}
+														oninput={(e) => {
+															newListItemValues = {
+																...newListItemValues,
+																[key]: (e.target as HTMLInputElement).value
+															};
+														}}
+														onkeydown={(e) => {
+															if (e.key === 'Enter') {
+																e.preventDefault();
+																addListItem(key);
+															}
+														}}
 														class="flex-1 min-w-0"
 													/>
 												{/if}
-												<Button type="button" variant="outline" size="sm" onclick={() => addListItem(key)}>
+												<Button
+													type="button"
+													variant="outline"
+													size="sm"
+													onclick={() => addListItem(key)}
+												>
 													Add
 												</Button>
 											</div>
 										</div>
 									{:else if type === 'url'}
-										{@const urlObj = formValues[key] != null && typeof formValues[key] === 'object' && 'url' in (formValues[key] as object) ? (formValues[key] as { display_name?: string; url?: string }) : { display_name: '', url: '' }}
+										{@const urlObj =
+											formValues[key] != null &&
+											typeof formValues[key] === 'object' &&
+											'url' in (formValues[key] as object)
+												? (formValues[key] as { display_name?: string; url?: string })
+												: { display_name: '', url: '' }}
 										<div class="flex flex-col gap-2">
 											<Input
 												id={key + '-display'}
@@ -428,12 +487,21 @@
 												}}
 											/>
 										</div>
+									{:else if type === 'file'}
+										<FilePicker
+											value={formValues[key] as string}
+											onSelect={(id) => (formValues[key] = id)}
+										/>
 									{:else}
 										<Input
 											id={key}
 											type="text"
 											value={String(formValues[key] ?? '')}
-											oninput={(e) => (formValues = { ...formValues, [key]: (e.currentTarget as HTMLInputElement).value })}
+											oninput={(e) =>
+												(formValues = {
+													...formValues,
+													[key]: (e.currentTarget as HTMLInputElement).value
+												})}
 										/>
 									{/if}
 								</div>

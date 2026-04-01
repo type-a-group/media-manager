@@ -8,7 +8,17 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { toast } from 'svelte-sonner';
-	import { ChevronLeft, ChevronRight, MoreVertical, Trash2, Unlink, X } from 'lucide-svelte';
+	import {
+		ChevronLeft,
+		ChevronRight,
+		MoreVertical,
+		Trash2,
+		Unlink,
+		X,
+		EyeOff,
+		Eye,
+		FileIcon
+	} from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
 	import { fieldLabel, isUserFieldKey, RESERVED_FIELD_KEYS } from '$lib/core/fieldKeys.js';
@@ -24,15 +34,21 @@
 		apiLinkByFilenameForType,
 		apiUpdatePropertiesByIdForType,
 		apiUnlinkByIdForType,
-		apiDeleteFromDiskByIdForType
+		apiDeleteFromDiskByIdForType,
+		apiToggleExcludedFilesForType
 	} from '$lib/api/client.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';
-	import { triggerImageListRefresh, schemaRefreshTrigger, refreshTrigger } from '$lib/stores/refreshTrigger.js';
+	import {
+		triggerImageListRefresh,
+		schemaRefreshTrigger,
+		refreshTrigger
+	} from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import ImageViewGrid from './ImageViewGrid.svelte';
 	import MetadataButton from './MetadataButton.svelte';
+	import FilePicker from './FilePicker.svelte';
 
 	let schema = $state<SchemaDefinition | null>(null);
 	let record = $state<any | null>(null);
@@ -88,7 +104,9 @@
 	function getOrderedEditableKeys(s: SchemaDefinition): string[] {
 		const keys = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'image_name');
 		// Put image_name first if present.
-		return keys.sort((a, b) => (a === 'image_name' ? -1 : b === 'image_name' ? 1 : a.localeCompare(b)));
+		return keys.sort((a, b) =>
+			a === 'image_name' ? -1 : b === 'image_name' ? 1 : a.localeCompare(b)
+		);
 	}
 
 	/**
@@ -123,7 +141,11 @@
 									: '');
 			if (type === 'url') value = normalizeUrlValue(value);
 			if (type === 'dropdown' && (def as { multiselect?: boolean }).multiselect) {
-				value = Array.isArray(value) ? value : typeof value === 'string' && value !== '' ? [value] : [];
+				value = Array.isArray(value)
+					? value
+					: typeof value === 'string' && value !== ''
+						? [value]
+						: [];
 			}
 			// Keep numbers as string for text inputs; convert on save.
 			next[key] = type === 'number' ? String(value ?? '') : value;
@@ -134,6 +156,7 @@
 	/** Current media type from store (set by /media/[typeId] page). */
 	const currentMediaType = $derived($currentMediaTypeStore);
 	const typeId = $derived(currentMediaType?.typeId ?? null);
+	const kind = $derived(currentMediaType?.kind ?? 'images');
 
 	/**
 	 * Fetches saved values for a list field (for autocomplete).
@@ -154,7 +177,9 @@
 	 * List has a single item type (string, number, or url); url uses display name + url.
 	 */
 	function addListItem(key: string) {
-		const itemType = (schema?.[key] as { itemTypes?: ('string'|'number'|'url')[] })?.itemTypes?.[0] ?? 'string';
+		const itemType =
+			(schema?.[key] as { itemTypes?: ('string' | 'number' | 'url')[] })?.itemTypes?.[0] ??
+			'string';
 		const arr = [...(formValues[key] ?? [])];
 		let value: string | number | { display_name: string; url: string };
 		if (itemType === 'url') {
@@ -348,9 +373,10 @@
 			} else if (type === 'list') {
 				patch[key] = Array.isArray(raw) ? raw : raw ? [String(raw)] : [];
 			} else if (type === 'url') {
-				const urlVal = raw != null && typeof raw === 'object' && 'url' in raw
-					? raw as { display_name: string; url: string }
-					: normalizeUrlValue(raw);
+				const urlVal =
+					raw != null && typeof raw === 'object' && 'url' in raw
+						? (raw as { display_name: string; url: string })
+						: normalizeUrlValue(raw);
 				patch[key] = { display_name: urlVal.display_name ?? '', url: urlVal.url ?? '' };
 			} else {
 				patch[key] = raw ?? '';
@@ -432,7 +458,9 @@
 		if (idx === -1) return;
 		const nextIdx = direction === 'prev' ? idx - 1 : idx + 1;
 		if (nextIdx < 0 || nextIdx >= selection.visibleImageIds.length) return;
-		const settings = typeId ? await apiGetSettingsForType(typeId) : settingsStore.getCurrentSettings();
+		const settings = typeId
+			? await apiGetSettingsForType(typeId)
+			: settingsStore.getCurrentSettings();
 		if (settings.autoSaveOnAdvance && isDirty) {
 			await save();
 		}
@@ -461,6 +489,55 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('Unlink failed');
+		}
+	}
+
+	async function handleExclude() {
+		const filename = record?.file_name ?? unlinkedFilename;
+		if (!typeId || !filename) return;
+		try {
+			if (record && selection.selectedImageId) {
+				await apiUnlinkByIdForType(typeId, selection.selectedImageId);
+			}
+			await apiToggleExcludedFilesForType(typeId, [filename], 'exclude');
+			toast.success('Excluded image');
+			triggerImageListRefresh();
+			const selectedId = selection.selectedImageId;
+			if (!selectedId) return;
+			const idx = selection.visibleImageIds.indexOf(selectedId);
+			if (idx !== -1 && idx < selection.visibleImageIds.length - 1) {
+				selection.selectImage(selection.visibleImageIds[idx + 1]);
+			} else if (idx > 0) {
+				selection.selectImage(selection.visibleImageIds[idx - 1]);
+			} else {
+				selection.selectImage(null);
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('Exclude failed');
+		}
+	}
+
+	async function handleUnexclude() {
+		const filename = record?.file_name ?? unlinkedFilename;
+		if (!typeId || !filename) return;
+		try {
+			await apiToggleExcludedFilesForType(typeId, [filename], 'unexclude');
+			toast.success('Unlinked image');
+			triggerImageListRefresh();
+			const selectedId = selection.selectedImageId;
+			if (!selectedId) return;
+			const idx = selection.visibleImageIds.indexOf(selectedId);
+			if (idx !== -1 && idx < selection.visibleImageIds.length - 1) {
+				selection.selectImage(selection.visibleImageIds[idx + 1]);
+			} else if (idx > 0) {
+				selection.selectImage(selection.visibleImageIds[idx - 1]);
+			} else {
+				selection.selectImage(null);
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to unlink image');
 		}
 	}
 
@@ -497,9 +574,7 @@
 	function getCustomFieldKeys(rec: any, s: SchemaDefinition | null): string[] {
 		if (!rec || typeof rec !== 'object') return [];
 		const schemaKeys = s ? new Set(Object.keys(s)) : new Set();
-		return Object.keys(rec).filter(
-			(k) => !RESERVED_FIELD_KEYS.has(k) && !schemaKeys.has(k)
-		);
+		return Object.keys(rec).filter((k) => !RESERVED_FIELD_KEYS.has(k) && !schemaKeys.has(k));
 	}
 
 	/**
@@ -523,19 +598,31 @@
 	<ImageViewGrid />
 {:else if !selection.selectedImageId}
 	<div class="flex flex-col items-center justify-center h-full w-full p-8">
-		<p class="text-base text-gray-500 text-center italic">Select an image from the sidebar to begin editing.</p>
+		<p class="text-base text-gray-500 text-center italic">
+			Select an image from the sidebar to begin editing.
+		</p>
 	</div>
-{:else}
-	{#if record || (isUnlinkedSelection && schema)}
+{:else if record || (isUnlinkedSelection && schema)}
 	<div class="flex flex-row h-dvh w-full">
 		<!-- Image pane: scrolls independently when image is tall -->
 		<div class="flex-1 min-w-0 overflow-auto p-4">
 			<Card.Root>
 				<Card.Content>
-					<img
-						src={typeId ? apiImageUrlByIdForType(typeId, selection.selectedImageId) : ''}
-						alt={record?.image_name || record?.file_name || unlinkedFilename}
-					/>
+					{#if kind === 'generic'}
+						{@const filename = record?.file_name || unlinkedFilename || ''}
+						{@const parts = filename.split('.')}
+						<div class="flex flex-col items-center justify-center p-8 gap-4 min-h-[50vh]">
+							<FileIcon class="w-32 h-32 text-muted-foreground" />
+							<div class="text-2xl font-bold font-mono">
+								{parts.length > 1 ? parts.pop()?.toUpperCase() : 'FILE'}
+							</div>
+						</div>
+					{:else}
+						<img
+							src={typeId ? apiImageUrlByIdForType(typeId, selection.selectedImageId) : ''}
+							alt={record?.image_name || record?.file_name || unlinkedFilename}
+						/>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		</div>
@@ -558,24 +645,39 @@
 					variant="secondary"
 					size="icon"
 					onclick={() => navigate('next')}
-					disabled={
-						selection.visibleImageIds.indexOf(selection.selectedImageId) === -1 ||
-						selection.visibleImageIds.indexOf(selection.selectedImageId) >= selection.visibleImageIds.length - 1
-					}
+					disabled={selection.visibleImageIds.indexOf(selection.selectedImageId) === -1 ||
+						selection.visibleImageIds.indexOf(selection.selectedImageId) >=
+							selection.visibleImageIds.length - 1}
 				>
 					<ChevronRight />
 				</Button>
-				{#if record}
-					<Button variant="outline" onclick={save} disabled={saving || loading || !isDirty}>
-						{saving ? 'Saving…' : 'Save'}
-					</Button>
-					{#if record.id}
-						<MetadataButton id={record.id} typeId={typeId ?? undefined} filename={record.file_name} />
+				{#if kind !== 'generic'}
+					{#if record}
+						<Button variant="outline" onclick={save} disabled={saving || loading || !isDirty}>
+							{saving ? 'Saving…' : 'Save'}
+						</Button>
+						{#if record.id}
+							<MetadataButton
+								id={record.id}
+								typeId={typeId ?? undefined}
+								filename={record.file_name}
+							/>
+						{/if}
+					{:else}
+						<Button onclick={linkToCatalog} disabled={saving || loading}>
+							{saving ? 'Linking…' : 'Link to catalog'}
+						</Button>
+						{#if selection.viewMode === 'unlinked'}
+							<Button variant="outline" onclick={handleExclude} disabled={saving || loading}>
+								Exclude
+							</Button>
+						{/if}
+						{#if selection.viewMode === 'excluded'}
+							<Button variant="outline" onclick={handleUnexclude} disabled={saving || loading}>
+								Unlink
+							</Button>
+						{/if}
 					{/if}
-				{:else}
-					<Button onclick={linkToCatalog} disabled={saving || loading}>
-						{saving ? 'Linking…' : 'Link to catalog'}
-					</Button>
 				{/if}
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger
@@ -587,15 +689,16 @@
 					<DropdownMenu.Content align="end">
 						{#if record}
 							<DropdownMenu.Item onclick={() => (unlinkConfirmOpen = true)}>
-								<Unlink class="h-4 w-4" />
+								<Unlink class="h-4 w-4 mr-2" />
 								Unlink
 							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={handleExclude}>
+								<EyeOff class="h-4 w-4 mr-2" />
+								Exclude
+							</DropdownMenu.Item>
 						{/if}
-						<DropdownMenu.Item
-							variant="destructive"
-							onclick={() => (deleteFromDiskOpen = true)}
-						>
-							<Trash2 class="h-4 w-4" />
+						<DropdownMenu.Item variant="destructive" onclick={() => (deleteFromDiskOpen = true)}>
+							<Trash2 class="h-4 w-4 mr-2" />
 							Delete from disk
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
@@ -608,9 +711,7 @@
 						</AlertDialog.Description>
 						<div class="flex justify-end gap-2 mt-4">
 							<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-							<Button type="button" onclick={unlink}>
-								Unlink
-							</Button>
+							<Button type="button" onclick={unlink}>Unlink</Button>
 						</div>
 					</AlertDialog.Content>
 				</AlertDialog.Root>
@@ -618,7 +719,8 @@
 					<AlertDialog.Content>
 						<AlertDialog.Title>Delete from disk</AlertDialog.Title>
 						<AlertDialog.Description>
-							This will permanently delete the image file and remove it from the database. This action cannot be undone.
+							This will permanently delete the image file and remove it from the database. This
+							action cannot be undone.
 						</AlertDialog.Description>
 						<div class="flex justify-end gap-2 mt-4">
 							<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
@@ -632,13 +734,17 @@
 
 			<!-- Scrollable content: filename + metadata form -->
 			<div class="flex-1 overflow-y-auto">
-				<p class="p-3 text-sm text-muted-foreground break-all">{record?.file_name ?? unlinkedFilename}</p>
+				<p class="p-3 text-sm text-muted-foreground break-all">
+					{record?.file_name ?? unlinkedFilename}
+				</p>
 				{#if record?.width != null && record?.height != null}
-					<p class="px-3 pb-1 text-sm text-muted-foreground">{record.width} &times; {record.height} px</p>
+					<p class="px-3 pb-1 text-sm text-muted-foreground">
+						{record.width} &times; {record.height} px
+					</p>
 				{/if}
 				{#if loading}
 					<p class="px-3 pb-3 italic">Loading…</p>
-				{:else if schema}
+				{:else if schema && kind !== 'generic'}
 					<div class="flex flex-col gap-3 p-3">
 						{#each getOrderedEditableKeys(schema) as key (key)}
 							{#if key !== 'file_name' && key !== 'last_modified' && key !== 'default'}
@@ -647,12 +753,19 @@
 									{#if schema[key]?.type === 'boolean'}
 										<div class="flex items-center gap-2">
 											<Checkbox bind:checked={formValues[key]} />
-											<span class="text-sm text-muted-foreground">{formValues[key] ? 'True' : 'False'}</span>
+											<span class="text-sm text-muted-foreground"
+												>{formValues[key] ? 'True' : 'False'}</span
+											>
 										</div>
 									{:else if schema[key]?.type === 'number'}
 										<Input type="number" bind:value={formValues[key]} />
 									{:else if schema[key]?.type === 'url'}
-										{@const urlObj = formValues[key] != null && typeof formValues[key] === 'object' && 'url' in formValues[key] ? formValues[key] : { display_name: '', url: '' }}
+										{@const urlObj =
+											formValues[key] != null &&
+											typeof formValues[key] === 'object' &&
+											'url' in formValues[key]
+												? formValues[key]
+												: { display_name: '', url: '' }}
 										<div class="flex flex-col gap-1">
 											<Input
 												type="text"
@@ -696,7 +809,7 @@
 														: ((formValues[key] ?? []) as string[]).join(', ')}
 												</Select.Trigger>
 												<Select.Content>
-													{#each (schema[key]?.options ?? []) as opt}
+													{#each schema[key]?.options ?? [] as opt}
 														{#if opt !== ''}
 															<Select.Item value={opt}>{opt}</Select.Item>
 														{/if}
@@ -706,11 +819,13 @@
 										{:else}
 											<Select.Root type="single" bind:value={formValues[key]}>
 												<Select.Trigger class="w-full">
-													{(formValues[key] ?? '') === '' ? '(none)' : (formValues[key] ?? 'Select…')}
+													{(formValues[key] ?? '') === ''
+														? '(none)'
+														: (formValues[key] ?? 'Select…')}
 												</Select.Trigger>
 												<Select.Content>
 													<Select.Item value="">(none)</Select.Item>
-													{#each (schema[key]?.options ?? []) as opt}
+													{#each schema[key]?.options ?? [] as opt}
 														{#if opt !== ''}
 															<Select.Item value={opt}>{opt}</Select.Item>
 														{/if}
@@ -719,10 +834,12 @@
 											</Select.Root>
 										{/if}
 									{:else if schema[key]?.type === 'list'}
-										{@const itemType = (schema[key] as { itemTypes?: ('string'|'number'|'url')[] })?.itemTypes?.[0] ?? 'string'}
+										{@const itemType =
+											(schema[key] as { itemTypes?: ('string' | 'number' | 'url')[] })
+												?.itemTypes?.[0] ?? 'string'}
 										<div class="flex flex-col gap-1">
 											<div class="flex flex-wrap gap-1">
-												{#each (formValues[key] ?? []) as item, i}
+												{#each formValues[key] ?? [] as item, i}
 													<span
 														class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm"
 													>
@@ -748,15 +865,30 @@
 														type="text"
 														placeholder="Display name"
 														value={newListItemUrlDisplayName[key] ?? ''}
-														oninput={(e) => { newListItemUrlDisplayName = { ...newListItemUrlDisplayName, [key]: (e.target as HTMLInputElement).value }; }}
+														oninput={(e) => {
+															newListItemUrlDisplayName = {
+																...newListItemUrlDisplayName,
+																[key]: (e.target as HTMLInputElement).value
+															};
+														}}
 														class="w-32"
 													/>
 													<Input
 														type="url"
 														placeholder="https://..."
 														value={newListItemUrlUrl[key] ?? ''}
-														oninput={(e) => { newListItemUrlUrl = { ...newListItemUrlUrl, [key]: (e.target as HTMLInputElement).value }; }}
-														onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addListItem(key); } }}
+														oninput={(e) => {
+															newListItemUrlUrl = {
+																...newListItemUrlUrl,
+																[key]: (e.target as HTMLInputElement).value
+															};
+														}}
+														onkeydown={(e) => {
+															if (e.key === 'Enter') {
+																e.preventDefault();
+																addListItem(key);
+															}
+														}}
 														class="flex-1 min-w-0"
 													/>
 												{:else}
@@ -780,7 +912,9 @@
 														{#if listInputFocusedKey === key}
 															{@const suggestions = getFilteredListSuggestions(key)}
 															{#if suggestions.length > 0}
-																<div class="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-md border bg-popover py-1 shadow-md">
+																<div
+																	class="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-md border bg-popover py-1 shadow-md"
+																>
 																	{#each suggestions as suggestion}
 																		<button
 																			type="button"
@@ -811,6 +945,8 @@
 												</Button>
 											</div>
 										</div>
+									{:else if schema[key]?.type === 'file'}
+										<FilePicker bind:value={formValues[key]} />
 									{:else if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long}
 										<textarea
 											bind:value={formValues[key]}
@@ -827,7 +963,9 @@
 
 					{#if record && getCustomFieldKeys(record, schema).length > 0}
 						<Collapsible.Root class="border-t border-border pt-3 mt-3">
-							<Collapsible.Trigger class="flex w-full items-center justify-between text-sm font-medium">
+							<Collapsible.Trigger
+								class="flex w-full items-center justify-between text-sm font-medium"
+							>
 								Custom fields
 								<span class="text-muted-foreground text-xs">
 									{getCustomFieldKeys(record, schema).length}
@@ -839,7 +977,9 @@
 										Fields not in schema. You can clear them to remove from this image.
 									</p>
 									{#each getCustomFieldKeys(record, schema) as key (key)}
-										<div class="flex flex-row items-center justify-between gap-2 p-2 rounded bg-muted/50">
+										<div
+											class="flex flex-row items-center justify-between gap-2 p-2 rounded bg-muted/50"
+										>
 											<div class="min-w-0 flex-1">
 												<span class="text-sm font-medium">{fieldLabel(key)}</span>
 												<p class="text-xs text-muted-foreground truncate">
@@ -848,11 +988,7 @@
 														: String(record[key] ?? '')}
 												</p>
 											</div>
-											<Button
-												variant="outline"
-												size="sm"
-												onclick={() => clearCustomField(key)}
-											>
+											<Button variant="outline" size="sm" onclick={() => clearCustomField(key)}>
 												Clear and remove
 											</Button>
 										</div>
@@ -865,10 +1001,8 @@
 			</div>
 		</div>
 	</div>
-	{:else}
-		<div class="flex min-h-[50vh] items-center justify-center p-8">
-			<p class="text-muted-foreground">{loading ? 'Loading…' : 'Failed to load image.'}</p>
-		</div>
-	{/if}
+{:else}
+	<div class="flex min-h-[50vh] items-center justify-center p-8">
+		<p class="text-muted-foreground">{loading ? 'Loading…' : 'Failed to load image.'}</p>
+	</div>
 {/if}
-

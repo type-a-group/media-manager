@@ -29,7 +29,7 @@ export class SelectionState {
 	/**
 	 * Current list view mode (which list is shown in the sidebar).
 	 */
-	viewMode = $state<'linked' | 'unlinked'>('linked');
+	viewMode = $state<'linked' | 'unlinked' | 'excluded'>('linked');
 
 	/**
 	 * Ordered list of IDs currently visible in the sidebar list.
@@ -109,9 +109,9 @@ export class SelectionState {
 	/**
 	 * Update the current list view mode.
 	 *
-	 * @param mode - `linked` or `unlinked`.
+	 * @param mode - `linked`, `unlinked`, or `excluded`.
 	 */
-	setViewMode = (mode: 'linked' | 'unlinked') => {
+	setViewMode = (mode: 'linked' | 'unlinked' | 'excluded') => {
 		this.viewMode = mode;
 	};
 

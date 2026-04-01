@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listMediaTypes, createMediaType } from '$lib/storage/mediaTypes.js';
+import { listMediaTypes, createMediaType, ensureFilesGroupExists, ensureGlobalsGroupExists } from '$lib/storage/mediaTypes.js';
 import { z } from 'zod';
 
 const CreateBodySchema = z.object({
@@ -14,6 +14,8 @@ const CreateBodySchema = z.object({
  */
 export const GET: RequestHandler = async () => {
 	try {
+		await ensureFilesGroupExists();
+		await ensureGlobalsGroupExists();
 		const list = listMediaTypes();
 		return json(list);
 	} catch (err) {

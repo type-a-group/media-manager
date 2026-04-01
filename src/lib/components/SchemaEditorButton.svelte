@@ -22,7 +22,15 @@
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { triggerImageListRefresh, triggerSchemaRefresh } from '$lib/stores/refreshTrigger.js';
 
-	const FIELD_TYPES: FieldType[] = ['string', 'number', 'boolean', 'dropdown', 'list', 'url'];
+	const FIELD_TYPES: FieldType[] = [
+		'string',
+		'number',
+		'boolean',
+		'dropdown',
+		'list',
+		'url',
+		'file'
+	];
 	const LIST_ITEM_TYPES: ListItemType[] = ['string', 'number', 'url'];
 
 	let isOpen = $state(false);
@@ -93,9 +101,15 @@
 	 * Returns schema keys excluding system-only fields, in display order.
 	 */
 	function getEditableSchemaKeys(s: SchemaDefinition): string[] {
-		return Object.keys(s).filter(
-			(k) => !['file_name', 'last_modified', 'default'].includes(k)
-		).sort((a, b) => (a === 'image_name' || a === 'name' ? -1 : b === 'image_name' || b === 'name' ? 1 : a.localeCompare(b)));
+		return Object.keys(s)
+			.filter((k) => !['file_name', 'last_modified', 'default'].includes(k))
+			.sort((a, b) =>
+				a === 'image_name' || a === 'name'
+					? -1
+					: b === 'image_name' || b === 'name'
+						? 1
+						: a.localeCompare(b)
+			);
 	}
 
 	/**
@@ -116,18 +130,37 @@
 			return;
 		}
 
-		let defaultValue: string | number | boolean | string[] | { display_name: string; url: string } | undefined;
+		let defaultValue:
+			| string
+			| number
+			| boolean
+			| string[]
+			| { display_name: string; url: string }
+			| undefined;
 		if (addFieldType === 'number') {
 			const n = Number(addDefaultValue);
 			defaultValue = Number.isFinite(n) ? n : undefined;
 		} else if (addFieldType === 'boolean') {
 			defaultValue = addDefaultValue.toLowerCase() === 'true';
 		} else if (addFieldType === 'list') {
-			defaultValue = addDefaultValue ? addDefaultValue.split(',').map((s) => s.trim()).filter(Boolean) : [];
+			defaultValue = addDefaultValue
+				? addDefaultValue
+						.split(',')
+						.map((s) => s.trim())
+						.filter(Boolean)
+				: [];
 		} else if (addFieldType === 'url') {
-			defaultValue = { display_name: addDefaultUrlDisplayName.trim(), url: addDefaultUrlUrl.trim() };
+			defaultValue = {
+				display_name: addDefaultUrlDisplayName.trim(),
+				url: addDefaultUrlUrl.trim()
+			};
 		} else if (addFieldType === 'dropdown' && addMultiselect) {
-			defaultValue = addDefaultValue ? addDefaultValue.split(',').map((s) => s.trim()).filter(Boolean) : [];
+			defaultValue = addDefaultValue
+				? addDefaultValue
+						.split(',')
+						.map((s) => s.trim())
+						.filter(Boolean)
+				: [];
 		} else {
 			defaultValue = addDefaultValue || undefined;
 		}
@@ -262,7 +295,11 @@
 		}
 
 		const def = schema[editingKey];
-		if (def?.type === 'dropdown' && (def as { multiselect?: boolean }).multiselect === true && !editMultiselect) {
+		if (
+			def?.type === 'dropdown' &&
+			(def as { multiselect?: boolean }).multiselect === true &&
+			!editMultiselect
+		) {
 			multiselectOffConfirmOpen = true;
 			return;
 		}
@@ -274,18 +311,37 @@
 	 * Performs the actual save after rename confirmation (if any).
 	 */
 	async function doSaveEdit(oldKey: string, newKey: string) {
-		let defaultValue: string | number | boolean | string[] | { display_name: string; url: string } | undefined;
+		let defaultValue:
+			| string
+			| number
+			| boolean
+			| string[]
+			| { display_name: string; url: string }
+			| undefined;
 		if (editFieldType === 'number') {
 			const n = Number(editDefaultValue);
 			defaultValue = Number.isFinite(n) ? n : undefined;
 		} else if (editFieldType === 'boolean') {
 			defaultValue = editDefaultValue.toLowerCase() === 'true';
 		} else if (editFieldType === 'list') {
-			defaultValue = editDefaultValue ? editDefaultValue.split(',').map((s) => s.trim()).filter(Boolean) : [];
+			defaultValue = editDefaultValue
+				? editDefaultValue
+						.split(',')
+						.map((s) => s.trim())
+						.filter(Boolean)
+				: [];
 		} else if (editFieldType === 'url') {
-			defaultValue = { display_name: editDefaultUrlDisplayName.trim(), url: editDefaultUrlUrl.trim() };
+			defaultValue = {
+				display_name: editDefaultUrlDisplayName.trim(),
+				url: editDefaultUrlUrl.trim()
+			};
 		} else if (editFieldType === 'dropdown' && editMultiselect) {
-			defaultValue = editDefaultValue ? editDefaultValue.split(',').map((s) => s.trim()).filter(Boolean) : [];
+			defaultValue = editDefaultValue
+				? editDefaultValue
+						.split(',')
+						.map((s) => s.trim())
+						.filter(Boolean)
+				: [];
 		} else {
 			defaultValue = editDefaultValue || undefined;
 		}
@@ -333,7 +389,9 @@
 		if (!deleteTargetKey) return;
 		try {
 			await apiDeleteSchemaFieldForType(typeId!, { fieldName: deleteTargetKey, removeFromImages });
-			toast.success(removeFromImages ? 'Field removed from schema and all images' : 'Field removed from schema');
+			toast.success(
+				removeFromImages ? 'Field removed from schema and all images' : 'Field removed from schema'
+			);
 			deleteTargetKey = null;
 			deleteConfirmOpen = false;
 			triggerImageListRefresh();
@@ -391,26 +449,40 @@
 										</Select.Root>
 									</div>
 									{#if editFieldType === 'string'}
-									<div class="flex flex-row items-center gap-2">
-										<Checkbox id="edit-long" bind:checked={editLong} />
-										<Label for="edit-long" class="text-sm font-normal cursor-pointer">Long text (multiline)</Label>
-									</div>
-								{/if}
-								{#if editFieldType === 'url'}
+										<div class="flex flex-row items-center gap-2">
+											<Checkbox id="edit-long" bind:checked={editLong} />
+											<Label for="edit-long" class="text-sm font-normal cursor-pointer"
+												>Long text (multiline)</Label
+											>
+										</div>
+									{/if}
+									{#if editFieldType === 'url'}
 										<div class="flex flex-col gap-2">
 											<div class="flex flex-row gap-2 items-center">
 												<Label class="w-20 shrink-0">Default display name</Label>
-												<Input type="text" bind:value={editDefaultUrlDisplayName} placeholder="Display name" />
+												<Input
+													type="text"
+													bind:value={editDefaultUrlDisplayName}
+													placeholder="Display name"
+												/>
 											</div>
 											<div class="flex flex-row gap-2 items-center">
 												<Label class="w-20 shrink-0">Default URL</Label>
-												<Input type="url" bind:value={editDefaultUrlUrl} placeholder="https://..." />
+												<Input
+													type="url"
+													bind:value={editDefaultUrlUrl}
+													placeholder="https://..."
+												/>
 											</div>
 										</div>
 									{:else}
 										<div class="flex flex-row gap-2 items-center">
 											<Label class="w-20 shrink-0">Default</Label>
-											<Input type="text" bind:value={editDefaultValue} placeholder="Default value" />
+											<Input
+												type="text"
+												bind:value={editDefaultValue}
+												placeholder="Default value"
+											/>
 										</div>
 									{/if}
 									{#if editFieldType === 'list'}
@@ -431,7 +503,9 @@
 									{#if editFieldType === 'dropdown'}
 										<div class="flex flex-row items-center gap-2">
 											<Checkbox id="edit-multiselect" bind:checked={editMultiselect} />
-											<Label for="edit-multiselect" class="text-sm font-normal cursor-pointer">Multiselect</Label>
+											<Label for="edit-multiselect" class="text-sm font-normal cursor-pointer"
+												>Multiselect</Label
+											>
 										</div>
 										<div class="flex flex-col gap-1">
 											<Label>Options</Label>
@@ -457,7 +531,8 @@
 													type="text"
 													bind:value={editOptionInput}
 													placeholder="Add option"
-													onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addEditOption())}
+													onkeydown={(e) =>
+														e.key === 'Enter' && (e.preventDefault(), addEditOption())}
 												/>
 												<Button type="button" variant="outline" size="sm" onclick={addEditOption}>
 													Add
@@ -477,7 +552,9 @@
 									<div class="flex flex-col min-w-0">
 										<span class="font-medium">{fieldLabel(key)}</span>
 										<span class="text-xs text-muted-foreground">
-											{schema[key]?.type}{#if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long} (long){/if}
+											{schema[key]
+												?.type}{#if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long}
+												(long){/if}
 											{#if schema[key]?.type === 'dropdown' && schema[key]?.options?.length}
 												— {schema[key].options.join(', ')}
 												{#if (schema[key] as { multiselect?: boolean }).multiselect}
@@ -520,12 +597,7 @@
 					<h3 class="font-semibold">Add field</h3>
 					<div class="flex flex-col gap-2">
 						<div class="flex flex-row gap-2 items-center flex-wrap">
-							<Input
-								type="text"
-								bind:value={addFieldName}
-								placeholder="field_name"
-								class="w-40"
-							/>
+							<Input type="text" bind:value={addFieldName} placeholder="field_name" class="w-40" />
 							<Select.Root type="single" bind:value={addFieldType}>
 								<Select.Trigger class="w-28">
 									{addFieldType}
@@ -550,20 +622,32 @@
 							</Button>
 						</div>
 						{#if addFieldType === 'string'}
-						<div class="flex flex-row items-center gap-2">
-							<Checkbox id="add-long" bind:checked={addLong} />
-							<Label for="add-long" class="text-sm font-normal cursor-pointer">Long text (multiline)</Label>
-						</div>
-					{/if}
-					{#if addFieldType === 'url'}
+							<div class="flex flex-row items-center gap-2">
+								<Checkbox id="add-long" bind:checked={addLong} />
+								<Label for="add-long" class="text-sm font-normal cursor-pointer"
+									>Long text (multiline)</Label
+								>
+							</div>
+						{/if}
+						{#if addFieldType === 'url'}
 							<div class="flex flex-col gap-2 sm:flex-row sm:items-center flex-wrap">
 								<div class="flex items-center gap-2">
 									<Label class="text-sm w-32 shrink-0">Default display name</Label>
-									<Input type="text" bind:value={addDefaultUrlDisplayName} placeholder="Display name" class="w-48" />
+									<Input
+										type="text"
+										bind:value={addDefaultUrlDisplayName}
+										placeholder="Display name"
+										class="w-48"
+									/>
 								</div>
 								<div class="flex items-center gap-2">
 									<Label class="text-sm w-24 shrink-0">Default URL</Label>
-									<Input type="url" bind:value={addDefaultUrlUrl} placeholder="https://..." class="w-48" />
+									<Input
+										type="url"
+										bind:value={addDefaultUrlUrl}
+										placeholder="https://..."
+										class="w-48"
+									/>
 								</div>
 							</div>
 						{:else if addFieldType === 'list'}
@@ -584,13 +668,17 @@
 						{#if addFieldType === 'dropdown'}
 							<div class="flex flex-row items-center gap-2">
 								<Checkbox id="add-multiselect" bind:checked={addMultiselect} />
-								<Label for="add-multiselect" class="text-sm font-normal cursor-pointer">Multiselect</Label>
+								<Label for="add-multiselect" class="text-sm font-normal cursor-pointer"
+									>Multiselect</Label
+								>
 							</div>
 							<div class="flex flex-col gap-1">
 								<Label class="text-sm">Options</Label>
 								<div class="flex flex-wrap gap-1">
 									{#each addOptions as opt, i}
-										<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm">
+										<span
+											class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm"
+										>
 											{opt}
 											<button
 												type="button"
@@ -643,22 +731,12 @@
 <AlertDialog.Root bind:open={deleteConfirmOpen}>
 	<AlertDialog.Content>
 		<AlertDialog.Title>Delete field</AlertDialog.Title>
-		<AlertDialog.Description>
-			How do you want to remove this field?
-		</AlertDialog.Description>
+		<AlertDialog.Description>How do you want to remove this field?</AlertDialog.Description>
 		<div class="flex flex-col gap-2 mt-4">
-			<Button
-				variant="outline"
-				type="button"
-				onclick={() => handleDelete(false)}
-			>
+			<Button variant="outline" type="button" onclick={() => handleDelete(false)}>
 				Remove from schema only (data becomes custom fields)
 			</Button>
-			<Button
-				variant="destructive"
-				type="button"
-				onclick={() => handleDelete(true)}
-			>
+			<Button variant="destructive" type="button" onclick={() => handleDelete(true)}>
 				Remove from schema and all images
 			</Button>
 			<AlertDialog.Cancel type="button" class="mt-2">Cancel</AlertDialog.Cancel>
@@ -670,14 +748,12 @@
 	<AlertDialog.Content>
 		<AlertDialog.Title>Turn off multiselect</AlertDialog.Title>
 		<AlertDialog.Description>
-			Turning off multiselect will change existing data: only the first selected option will be kept for each record. Continue?
+			Turning off multiselect will change existing data: only the first selected option will be kept
+			for each record. Continue?
 		</AlertDialog.Description>
 		<div class="flex justify-end gap-2 mt-4">
 			<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-			<Button
-				type="button"
-				onclick={() => editingKey && doSaveEdit(editingKey, editingKey)}
-			>
+			<Button type="button" onclick={() => editingKey && doSaveEdit(editingKey, editingKey)}>
 				Continue
 			</Button>
 		</div>

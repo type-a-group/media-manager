@@ -88,19 +88,19 @@ export async function createMediaType(
 	const defaultSchema =
 		kind === 'images'
 			? {
-					image_name: {
-						type: 'string' as const,
-						removable: false,
-						defaultValue: ''
-					}
+				image_name: {
+					type: 'string' as const,
+					removable: false,
+					defaultValue: ''
 				}
+			}
 			: {
-					name: {
-						type: 'string' as const,
-						removable: false,
-						defaultValue: ''
-					}
-				};
+				name: {
+					type: 'string' as const,
+					removable: false,
+					defaultValue: ''
+				}
+			};
 
 	await writeMediaTypeSettingsFile(finalBaseDir, {
 		displayName: displayName.trim() || typeId,
@@ -129,6 +129,9 @@ export async function createMediaType(
  * @throws If typeId is invalid or path is outside root
  */
 export async function deleteMediaType(typeId: string): Promise<void> {
+	if (typeId === 'files') {
+		throw new Error('Cannot delete the protected "files" media type');
+	}
 	const rootDir = getRootDir();
 	const baseDir = path.join(rootDir, typeId);
 	const resolvedBase = path.resolve(baseDir);
@@ -141,4 +144,64 @@ export async function deleteMediaType(typeId: string): Promise<void> {
 		throw new Error('Not a media type folder');
 	}
 	await fs.rm(baseDir, { recursive: true, force: true });
+}
+
+/**
+ * Ensures the default "files" media group exists.
+ */
+export async function ensureFilesGroupExists(): Promise<void> {
+	const rootDir = getRootDir();
+	const _candidate = 'files';
+	const baseDir = path.join(rootDir, _candidate);
+	const settingsPath = path.join(baseDir, 'settings.json');
+
+	if (!fssync.existsSync(settingsPath)) {
+		await fs.mkdir(baseDir, { recursive: true });
+
+		await writeJsonFileAtomic(settingsPath, {
+			displayName: 'Files',
+			kind: 'generic'
+		});
+	}
+}
+
+/**
+ * Ensures the default "globals" media group exists.
+ */
+export async function ensureGlobalsGroupExists(): Promise<void> {
+	const rootDir = getRootDir();
+	const _candidate = 'globals';
+	const baseDir = path.join(rootDir, _candidate);
+	const settingsPath = path.join(baseDir, 'settings.json');
+
+	if (!fssync.existsSync(settingsPath)) {
+		await fs.mkdir(baseDir, { recursive: true });
+		const dataFileName = 'data.json';
+		const dataPath = path.join(baseDir, dataFileName);
+
+		const defaultSchema = {
+			name: {
+				type: 'string' as const,
+				removable: false,
+				defaultValue: ''
+			}
+		};
+
+		await writeMediaTypeSettingsFile(baseDir, {
+			displayName: 'Globals',
+			kind: 'json',
+			schema: defaultSchema as unknown as SchemaDefinition,
+			dataFileName
+		});
+
+		// Create a default record for the key-value store
+		await writeJsonFileAtomic(dataPath, {
+			records: [
+				{
+					id: 'global-settings',
+					name: 'Global Settings'
+				}
+			]
+		});
+	}
 }

@@ -8,7 +8,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { CheckSquare, Square, Trash2, Unlink } from 'lucide-svelte';
+	import { CheckSquare, Square, Trash2, Unlink, FileIcon, Pencil, UploadIcon } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ImageListItem } from '$lib/core/types.js';
@@ -19,15 +19,25 @@
 		apiUnlinkByIdForType,
 		apiDeleteFromDiskByIdForType,
 		apiGetSchemaForType,
-		apiUpdatePropertiesByIdForType
+		apiUpdatePropertiesByIdForType,
+		apiToggleExcludedFilesForType,
+		apiUploadImageForType,
+		apiCheckUploadConflictsForType,
+		apiUploadImageForTypeWithResolution
 	} from '$lib/api/client.js';
+	import type { ImageId } from '$lib/core/ids.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
+	import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
 	import { useSelection } from '$lib/state/selection.svelte';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
+	import { hasAllowedImageExtension } from '$lib/core/images.js';
+	import MetadataButton from '$lib/components/MetadataButton.svelte';
+	import { apiRenameFileByIdForType } from '$lib/api/client.js';
 
 	// NOTE: This is a class instance; do not destructure it or you'll capture initial values.
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
+	const kind = $derived($currentMediaTypeStore?.kind ?? 'images');
 	const selection = useSelection();
 
 	let deleteFromDiskOpen = $state(false);
@@ -41,6 +51,24 @@
 	let gridSchemaFields = $state<string[]>([]);
 	/** Local value for Group by dropdown ('' = None); synced with selection.gridGroupByField. */
 	let groupByValue = $state('');
+
+	// Local rename state for non-images
+	let localRenameOpen = $state(false);
+	let localRenameId = $state<string | null>(null);
+	let localRenameValue = $state('');
+	let localRenameSubmitting = $state(false);
+
+	// Upload-related state
+	let fileInput: HTMLInputElement | undefined;
+	let uploading = $state(false);
+	let uploadConflictFile = $state<File | null>(null);
+	let uploadConflictOpen = $state(false);
+	let uploadConflictResolve = $state<
+		((resolution: 'overwrite' | 'auto-rename' | 'skip') => void) | null
+	>(null);
+	let heicWarningOpen = $state(false);
+	let heicWarningCount = $state(0);
+	let heicWarningResolve = $state<((proceed: boolean) => void) | null>(null);
 
 	/** Sync Group by dropdown with selection: when user picks an option, update selection. */
 	$effect(() => {
@@ -216,8 +244,196 @@
 		if (selection.gridSelectMode) {
 			selection.toggleMultiselect(item.id);
 		} else {
-			await selection.setGridViewActive(false);
-			selection.selectImage(item.id);
+			if (kind === 'generic' || hasAllowedImageExtension(item.file_name)) {
+				await selection.setGridViewActive(false);
+				selection.selectImage(item.id);
+			} else {
+				// Don't open missing/non-image files in the image editor
+				toast('Cannot open non-image file in editor');
+			}
+		}
+	}
+
+	function openLocalRename(item: ImageListItem) {
+		localRenameId = item.id;
+		localRenameValue = item.file_name.replace(/\.[^.]+$/, '');
+		localRenameOpen = true;
+		localRenameSubmitting = false;
+	}
+
+	async function submitLocalRename(e: Event) {
+		e.preventDefault();
+		if (!localRenameId || !localRenameValue.trim() || !typeId) return;
+		const originalItem = selection.visibleImageItems.find((i) => i.id === localRenameId);
+		if (!originalItem) return;
+
+		const currentExt = originalItem.file_name.includes('.')
+			? originalItem.file_name.substring(originalItem.file_name.lastIndexOf('.'))
+			: '';
+		const newFilename = localRenameValue.trim() + currentExt;
+
+		localRenameSubmitting = true;
+		try {
+			await apiRenameFileByIdForType(typeId, localRenameId, newFilename);
+			toast.success(`Renamed to ${newFilename}`);
+			localRenameOpen = false;
+			triggerImageListRefresh();
+		} catch (err) {
+			console.error(err);
+			const msg = err instanceof Error ? err.message : 'Rename failed';
+			toast.error(msg);
+		} finally {
+			localRenameSubmitting = false;
+		}
+	}
+
+	const HEIC_MIME_TYPES = ['image/heic', 'image/heif'];
+
+	function isHeicFile(f: File): boolean {
+		if (HEIC_MIME_TYPES.includes(f.type.toLowerCase())) return true;
+		const ext = f.name.toLowerCase().split('.').pop();
+		return ext === 'heic' || ext === 'heif';
+	}
+
+	function waitForConflictResolution(file: File): Promise<'overwrite' | 'auto-rename' | 'skip'> {
+		return new Promise((resolve) => {
+			uploadConflictFile = file;
+			uploadConflictResolve = resolve;
+			uploadConflictOpen = true;
+		});
+	}
+
+	function resolveConflict(resolution: 'overwrite' | 'auto-rename' | 'skip') {
+		uploadConflictOpen = false;
+		uploadConflictFile = null;
+		uploadConflictResolve?.(resolution);
+		uploadConflictResolve = null;
+	}
+
+	function waitForHeicConfirmation(count: number): Promise<boolean> {
+		return new Promise((resolve) => {
+			heicWarningCount = count;
+			heicWarningResolve = resolve;
+			heicWarningOpen = true;
+		});
+	}
+
+	function resolveHeicWarning(proceed: boolean) {
+		heicWarningOpen = false;
+		heicWarningResolve?.(proceed);
+		heicWarningResolve = null;
+	}
+
+	async function handleFileUpload(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const files = target.files;
+		if (!files?.length) return;
+
+		const allowed = ALLOWED_IMAGE_MIME_TYPES as readonly string[];
+		const isFilesGroup = typeId === 'files';
+		const toUpload: File[] = [];
+
+		for (let i = 0; i < files.length; i++) {
+			const f = files[i];
+			if (isFilesGroup || allowed.includes(f.type) || isHeicFile(f)) {
+				toUpload.push(f);
+			}
+		}
+
+		if (toUpload.length === 0) {
+			toast('Error: Please select valid files.');
+			target.value = '';
+			return;
+		}
+
+		if (toUpload.length < files.length) {
+			toast(`Skipped ${files.length - toUpload.length} invalid file(s).`);
+		}
+
+		const heicFiles = toUpload.filter(isHeicFile);
+		if (heicFiles.length > 0) {
+			const proceed = await waitForHeicConfirmation(heicFiles.length);
+			if (!proceed) {
+				const heicSet = new Set(heicFiles);
+				const remaining = toUpload.filter((f) => !heicSet.has(f));
+				if (remaining.length === 0) {
+					target.value = '';
+					return;
+				}
+				toUpload.length = 0;
+				toUpload.push(...remaining);
+			}
+		}
+
+		uploading = true;
+		let ok = 0;
+		let fail = 0;
+		let skipped = 0;
+		let lastUploadedId: ImageId | null = null;
+
+		try {
+			let conflictSet = new Set<string>();
+			if (typeId) {
+				const filenames = toUpload.map((f) => {
+					if (isHeicFile(f)) {
+						const base = f.name.replace(/\.[^.]+$/, '');
+						return `${base}.jpg`;
+					}
+					return f.name;
+				});
+				try {
+					const { conflicts } = await apiCheckUploadConflictsForType(typeId, filenames);
+					conflictSet = new Set(conflicts);
+				} catch {
+					// Proceed without conflict check
+				}
+			}
+
+			for (const file of toUpload) {
+				const effectiveName = isHeicFile(file)
+					? `${file.name.replace(/\.[^.]+$/, '')}.jpg`
+					: file.name;
+
+				let resolution: 'overwrite' | 'auto-rename' | null = null;
+				if (conflictSet.has(effectiveName)) {
+					const choice = await waitForConflictResolution(file);
+					if (choice === 'skip') {
+						skipped++;
+						continue;
+					}
+					resolution = choice;
+				}
+
+				try {
+					const result = typeId
+						? resolution
+							? await apiUploadImageForTypeWithResolution(typeId, file, resolution)
+							: await apiUploadImageForType(typeId, file)
+						: await Promise.reject(new Error('No media type'));
+					if (result?.id) {
+						ok++;
+						lastUploadedId = result.id;
+					} else fail++;
+				} catch {
+					fail++;
+				}
+			}
+			triggerImageListRefresh();
+			if (ok > 0 && lastUploadedId) {
+				selection.setViewMode('unlinked');
+				selection.selectImage(lastUploadedId);
+			}
+			const parts: string[] = [];
+			if (ok > 0) parts.push(`Uploaded ${ok} file(s)`);
+			if (fail > 0) parts.push(`${fail} failed`);
+			if (skipped > 0) parts.push(`${skipped} skipped`);
+			if (parts.length > 0) toast(parts.join('; '));
+		} catch (error) {
+			console.error('Upload error:', error);
+			toast('Upload failed');
+		} finally {
+			uploading = false;
+			target.value = '';
 		}
 	}
 
@@ -273,6 +489,25 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('Delete failed');
+		}
+	}
+
+	async function handleToggleExcluded(action: 'exclude' | 'unexclude') {
+		const items = selection.visibleImageItems.filter((i) =>
+			selection.multiselectedIds.includes(i.id)
+		);
+		if (items.length === 0) return;
+		const filenames = items.map((i) => i.file_name);
+		try {
+			await apiToggleExcludedFilesForType(typeId!, filenames, action);
+			toast.success(
+				`${action === 'exclude' ? 'Excluded' : 'Unlinked'} ${items.length} image${items.length === 1 ? '' : 's'}`
+			);
+			selection.clearMultiselect();
+			triggerImageListRefresh();
+		} catch (e) {
+			console.error(e);
+			toast.error(`Failed to ${action === 'exclude' ? 'exclude' : 'unlink'} images`);
 		}
 	}
 
@@ -419,6 +654,31 @@
 						<Select.Item value="large">Large</Select.Item>
 					</Select.Content>
 				</Select.Root>
+
+				<input
+					type="file"
+					multiple
+					bind:this={fileInput}
+					onchange={handleFileUpload}
+					accept={typeId === 'files' ? '*' : 'image/*,.heic,.heif'}
+					style="display: none;"
+					aria-label="Upload files"
+				/>
+				<Button
+					variant="outline"
+					size="sm"
+					class="gap-1 ml-2 shrink-0"
+					disabled={uploading}
+					onclick={() => fileInput?.click()}
+				>
+					{#if uploading}
+						<span class="animate-spin mr-1">○</span>
+						Uploading...
+					{:else}
+						<UploadIcon class="h-4 w-4" />
+						Upload files
+					{/if}
+				</Button>
 			</div>
 		</div>
 		{#if selection.multiselectedIds.length > 0}
@@ -426,10 +686,22 @@
 				<span class="text-sm text-muted-foreground">
 					{selection.multiselectedIds.length} selected
 				</span>
-				<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
+				{#if selection.viewMode === 'linked'}
+					<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
+				{/if}
 				{#if hasLinkedSelected}
 					<Button variant="outline" size="sm" onclick={() => (unlinkConfirmOpen = true)}>
 						<Unlink class="h-4 w-4 mr-1" />
+						Unlink
+					</Button>
+				{/if}
+				{#if selection.viewMode === 'unlinked'}
+					<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('exclude')}>
+						Exclude
+					</Button>
+				{/if}
+				{#if selection.viewMode === 'excluded'}
+					<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('unexclude')}>
 						Unlink
 					</Button>
 				{/if}
@@ -614,6 +886,58 @@
 		</Dialog.Content>
 	</Dialog.Root>
 
+	<Dialog.Root bind:open={localRenameOpen}>
+		<Dialog.Content>
+			<Dialog.Title>Rename File</Dialog.Title>
+			<Dialog.Description>Rename this file without changing its extension.</Dialog.Description>
+			<form onsubmit={submitLocalRename}>
+				<div class="grid gap-4 py-4">
+					<div class="grid gap-2">
+						<Label for="local-rename-value">New filename</Label>
+						<Input id="local-rename-value" bind:value={localRenameValue} />
+					</div>
+				</div>
+				<Dialog.Footer>
+					<Button variant="outline" type="button" onclick={() => (localRenameOpen = false)}
+						>Cancel</Button
+					>
+					<Button type="submit" disabled={localRenameSubmitting || !localRenameValue.trim()}>
+						{localRenameSubmitting ? 'Saving…' : 'Save'}
+					</Button>
+				</Dialog.Footer>
+			</form>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<Dialog.Root bind:open={uploadConflictOpen}>
+		<Dialog.Content>
+			<Dialog.Title>Filename Conflict</Dialog.Title>
+			<Dialog.Description>
+				A file named "{uploadConflictFile?.name}" already exists.
+			</Dialog.Description>
+			<div class="flex justify-end gap-2 py-4">
+				<Button variant="outline" onclick={() => resolveConflict('skip')}>Skip</Button>
+				<Button variant="outline" onclick={() => resolveConflict('auto-rename')}>Rename</Button>
+				<Button variant="destructive" onclick={() => resolveConflict('overwrite')}>Overwrite</Button
+				>
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	<Dialog.Root bind:open={heicWarningOpen}>
+		<Dialog.Content>
+			<Dialog.Title>HEIC Files Detected</Dialog.Title>
+			<Dialog.Description>
+				You are uploading {heicWarningCount} HEIC file(s). They will be automatically converted to JPEG.
+				This might take a while. Proceed?
+			</Dialog.Description>
+			<div class="flex justify-end gap-2 py-4">
+				<Button variant="outline" onclick={() => resolveHeicWarning(false)}>Cancel HEIC</Button>
+				<Button onclick={() => resolveHeicWarning(true)}>Convert & Upload</Button>
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>
+
 	<!-- Image grid (optionally grouped by field) -->
 	<div class="flex-1 overflow-auto p-4">
 		{#if groupedSections.length === 0}
@@ -639,7 +963,7 @@
 							<Frame width={dims.width} height={dims.height}>
 								<button
 									type="button"
-									class="relative flex flex-col rounded-lg overflow-hidden border-2 transition-colors focus:outline-none focus:ring-0 w-full {isSelected
+									class="group relative flex flex-col rounded-lg overflow-hidden border-2 transition-colors focus:outline-none focus:ring-0 w-full {isSelected
 										? 'border-primary bg-primary/10'
 										: 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/50'}"
 									onclick={() => handleImageClick(item)}
@@ -648,14 +972,33 @@
 										We don't need padding-bottom hack here because Frame handles sizing.
 										But we want to ensure the image fits nicely.
 									-->
-									<div class="w-full relative {isUnlinked ? 'aspect-square' : ''}">
-										<img
-											src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
-											alt={getDisplayName(item)}
-											class="w-full {isUnlinked
-												? 'h-full object-cover absolute inset-0'
-												: 'h-auto object-contain block'}"
-										/>
+									<div
+										class="w-full relative {isUnlinked
+											? 'aspect-square'
+											: ''} bg-muted/20 flex flex-col items-center justify-center"
+									>
+										{#if kind !== 'generic' && hasAllowedImageExtension(item.file_name)}
+											<img
+												src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
+												alt={getDisplayName(item)}
+												class="w-full {isUnlinked
+													? 'h-full object-cover absolute inset-0'
+													: 'h-auto object-contain block'}"
+											/>
+										{:else}
+											<div
+												class="flex flex-col items-center justify-center p-6 gap-2 w-full {isUnlinked
+													? 'h-full absolute inset-0'
+													: 'h-32'}"
+											>
+												<FileIcon class="h-10 w-10 text-muted-foreground/50" />
+												<span
+													class="text-xs font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded uppercase"
+												>
+													{item.file_name.split('.').pop() || 'FILE'}
+												</span>
+											</div>
+										{/if}
 									</div>
 									{#if selection.gridSelectMode}
 										<div
@@ -670,12 +1013,43 @@
 											{/if}
 										</div>
 									{/if}
-									<p
-										class="p-2 text-xs text-muted-foreground truncate text-left w-full"
-										title={getDisplayName(item)}
-									>
-										{getDisplayName(item)}
-									</p>
+									<div class="flex flex-row items-center w-full px-2">
+										<p
+											class="py-2 text-xs text-muted-foreground truncate text-left flex-1 min-w-0"
+											title={getDisplayName(item)}
+										>
+											{getDisplayName(item)}
+										</p>
+										{#if !selection.gridSelectMode}
+											<div
+												class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
+											>
+												{#if kind !== 'generic' && hasAllowedImageExtension(item.file_name) && typeId}
+													<!-- svelte-ignore a11y_click_events_have_key_events -->
+													<div
+														role="button"
+														tabindex="0"
+														class="appearance-none p-0 m-0 border-none bg-transparent"
+														onclick={(e) => e.stopPropagation()}
+													>
+														<MetadataButton id={item.id} {typeId} filename={item.file_name} />
+													</div>
+												{/if}
+												<Button
+													variant="outline"
+													size="icon"
+													class="h-7 w-7"
+													title="Rename"
+													onclick={(e) => {
+														e.stopPropagation();
+														openLocalRename(item);
+													}}
+												>
+													<Pencil class="h-3 w-3" />
+												</Button>
+											</div>
+										{/if}
+									</div>
 								</button>
 							</Frame>
 						{/each}

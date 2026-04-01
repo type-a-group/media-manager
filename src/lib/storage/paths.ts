@@ -64,6 +64,8 @@ export function getMediaTypePaths(typeId: string): MediaTypePaths {
 	};
 	if (settings.kind === 'images') {
 		result.filesDir = path.join(baseDir, settings.filesSubdir ?? 'files');
+	} else if (settings.kind === 'generic') {
+		result.filesDir = baseDir; // No subdir, the folder itself is the file store
 	}
 	return result;
 }

@@ -8,7 +8,17 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { toast } from 'svelte-sonner';
-	import { FolderOpen, Image, FileJson, Plus, Pencil, Trash2, Settings, MoreVertical, Info } from 'lucide-svelte';
+	import {
+		FolderOpen,
+		Image,
+		FileJson,
+		Plus,
+		Pencil,
+		Trash2,
+		Settings,
+		MoreVertical,
+		Info
+	} from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
 	import {
@@ -38,7 +48,9 @@
 	let globalSettingsOpen = $state(false);
 	let infoOpen = $state(false);
 	let infoMediaType = $state<MediaTypeSummary | null>(null);
-	let infoStats = $state<{ recordCount: number; kind: string; lastUpdated: string | null } | null>(null);
+	let infoStats = $state<{ recordCount: number; kind: string; lastUpdated: string | null } | null>(
+		null
+	);
 	let infoStatsLoading = $state(false);
 
 	async function loadMediaTypes() {
@@ -142,7 +154,11 @@
 		infoStatsLoading = true;
 		apiGetMediaTypeStats(m.id)
 			.then((stats) => {
-				infoStats = { recordCount: stats.recordCount, kind: stats.kind, lastUpdated: stats.lastUpdated };
+				infoStats = {
+					recordCount: stats.recordCount,
+					kind: stats.kind,
+					lastUpdated: stats.lastUpdated
+				};
 			})
 			.catch((e) => {
 				console.error('Failed to load media type stats:', e);
@@ -170,7 +186,12 @@
 			<div class="flex flex-wrap items-center justify-between gap-4">
 				<h1 class="text-2xl font-semibold tracking-tight">Media types</h1>
 				<div class="flex items-center gap-2">
-					<Button variant="outline" size="icon" title="Global settings" onclick={() => (globalSettingsOpen = true)}>
+					<Button
+						variant="outline"
+						size="icon"
+						title="Global settings"
+						onclick={() => (globalSettingsOpen = true)}
+					>
 						<Settings class="h-4 w-4" />
 					</Button>
 					<Button onclick={openCreate}>
@@ -225,13 +246,20 @@
 											<Pencil class="mr-2 h-4 w-4" />
 											Rename
 										</DropdownMenu.Item>
-										<DropdownMenu.Item
-											class="text-destructive focus:text-destructive"
-											onclick={() => openDelete(m)}
-										>
-											<Trash2 class="mr-2 h-4 w-4" />
-											Delete
-										</DropdownMenu.Item>
+										{#if m.id === 'files'}
+											<DropdownMenu.Item disabled class="text-muted-foreground">
+												<Trash2 class="mr-2 h-4 w-4" />
+												Delete (Protected)
+											</DropdownMenu.Item>
+										{:else}
+											<DropdownMenu.Item
+												class="text-destructive focus:text-destructive"
+												onclick={() => openDelete(m)}
+											>
+												<Trash2 class="mr-2 h-4 w-4" />
+												Delete
+											</DropdownMenu.Item>
+										{/if}
 									</DropdownMenu.Content>
 								</DropdownMenu.Root>
 							</Card.Header>
@@ -314,7 +342,8 @@
 <Dialog.Root bind:open={renameOpen}>
 	<Dialog.Content>
 		<Dialog.Title>Rename media type</Dialog.Title>
-		<Dialog.Description>Change the display name. The folder name stays the same.</Dialog.Description>
+		<Dialog.Description>Change the display name. The folder name stays the same.</Dialog.Description
+		>
 		<div class="grid gap-4 py-4">
 			<div class="grid gap-2">
 				<Label for="rename-display-name">Display name</Label>
@@ -354,9 +383,7 @@
 <Dialog.Root bind:open={globalSettingsOpen}>
 	<Dialog.Content>
 		<Dialog.Title>Global settings</Dialog.Title>
-		<Dialog.Description>
-			Appearance and other app-wide settings.
-		</Dialog.Description>
+		<Dialog.Description>Appearance and other app-wide settings.</Dialog.Description>
 		<div class="py-4">
 			<AppearanceSettings />
 		</div>
@@ -369,10 +396,10 @@
 <!-- Info popup -->
 <Dialog.Root bind:open={infoOpen}>
 	<Dialog.Content>
-		<Dialog.Title>Info: {infoMediaType?.displayName ?? infoMediaType?.id ?? 'Media type'}</Dialog.Title>
-		<Dialog.Description>
-			Details about this media group.
-		</Dialog.Description>
+		<Dialog.Title
+			>Info: {infoMediaType?.displayName ?? infoMediaType?.id ?? 'Media type'}</Dialog.Title
+		>
+		<Dialog.Description>Details about this media group.</Dialog.Description>
 		{#if infoMediaType}
 			<dl class="grid gap-2 py-4 text-sm">
 				<div>

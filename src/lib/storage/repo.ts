@@ -3,7 +3,7 @@ import * as fssync from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { getAssetPaths, getMediaTypePaths } from './paths.js';
+import { getAssetPaths, getMediaTypePaths, listMediaTypeIds } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { migrateImageDataFile, migrateSchemaFile } from './migrate.js';
@@ -63,7 +63,8 @@ type ImageRepoPaths = {
 
 function getPathsForType(typeId: string): ImageRepoPaths {
 	const mp = getMediaTypePaths(typeId);
-	if (mp.kind !== 'images' || !mp.filesDir) throw new Error(`Media type ${typeId} is not images`);
+	if (mp.kind !== 'images' && mp.kind !== 'generic') throw new Error(`Media type ${typeId} is not an images or generic kind`);
+	if (!mp.filesDir) throw new Error(`Media type ${typeId} missing filesDir`);
 	return {
 		baseDir: mp.baseDir,
 		imageDataPath: mp.dataPath,
@@ -390,9 +391,43 @@ export function createImageRepo(typeId?: string) {
 		groupBy?: string | null;
 		filters?: FilterClause[] | null;
 	}): Promise<ImageListResponse> {
+		const paths = p();
+		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
+		const isGenericGroup = settings?.kind === 'generic';
+
+		if (isGenericGroup) {
+			const diskFiles = await fs.readdir(paths.imagesDir).catch(() => [] as string[]);
+			const unlinked = [];
+			const q = params?.query ? params.query.toLowerCase() : null;
+			for (const f of diskFiles) {
+				if (f === 'settings.json' || f.startsWith('.')) continue;
+				if (q && !f.toLowerCase().includes(q)) continue;
+				try {
+					const st = await fs.stat(path.join(paths.imagesDir, f));
+					if (st.isFile()) {
+						unlinked.push(toUnlinkedListItem(f));
+					}
+				} catch {
+					// ignore stat errors
+				}
+			}
+			return {
+				linked: [],
+				unlinked,
+				excluded: [],
+				missing_files: [],
+				excluded_missing_files: []
+			};
+		}
+
 		const schemaFile = await loadAndMigrateSchema();
 
-		const paths = p();
+		let excludedPaths: string[] = [];
+		if (settings) {
+			excludedPaths = settings.excludedFiles ?? [];
+		}
+		const excludedFilenames = new Set(excludedPaths);
+
 		const imageData = await withFileLock(`${paths.imageDataPath}.lock`, async () => {
 			const base = await loadAndMigrateImageDataUnlocked();
 			const synced = await ensureImagesSyncedToFilesystem(schemaFile.schema, base);
@@ -401,7 +436,9 @@ export function createImageRepo(typeId?: string) {
 		});
 
 		const diskFiles = new Set(
-			(await fs.readdir(paths.imagesDir).catch(() => [] as string[])).filter((f) => hasAllowedImageExtension(f))
+			(await fs.readdir(paths.imagesDir).catch(() => [] as string[])).filter(
+				(f) => hasAllowedImageExtension(f)
+			)
 		);
 
 		// Linked = records in JSON that exist on disk. Unlinked = files on disk that are not in JSON.
@@ -413,8 +450,13 @@ export function createImageRepo(typeId?: string) {
 		let linked = imageData.images.filter(
 			(r) => !(r as any).is_template && diskFiles.has(r.file_name)
 		);
-		const unlinkedFilenames = [...diskFiles].filter((f) => !jsonFilenames.has(f));
+		const unlinkedFilenames = [...diskFiles].filter((f) => !jsonFilenames.has(f) && !excludedFilenames.has(f));
 		const unlinked = unlinkedFilenames.map(toUnlinkedListItem);
+
+		const excludedFilenamesOnDisk = [...diskFiles].filter((f) => !jsonFilenames.has(f) && excludedFilenames.has(f));
+		const excluded = excludedFilenamesOnDisk.map(toUnlinkedListItem);
+
+		const excluded_missing_files = [...excludedFilenames].filter((f) => !diskFiles.has(f));
 
 		const filters = params?.filters ?? null;
 		if (filters != null && filters.length > 0) {
@@ -473,10 +515,17 @@ export function createImageRepo(typeId?: string) {
 				? unlinked.map((item) => ({ ...item, group_by_value: null as string | number | boolean | string[] | null }))
 				: unlinked;
 
+		const excludedItems =
+			groupBy != null
+				? excluded.map((item) => ({ ...item, group_by_value: null as string | number | boolean | string[] | null }))
+				: excluded;
+
 		return {
 			linked: linked.map(withGroupBy),
 			unlinked: unlinkedItems,
-			missing_files
+			missing_files,
+			excluded: excludedItems,
+			excluded_missing_files
 		};
 	}
 
@@ -518,6 +567,14 @@ export function createImageRepo(typeId?: string) {
 			const defaults: Record<string, any> = {};
 			for (const [key, def] of Object.entries(schemaFile.schema)) {
 				if (key === 'file_name' || key === 'last_modified' || key === 'default') continue;
+				// generic kind doesn't get image_name
+				if (key === 'image_name') {
+					if (typeId) {
+						const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+						if (settings?.kind === 'generic') continue;
+					}
+				}
+
 				defaults[key] =
 					def.defaultValue ??
 					(def.type === 'boolean'
@@ -564,7 +621,9 @@ export function createImageRepo(typeId?: string) {
 
 			const record = base.images[idx] as any;
 
-			// Only allow schema-defined keys (plus image_name) to be updated here.
+			const isGeneric = typeId ? readMediaTypeSettingsFileSync(paths.baseDir)?.kind === 'generic' : false;
+
+			// Only allow schema-defined keys (plus image_name for images) to be updated here.
 			const allowedKeys = new Set(Object.keys(schemaFile.schema));
 			allowedKeys.delete('file_name');
 			allowedKeys.delete('last_modified');
@@ -573,7 +632,7 @@ export function createImageRepo(typeId?: string) {
 			allowedKeys.delete('is_template');
 			allowedKeys.delete('width');
 			allowedKeys.delete('height');
-			allowedKeys.add('image_name');
+			if (!isGeneric) allowedKeys.add('image_name');
 
 			const next: any = { ...record };
 			for (const [k, v] of Object.entries(patch)) {
@@ -964,6 +1023,19 @@ export function createImageRepo(typeId?: string) {
 		const safe = assertSafeImageFilename(newFilename);
 		const paths = p();
 
+		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
+		const isGeneric = settings?.kind === 'generic';
+
+		if (isGeneric && typeof id === 'string' && id.startsWith('unlinked:')) {
+			const oldFilename = decodeURIComponent(id.slice(9));
+			if (safe === oldFilename) return {} as ImageRecord; // Hack for return type
+			const oldPath = path.join(paths.imagesDir, oldFilename);
+			const newPath = path.join(paths.imagesDir, safe);
+			if (fssync.existsSync(newPath)) throw new Error('Target filename already exists');
+			await fs.rename(oldPath, newPath);
+			return {} as ImageRecord;
+		}
+
 		// Get current record
 		const data = await loadAndMigrateImageData();
 		const rec = data.images.find((r) => r.id === id);
@@ -987,7 +1059,7 @@ export function createImageRepo(typeId?: string) {
 
 		// Update record in JSON
 		try {
-			return await withFileLock(`${paths.imageDataPath}.lock`, async () => {
+			const updatedRecord = await withFileLock(`${paths.imageDataPath}.lock`, async () => {
 				const base = await loadAndMigrateImageDataUnlocked();
 				const idx = base.images.findIndex((r) => r.id === id);
 				if (idx === -1) throw new Error('Image record not found');
@@ -1001,6 +1073,96 @@ export function createImageRepo(typeId?: string) {
 				await writeImageData({ images });
 				return parsed;
 			});
+
+			// Cross-session updates
+			const allTypes = listMediaTypeIds();
+			for (const tId of allTypes) {
+				const mPaths = getMediaTypePaths(tId);
+				const settings = readMediaTypeSettingsFileSync(mPaths.baseDir);
+				if (!settings) continue;
+
+				if (settings.excludedFiles?.includes(oldFilename)) {
+					const newExcluded = settings.excludedFiles.map(f => f === oldFilename ? safe : f);
+					await writeMediaTypeSettingsFile(mPaths.baseDir, {
+						kind: settings.kind,
+						schema: settings.schema,
+						excludedFiles: newExcluded
+					});
+				}
+
+				const dataPath = mPaths.dataPath;
+				const lockPath = `${dataPath}.lock`;
+				await withFileLock(lockPath, async () => {
+					try {
+						const raw = (await readJsonFile(dataPath)) as any;
+						let changed = false;
+
+						const updateVal = (v: any): any => {
+							if (typeof v === 'string' && v === oldFilename) {
+								changed = true;
+								return safe;
+							}
+							if (v && typeof v === 'object' && 'url' in v && (v as any).url === oldFilename) {
+								changed = true;
+								return { ...(v as any), url: safe };
+							}
+							if (Array.isArray(v)) {
+								const updatedArr = [];
+								let arrChanged = false;
+								for (const item of v) {
+									if (typeof item === 'string' && item === oldFilename) {
+										updatedArr.push(safe);
+										arrChanged = true;
+									} else if (item && typeof item === 'object' && 'url' in item && (item as any).url === oldFilename) {
+										updatedArr.push({ ...(item as any), url: safe });
+										arrChanged = true;
+									} else {
+										updatedArr.push(item);
+									}
+								}
+								if (arrChanged) {
+									changed = true;
+									return updatedArr;
+								}
+							}
+							return v;
+						};
+
+						if (settings.kind === 'images' && Array.isArray(raw.images)) {
+							for (const rec of raw.images) {
+								if (rec.file_name === oldFilename && tId !== typeId) {
+									rec.file_name = safe;
+									changed = true;
+								}
+								for (const [k, v] of Object.entries(rec)) {
+									if (k === 'file_name' || k === 'id') continue;
+									const nextV = updateVal(v);
+									if (nextV !== v) rec[k] = nextV;
+								}
+							}
+						} else if (settings.kind === 'json' && Array.isArray(raw.records)) {
+							for (const rec of raw.records) {
+								for (const [k, v] of Object.entries(rec)) {
+									if (k === 'id') continue;
+									const nextV = updateVal(v);
+									if (nextV !== v) rec[k] = nextV;
+								}
+							}
+						}
+
+						if (changed) {
+							await writeJsonFileAtomic(dataPath, raw);
+						}
+					} catch (e) {
+						const err = e as NodeJS.ErrnoException;
+						if (err.code !== 'ENOENT') {
+							console.error(`Error updating refs in ${tId}:`, e);
+						}
+					}
+				});
+			}
+
+			return updatedRecord;
 		} catch (err) {
 			// Best-effort rollback: rename file back
 			await fs.rename(newPath, oldPath).catch(() => { });

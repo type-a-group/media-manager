@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
-	import { Button, buttonVariants } from "$lib/components/ui/button";
+	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/sidebar/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { ChevronsUpDownIcon, Home, LayoutGrid, Plus, RefreshCwIcon, UploadIcon } from 'lucide-svelte';
+	import {
+		ChevronsUpDownIcon,
+		Home,
+		LayoutGrid,
+		Plus,
+		RefreshCwIcon,
+		UploadIcon
+	} from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
@@ -35,6 +42,7 @@
 		apiUploadImageForType,
 		apiCheckUploadConflictsForType,
 		apiUploadImageForTypeWithResolution,
+		apiCleanExcludedFilesForType,
 		type AppConfig
 	} from '$lib/api/client.js';
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
@@ -43,9 +51,16 @@
 	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import { useSelection } from '$lib/state/selection.svelte';
 
-	let imageLists = $state<{ linked: ImageListItem[]; unlinked: ImageListItem[] }>({
+	let imageLists = $state<{
+		linked: ImageListItem[];
+		unlinked: ImageListItem[];
+		excluded: ImageListItem[];
+		excluded_missing_files: string[];
+	}>({
 		linked: [],
-		unlinked: []
+		unlinked: [],
+		excluded: [],
+		excluded_missing_files: []
 	});
 	let loading = $state(true);
 
@@ -55,7 +70,12 @@
 	let { collapsed = $bindable() } = $props();
 
 	/** Multi-filter rows: field, operator, optional value; enabled (default true) toggles whether the filter is applied. */
-	type FilterRow = { field: string; operator: string; value?: string | number | boolean; enabled?: boolean };
+	type FilterRow = {
+		field: string;
+		operator: string;
+		value?: string | number | boolean;
+		enabled?: boolean;
+	};
 	let filters = $state<FilterRow[]>([]);
 	let schema = $state<SchemaDefinition | null>(null);
 	let schemaFields = $state<string[]>([]);
@@ -68,7 +88,8 @@
 
 	// This will hold the list items actually displayed in the sidebar
 	let displayedItems = $state<ImageListItem[]>([]);
-	
+	let searchQuery = $state('');
+
 	// Upload-related state variables
 	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input (multiple files)
 	let folderInput: HTMLInputElement | undefined; // Reference to hidden folder input (webkitdirectory)
@@ -77,7 +98,9 @@
 	// Upload conflict dialog state
 	let uploadConflictFile = $state<File | null>(null);
 	let uploadConflictOpen = $state(false);
-	let uploadConflictResolve = $state<((resolution: 'overwrite' | 'auto-rename' | 'skip') => void) | null>(null);
+	let uploadConflictResolve = $state<
+		((resolution: 'overwrite' | 'auto-rename' | 'skip') => void) | null
+	>(null);
 
 	// HEIC conversion warning dialog state
 	let heicWarningOpen = $state(false);
@@ -108,7 +131,9 @@
 		try {
 			const s = await apiGetSchemaForType(typeId);
 			schema = s;
-			schemaFields = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'image_name' || k === 'name');
+			schemaFields = Object.keys(s).filter(
+				(k) => isUserFieldKey(k) || k === 'image_name' || k === 'name'
+			);
 			await fetchImageLists();
 		} catch (error) {
 			console.error('Error fetching schema:', error);
@@ -119,13 +144,19 @@
 	 * Gets the display name for a list item.
 	 * Images: image_name or file_name. Json: name, then group_by_value, then short id.
 	 */
-	function getDisplayName(item: ImageListItem & { name?: string; group_by_value?: string | number | boolean | string[] | null }): string {
+	function getDisplayName(
+		item: ImageListItem & {
+			name?: string;
+			group_by_value?: string | number | boolean | string[] | null;
+		}
+	): string {
 		const imageName = (item as ImageListItem).image_name?.trim();
 		if (imageName && imageName.length > 0) return imageName;
 		const jsonName = (item as { name?: string }).name?.trim();
 		if (jsonName && jsonName.length > 0) return jsonName;
 		if ('file_name' in item && item.file_name) return item.file_name;
-		if (item.group_by_value != null && item.group_by_value !== '') return String(item.group_by_value);
+		if (item.group_by_value != null && item.group_by_value !== '')
+			return String(item.group_by_value);
 		return (item.id as string).slice(0, 8);
 	}
 
@@ -135,9 +166,13 @@
 	 * Builds API filter clauses from UI filter rows: only enabled rows with field and operator set;
 	 * value omitted for is_empty / is_not_empty.
 	 */
-	function buildFiltersForApi(): { field: string; operator: string; value?: string | number | boolean }[] {
+	function buildFiltersForApi(): {
+		field: string;
+		operator: string;
+		value?: string | number | boolean;
+	}[] {
 		return filters
-			.filter((row) => (row.enabled !== false) && row.field && row.operator)
+			.filter((row) => row.enabled !== false && row.field && row.operator)
 			.map((row) => {
 				const omitValue = VALUE_LESS_OPERATORS.has(row.operator);
 				return {
@@ -162,10 +197,41 @@
 				groupBy: selection.gridGroupByField ?? undefined
 			});
 			if ('linked' in data) {
-				imageLists = { linked: data.linked, unlinked: data.unlinked };
+				imageLists = {
+					linked: data.linked,
+					unlinked: data.unlinked,
+					excluded: data.excluded ?? [],
+					excluded_missing_files: data.excluded_missing_files ?? []
+				};
+				if (imageLists.excluded_missing_files.length > 0) {
+					toast.warning(
+						`${imageLists.excluded_missing_files.length} missing excluded file(s) found.`,
+						{
+							action: {
+								label: 'Clean List',
+								onClick: async () => {
+									if (!typeId) return;
+									try {
+										await apiCleanExcludedFilesForType(typeId, imageLists.excluded_missing_files);
+										toast.success('Cleaned excluded files list.');
+										await fetchImageLists();
+									} catch (e) {
+										console.error(e);
+										toast.error('Failed to clean list.');
+									}
+								}
+							}
+						}
+					);
+				}
 			} else {
 				// JsonListResponse: single list
-				imageLists = { linked: data.records as ImageListItem[], unlinked: [] };
+				imageLists = {
+					linked: data.records as ImageListItem[],
+					unlinked: [],
+					excluded: [],
+					excluded_missing_files: []
+				};
 			}
 			updateDisplayedItems();
 		} catch (error) {
@@ -179,13 +245,36 @@
 	 * Also updates the shared `visibleImageIds` state for navigation.
 	 */
 	function updateDisplayedItems() {
-		displayedItems = selection.viewMode === 'linked' ? imageLists.linked : imageLists.unlinked;
+		let baseItems: ImageListItem[] = [];
+		if (kind === 'generic') {
+			baseItems = imageLists.unlinked;
+		} else {
+			baseItems =
+				selection.viewMode === 'linked'
+					? imageLists.linked
+					: selection.viewMode === 'unlinked'
+						? imageLists.unlinked
+						: imageLists.excluded;
+		}
+
+		if (searchQuery.trim()) {
+			const q = searchQuery.toLowerCase().trim();
+			displayedItems = baseItems.filter((item) => {
+				const dn = getDisplayName(item).toLowerCase();
+				const fn = (item.file_name ?? '').toLowerCase();
+				return dn.includes(q) || fn.includes(q);
+			});
+		} else {
+			displayedItems = baseItems;
+		}
+
 		selection.setVisibleImageIds(displayedItems.map((i) => i.id));
 		selection.setVisibleImageItems(displayedItems);
 	}
 
-	// When view changes, update displayed list + shared navigation IDs.
+	// When view changes or searchQuery changes, update displayed list + shared navigation IDs.
 	$effect(() => {
+		const _q = searchQuery;
 		updateDisplayedItems();
 	});
 
@@ -291,13 +380,18 @@
 		if (!files?.length) return;
 
 		const allowed = ALLOWED_IMAGE_MIME_TYPES as readonly string[];
+		const isGenericGroup = kind === 'generic';
 		const toUpload: File[] = [];
 		for (let i = 0; i < files.length; i++) {
 			const f = files[i];
-			if (allowed.includes(f.type) || isHeicFile(f)) toUpload.push(f);
+			if (isGenericGroup || allowed.includes(f.type) || isHeicFile(f)) toUpload.push(f);
 		}
 		if (toUpload.length === 0) {
-			toast('Error: Please select valid image files (JPEG, PNG, GIF, SVG, WebP, or HEIC)');
+			toast(
+				isGenericGroup
+					? 'Error: Please select valid files'
+					: 'Error: Please select valid image files (JPEG, PNG, GIF, SVG, WebP, or HEIC)'
+			);
 			target.value = '';
 			return;
 		}
@@ -399,7 +493,9 @@
 	/**
 	 * Resolves schema field type for a field key. image_name and unknown keys default to 'string'.
 	 */
-	function getFieldTypeForField(fieldKey: string): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' {
+	function getFieldTypeForField(
+		fieldKey: string
+	): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' {
 		if (!schema) return 'string';
 		const def = schema[fieldKey];
 		if (def?.type) return def.type as 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url';
@@ -415,7 +511,10 @@
 	function addFilter() {
 		const field = schemaFields[0] ?? (kind === 'json' ? 'name' : 'image_name');
 		const ops = operatorsForField(field);
-		filters = [...filters, { field, operator: ops[0] ?? OPERATORS.contains, value: '', enabled: true }];
+		filters = [
+			...filters,
+			{ field, operator: ops[0] ?? OPERATORS.contains, value: '', enabled: true }
+		];
 	}
 
 	/** Removes the filter row at index. */
@@ -441,7 +540,11 @@
 	function onFilterOperatorChange(index: number, newOperator: string) {
 		filters = filters.map((row, i) =>
 			i === index
-				? { ...row, operator: newOperator, value: VALUE_LESS_OPERATORS.has(newOperator) ? undefined : row.value }
+				? {
+						...row,
+						operator: newOperator,
+						value: VALUE_LESS_OPERATORS.has(newOperator) ? undefined : row.value
+					}
 				: row
 		);
 	}
@@ -489,11 +592,13 @@
 </script>
 
 <!-- <div class="sidebar" class:collapsed> -->
- <Sidebar.Root>
+<Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex flex-row items-center gap-2 min-w-0">
 			<Sidebar.Trigger class="shrink-0" />
-			<h2 class="text-lg font-bold truncate min-w-0">{currentMediaType?.displayName ?? typeId ?? 'Media Manager'}</h2>
+			<h2 class="text-lg font-bold truncate min-w-0">
+				{currentMediaType?.displayName ?? typeId ?? 'Media Manager'}
+			</h2>
 		</div>
 		<div class="flex flex-row items-center gap-2 mt-2">
 			<Button
@@ -505,8 +610,10 @@
 			>
 				<Home class="h-4 w-4" />
 			</Button>
-			<SchemaEditorButton />
-			<SettingsButton/>
+			{#if kind !== 'generic'}
+				<SchemaEditorButton />
+				<SettingsButton />
+			{/if}
 		</div>
 		<Sidebar.Separator />
 		<!-- Hidden file inputs: multiple files and folder (triggered by upload dropdown) -->
@@ -515,9 +622,9 @@
 			multiple
 			bind:this={fileInput}
 			onchange={handleFileUpload}
-			accept="image/*,.heic,.heif"
+			accept={kind === 'generic' ? '*' : 'image/*,.heic,.heif'}
 			style="display: none;"
-			aria-label="Upload image files"
+			aria-label="Upload files"
 		/>
 		<input
 			type="file"
@@ -528,263 +635,303 @@
 			style="display: none;"
 			aria-label="Upload folder"
 		/>
-		<Sidebar.Group>
-			<Collapsible.Root>
-				<div class="flex flex-row gap-2 items-center justify-between">
-					<Sidebar.GroupLabel>Filters</Sidebar.GroupLabel>
-					<Collapsible.Trigger class={buttonVariants({ variant: "ghost", size: "sm", class: "w-9 p-0" })}>
-						<ChevronsUpDownIcon />
-					</Collapsible.Trigger>
-				</div>
-				<Collapsible.Content>
-					<div class="flex flex-col gap-2">
-						{#each filters as row, i}
-							{@const fieldType = getFieldTypeForField(row.field)}
-							{@const ops = operatorsForField(row.field)}
-							{@const needsValue = !VALUE_LESS_OPERATORS.has(row.operator)}
-							{@const isEnabled = row.enabled !== false}
-							<div class="flex flex-col gap-1.5 rounded border p-1.5" class:opacity-60={!isEnabled}>
-								<div class="flex flex-row gap-1 items-center">
-									<Checkbox
-										id="filter-enabled-{i}"
-										checked={isEnabled}
-										onCheckedChange={(checked) => {
-											filters = filters.map((r, j) => (j === i ? { ...r, enabled: checked === true } : r));
-										}}
-										aria-label="Enable or disable this filter"
-										class="shrink-0"
-									/>
-									<Select.Root
-										type="single"
-										value={row.field}
-										onValueChange={(v) => v && onFilterFieldChange(i, v)}
-									>
-										<Select.Trigger class="flex-1 min-w-0 text-xs">
-											{row.field || 'Field'}
-										</Select.Trigger>
-										<Select.Content>
-											{#each schemaFields as field}
-												<Select.Item value={field}>{field}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="h-8 w-8 shrink-0"
-										title="Remove filter"
-										onclick={() => removeFilter(i)}
-									>
-										×
-									</Button>
-								</div>
-								<Select.Root
-									type="single"
-									value={row.operator}
-									onValueChange={(v) => v && onFilterOperatorChange(i, v)}
+		{#if kind !== 'generic'}
+			<Sidebar.Group>
+				<Collapsible.Root>
+					<div class="flex flex-row gap-2 items-center justify-between">
+						<Sidebar.GroupLabel>Filters</Sidebar.GroupLabel>
+						<Collapsible.Trigger
+							class={buttonVariants({ variant: 'ghost', size: 'sm', class: 'w-9 p-0' })}
+						>
+							<ChevronsUpDownIcon />
+						</Collapsible.Trigger>
+					</div>
+					<Collapsible.Content>
+						<div class="flex flex-col gap-2">
+							{#each filters as row, i}
+								{@const fieldType = getFieldTypeForField(row.field)}
+								{@const ops = operatorsForField(row.field)}
+								{@const needsValue = !VALUE_LESS_OPERATORS.has(row.operator)}
+								{@const isEnabled = row.enabled !== false}
+								<div
+									class="flex flex-col gap-1.5 rounded border p-1.5"
+									class:opacity-60={!isEnabled}
 								>
-									<Select.Trigger class="w-full text-xs">
-										{OPERATOR_LABELS[row.operator as OperatorId] ?? row.operator}
-									</Select.Trigger>
-									<Select.Content>
-										{#each ops as op}
-											<Select.Item value={op}>{OPERATOR_LABELS[op]}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								{#if needsValue}
-									{#if fieldType === 'number'}
-										<Input
-											type="number"
-											class="text-xs h-8"
-											placeholder="Value"
-											value={row.value === undefined || row.value === null ? '' : String(row.value)}
-											oninput={(e) => {
-												const v = (e.currentTarget as HTMLInputElement).value;
-												const num = v === '' ? undefined : Number(v);
-												filters = filters.map((r, j) => (j === i ? { ...r, value: num } : r));
+									<div class="flex flex-row gap-1 items-center">
+										<Checkbox
+											id="filter-enabled-{i}"
+											checked={isEnabled}
+											onCheckedChange={(checked) => {
+												filters = filters.map((r, j) =>
+													j === i ? { ...r, enabled: checked === true } : r
+												);
 											}}
+											aria-label="Enable or disable this filter"
+											class="shrink-0"
 										/>
-									{:else if fieldType === 'boolean'}
 										<Select.Root
 											type="single"
-											value={row.value === true ? 'true' : row.value === false ? 'false' : ''}
-											onValueChange={(v) => {
-												const val = v === 'true' ? true : v === 'false' ? false : undefined;
-												filters = filters.map((r, j) => (j === i ? { ...r, value: val } : r));
-											}}
+											value={row.field}
+											onValueChange={(v) => v && onFilterFieldChange(i, v)}
 										>
-											<Select.Trigger class="w-full text-xs h-8">
-												{row.value === true ? 'true' : row.value === false ? 'false' : 'Value'}
+											<Select.Trigger class="flex-1 min-w-0 text-xs">
+												{row.field || 'Field'}
 											</Select.Trigger>
 											<Select.Content>
-												<Select.Item value="true">true</Select.Item>
-												<Select.Item value="false">false</Select.Item>
-											</Select.Content>
-										</Select.Root>
-									{:else if fieldType === 'dropdown' && schema?.[row.field]?.options?.length}
-										<Select.Root
-											type="single"
-											value={typeof row.value === 'string' ? row.value : ''}
-											onValueChange={(v) => {
-												filters = filters.map((r, j) => (j === i ? { ...r, value: v ?? '' } : r));
-											}}
-										>
-											<Select.Trigger class="w-full text-xs h-8">
-												{row.value ?? 'Value'}
-											</Select.Trigger>
-											<Select.Content>
-												{#each (schema[row.field]?.options ?? []) as opt}
-													<Select.Item value={String(opt)}>{String(opt)}</Select.Item>
+												{#each schemaFields as field}
+													<Select.Item value={field}>{field}</Select.Item>
 												{/each}
 											</Select.Content>
 										</Select.Root>
-									{:else}
-										<Input
-											type="text"
-											class="text-xs h-8"
-											placeholder="Value"
-											value={row.value === undefined || row.value === null ? '' : String(row.value)}
-											oninput={(e) => {
-												const v = (e.currentTarget as HTMLInputElement).value;
-												filters = filters.map((r, j) => (j === i ? { ...r, value: v } : r));
-											}}
-										/>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="h-8 w-8 shrink-0"
+											title="Remove filter"
+											onclick={() => removeFilter(i)}
+										>
+											×
+										</Button>
+									</div>
+									<Select.Root
+										type="single"
+										value={row.operator}
+										onValueChange={(v) => v && onFilterOperatorChange(i, v)}
+									>
+										<Select.Trigger class="w-full text-xs">
+											{OPERATOR_LABELS[row.operator as OperatorId] ?? row.operator}
+										</Select.Trigger>
+										<Select.Content>
+											{#each ops as op}
+												<Select.Item value={op}>{OPERATOR_LABELS[op]}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+									{#if needsValue}
+										{#if fieldType === 'number'}
+											<Input
+												type="number"
+												class="text-xs h-8"
+												placeholder="Value"
+												value={row.value === undefined || row.value === null
+													? ''
+													: String(row.value)}
+												oninput={(e) => {
+													const v = (e.currentTarget as HTMLInputElement).value;
+													const num = v === '' ? undefined : Number(v);
+													filters = filters.map((r, j) => (j === i ? { ...r, value: num } : r));
+												}}
+											/>
+										{:else if fieldType === 'boolean'}
+											<Select.Root
+												type="single"
+												value={row.value === true ? 'true' : row.value === false ? 'false' : ''}
+												onValueChange={(v) => {
+													const val = v === 'true' ? true : v === 'false' ? false : undefined;
+													filters = filters.map((r, j) => (j === i ? { ...r, value: val } : r));
+												}}
+											>
+												<Select.Trigger class="w-full text-xs h-8">
+													{row.value === true ? 'true' : row.value === false ? 'false' : 'Value'}
+												</Select.Trigger>
+												<Select.Content>
+													<Select.Item value="true">true</Select.Item>
+													<Select.Item value="false">false</Select.Item>
+												</Select.Content>
+											</Select.Root>
+										{:else if fieldType === 'dropdown' && schema?.[row.field]?.options?.length}
+											<Select.Root
+												type="single"
+												value={typeof row.value === 'string' ? row.value : ''}
+												onValueChange={(v) => {
+													filters = filters.map((r, j) => (j === i ? { ...r, value: v ?? '' } : r));
+												}}
+											>
+												<Select.Trigger class="w-full text-xs h-8">
+													{row.value ?? 'Value'}
+												</Select.Trigger>
+												<Select.Content>
+													{#each schema[row.field]?.options ?? [] as opt}
+														<Select.Item value={String(opt)}>{String(opt)}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+										{:else}
+											<Input
+												type="text"
+												class="text-xs h-8"
+												placeholder="Value"
+												value={row.value === undefined || row.value === null
+													? ''
+													: String(row.value)}
+												oninput={(e) => {
+													const v = (e.currentTarget as HTMLInputElement).value;
+													filters = filters.map((r, j) => (j === i ? { ...r, value: v } : r));
+												}}
+											/>
+										{/if}
 									{/if}
+								</div>
+							{/each}
+							<div class="flex flex-row gap-1 flex-wrap">
+								<Button variant="outline" size="sm" class="text-xs" onclick={addFilter}>
+									Add filter
+								</Button>
+								{#if filters.length > 0}
+									<Button variant="ghost" size="sm" class="text-xs" onclick={clearAllFilters}>
+										Clear all
+									</Button>
 								{/if}
 							</div>
-						{/each}
-						<div class="flex flex-row gap-1 flex-wrap">
-							<Button variant="outline" size="sm" class="text-xs" onclick={addFilter}>
-								Add filter
-							</Button>
-							{#if filters.length > 0}
-								<Button variant="ghost" size="sm" class="text-xs" onclick={clearAllFilters}>
-									Clear all
-								</Button>
-							{/if}
 						</div>
-					</div>
-				</Collapsible.Content>
-			</Collapsible.Root>
-		</Sidebar.Group>
+					</Collapsible.Content>
+				</Collapsible.Root>
+			</Sidebar.Group>
+		{/if}
 
 		{#if kind === 'images'}
-		<!-- View: Linked / Unlinked (images only; not shown for pure JSON) -->
-		<Sidebar.Separator />
-		<Sidebar.Group>
-			<Sidebar.GroupLabel>View</Sidebar.GroupLabel>
-			<div class="filter-controls">
-				<div class="flex flex-row gap-2 items-center justify-center">
-					<Button
-						variant={selection.viewMode === 'linked' ? 'default' : 'outline'}
-						onclick={() => selection.setViewMode('linked')}
-					>
-						Linked
-					</Button>
-					<Button
-						variant={selection.viewMode === 'unlinked' ? 'default' : 'outline'}
-						onclick={() => selection.setViewMode('unlinked')}
-					>
-						Unlinked
-					</Button>
+			<!-- View: Linked / Unlinked (images only; not shown for pure JSON or 'files') -->
+			<Sidebar.Separator />
+			<Sidebar.Group>
+				<Sidebar.GroupLabel>View</Sidebar.GroupLabel>
+				<div class="filter-controls">
+					<div class="flex flex-row gap-2 items-center justify-center flex-wrap">
+						<Button
+							variant={selection.viewMode === 'linked' ? 'default' : 'outline'}
+							onclick={() => selection.setViewMode('linked')}
+							size="sm"
+						>
+							Linked
+						</Button>
+						<Button
+							variant={selection.viewMode === 'unlinked' ? 'default' : 'outline'}
+							onclick={() => selection.setViewMode('unlinked')}
+							size="sm"
+						>
+							Unlinked
+						</Button>
+						<Button
+							variant={selection.viewMode === 'excluded' ? 'default' : 'outline'}
+							onclick={() => selection.setViewMode('excluded')}
+							size="sm"
+						>
+							Excluded
+						</Button>
+					</div>
 				</div>
-			</div>
-		</Sidebar.Group>
-		<Sidebar.Separator />
+			</Sidebar.Group>
+			<Sidebar.Separator />
 		{/if}
 	</Sidebar.Header>
-	
+
 	<!-- Removed Key Section as liked/unliked fields don't exist -->
 
 	<!-- Upload Section -->
 	<Sidebar.Content>
-
-	<!-- Image List -->
-	 <Sidebar.Group>
-		<Sidebar.GroupLabel>
-			<div class="flex items-center justify-between gap-2 w-full">
-				<span class="ml-2">{kind === 'images' ? 'Images' : 'Records'} ({displayedItems.length})</span>
-				<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
-					<div class="flex items-center gap-2">
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								<Button
-									variant={selection.gridViewActive ? 'default' : 'ghost'}
-									size="icon"
-									title="Grid view"
-									onclick={toggleGridView}
-									disabled={loading}
-									class="h-7 w-7"
-								>
-									<LayoutGrid class="h-4 w-4" />
-								</Button>
-							</Tooltip.Trigger>
-							<Tooltip.Content>Grid view</Tooltip.Content>
-						</Tooltip.Root>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								<Button
-									variant="ghost"
-									size="icon"
-									title={kind === 'json' ? 'Reload records' : 'Reload images'}
-									onclick={syncImageLists}
-									disabled={loading}
-									class="h-7 w-7"
-								>
-									<RefreshCwIcon class="h-4 w-4" />
-								</Button>
-							</Tooltip.Trigger>
-							<Tooltip.Content>{kind === 'json' ? 'Sync records' : 'Sync image lists'}</Tooltip.Content>
-						</Tooltip.Root>
-						{#if kind === 'json'}
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								<Button
-									variant="outline"
-									size="icon"
-									title="New record"
-									onclick={createRecord}
-									disabled={loading}
-									class="h-7 w-7"
-								>
-									<Plus class="h-4 w-4" aria-hidden="true" />
-								</Button>
-							</Tooltip.Trigger>
-							<Tooltip.Content>New record</Tooltip.Content>
-						</Tooltip.Root>
-						{:else if kind === 'images'}
-						<DropdownMenu.Root>
+		<!-- Image List -->
+		<Sidebar.Group>
+			<Sidebar.GroupLabel>
+				<div class="flex items-center justify-between gap-2 w-full">
+					<span class="ml-2"
+						>{kind === 'images' ? 'Images' : kind === 'generic' ? 'Files' : 'Records'} ({displayedItems.length})</span
+					>
+					<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
+						<div class="flex items-center gap-2">
 							<Tooltip.Root>
 								<Tooltip.Trigger>
-									<DropdownMenu.Trigger
-										class="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-										disabled={uploading}
+									<Button
+										variant={selection.gridViewActive ? 'default' : 'ghost'}
+										size="icon"
+										title="Grid view"
+										onclick={toggleGridView}
+										disabled={loading}
+										class="h-7 w-7"
 									>
-										<UploadIcon class="h-4 w-4" />
-									</DropdownMenu.Trigger>
+										<LayoutGrid class="h-4 w-4" />
+									</Button>
 								</Tooltip.Trigger>
-								<Tooltip.Content>Upload image(s) or folder</Tooltip.Content>
+								<Tooltip.Content>Grid view</Tooltip.Content>
 							</Tooltip.Root>
-							<DropdownMenu.Content align="end">
-								<DropdownMenu.Item onclick={() => triggerUpload('files')}>
-									Upload file(s)
-								</DropdownMenu.Item>
-								<DropdownMenu.Item onclick={() => triggerUpload('folder')}>
-									Upload folder
-								</DropdownMenu.Item>
-							</DropdownMenu.Content>
-						</DropdownMenu.Root>
-						{/if}
-					</div>
-				</Tooltip.Provider>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									<Button
+										variant="ghost"
+										size="icon"
+										title={kind === 'json'
+											? 'Reload records'
+											: kind === 'generic'
+												? 'Reload files'
+												: 'Reload images'}
+										onclick={syncImageLists}
+										disabled={loading}
+										class="h-7 w-7"
+									>
+										<RefreshCwIcon class="h-4 w-4" />
+									</Button>
+								</Tooltip.Trigger>
+								<Tooltip.Content
+									>{kind === 'json'
+										? 'Sync records'
+										: kind === 'generic'
+											? 'Sync files'
+											: 'Sync image lists'}</Tooltip.Content
+								>
+							</Tooltip.Root>
+							{#if kind === 'json'}
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<Button
+											variant="outline"
+											size="icon"
+											title="New record"
+											onclick={createRecord}
+											disabled={loading}
+											class="h-7 w-7"
+										>
+											<Plus class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</Tooltip.Trigger>
+									<Tooltip.Content>New record</Tooltip.Content>
+								</Tooltip.Root>
+							{:else if kind === 'images'}
+								<DropdownMenu.Root>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											<DropdownMenu.Trigger
+												class="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+												disabled={uploading}
+											>
+												<UploadIcon class="h-4 w-4" />
+											</DropdownMenu.Trigger>
+										</Tooltip.Trigger>
+										<Tooltip.Content>Upload image(s) or folder</Tooltip.Content>
+									</Tooltip.Root>
+									<DropdownMenu.Content align="end">
+										<DropdownMenu.Item onclick={() => triggerUpload('files')}>
+											Upload file(s)
+										</DropdownMenu.Item>
+										<DropdownMenu.Item onclick={() => triggerUpload('folder')}>
+											Upload folder
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							{/if}
+						</div>
+					</Tooltip.Provider>
+				</div>
+			</Sidebar.GroupLabel>
+			<div class="px-3 pb-2">
+				<Input
+					type="text"
+					placeholder="Search files..."
+					bind:value={searchQuery}
+					class="h-8 text-xs"
+				/>
 			</div>
-		</Sidebar.GroupLabel>
-		<ul>
-			{#if loading}
-				<li class="italic flex justify-center">Loading...</li>
-			{:else}
-				{#if displayedItems.length > 0}
+			<ul>
+				{#if loading}
+					<li class="italic flex justify-center">Loading...</li>
+				{:else if displayedItems.length > 0}
 					{#each displayedItems as item (item.id)}
 						<HoverCard.Root openDelay={300} closeDelay={0}>
 							<HoverCard.Trigger
@@ -794,11 +941,22 @@
 								})}
 								onclick={() => openImage(item)}
 							>
-								{getDisplayName(item)}
+								<span
+									class="overflow-x-auto whitespace-nowrap w-full text-left [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+								>
+									{getDisplayName(item)}
+								</span>
 							</HoverCard.Trigger>
 							{#if selection.selectedImageId !== item.id && kind === 'images'}
-								<HoverCard.Content side="right" align="center" class='pointer-events-none flex flex-col gap-2'>
-									<img src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''} alt="Preview of {getDisplayName(item)}" />
+								<HoverCard.Content
+									side="right"
+									align="center"
+									class="pointer-events-none flex flex-col gap-2"
+								>
+									<img
+										src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
+										alt="Preview of {getDisplayName(item)}"
+									/>
 									{#if 'file_name' in item && item.file_name}
 										<p class="text-sm text-gray-500 break-all">{item.file_name}</p>
 									{/if}
@@ -807,12 +965,13 @@
 						</HoverCard.Root>
 					{/each}
 				{:else}
-					<li class="italic flex justify-center">No {kind === 'images' ? selection.viewMode + ' images' : 'records'} found.</li>
+					<li class="italic flex justify-center">
+						No {kind === 'images' ? selection.viewMode + ' images' : 'records'} found.
+					</li>
 				{/if}
-			{/if}
-		</ul>
-	</Sidebar.Group>
-</Sidebar.Content>
+			</ul>
+		</Sidebar.Group>
+	</Sidebar.Content>
 </Sidebar.Root>
 
 <!-- Upload filename conflict dialog -->

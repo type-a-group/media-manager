@@ -35,13 +35,17 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images' || !paths.filesDir) throw error(400, 'Upload only supported for images media type');
+		if (paths.kind !== 'images' && paths.kind !== 'generic' || !paths.filesDir) {
+			throw error(400, 'Upload only supported for images and generic media types');
+		}
+		const isGeneric = paths.kind === 'generic';
 		const imagesDirPath = paths.filesDir;
 
 		const formData = await request.formData();
 		const imageFile = formData.get('image') as File;
-		if (!imageFile) throw error(400, 'No image file provided');
-		if (!(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
+		if (!imageFile) throw error(400, 'No file provided');
+
+		if (!isGeneric && !(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
 			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, SVG, WebP, and HEIC images are allowed.');
 		}
 		if (!fs.existsSync(imagesDirPath)) {
@@ -55,15 +59,16 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		let buffer = Buffer.from(arrayBuffer);
 		let safeFileName: string;
 
-		// Convert HEIC/HEIF to JPEG
-		if (isHeicMime(imageFile.type) || isHeicExtension(imageFile.name)) {
-			const converted = await convert({ buffer, format: 'JPEG', quality: 0.92 });
+		// Convert HEIC/HEIF to JPEG (only if not generic)
+		if (!isGeneric && (isHeicMime(imageFile.type) || isHeicExtension(imageFile.name))) {
+			const converted = await convert({ buffer: buffer as unknown as ArrayBufferLike, format: 'JPEG', quality: 0.92 });
 			buffer = Buffer.from(converted);
 			// Change extension to .jpg
 			const baseName = path.basename(imageFile.name, path.extname(imageFile.name));
 			safeFileName = assertSafeImageFilename(`${baseName}.jpg`);
 		} else {
-			safeFileName = assertSafeImageFilename(imageFile.name);
+			// for generic types, we still use the filename assertion or fallback
+			safeFileName = isGeneric ? path.basename(imageFile.name).replace(/[^a-zA-Z0-9.\-_]/g, '_') : assertSafeImageFilename(imageFile.name);
 		}
 
 		const targetPath = path.join(imagesDirPath, safeFileName);

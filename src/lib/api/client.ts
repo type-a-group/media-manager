@@ -15,14 +15,14 @@ import { z } from 'zod';
 export const MediaTypeSummarySchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
-	kind: z.enum(['images', 'json'])
+	kind: z.enum(['images', 'json', 'generic'])
 });
 export type MediaTypeSummary = z.infer<typeof MediaTypeSummarySchema>;
 
 /** Media type stats from GET /api/media-types/[typeId]/stats. */
 export const MediaTypeStatsSchema = z.object({
 	recordCount: z.number(),
-	kind: z.enum(['images', 'json']),
+	kind: z.enum(['images', 'json', 'generic']),
 	lastUpdated: z.string().nullable()
 });
 export type MediaTypeStats = z.infer<typeof MediaTypeStatsSchema>;
@@ -306,10 +306,10 @@ export async function apiListMediaTypes(fetchFn: typeof fetch = fetch): Promise<
 }
 
 /**
- * Create a new media type. Body: { displayName, kind: 'images' | 'json' }.
+ * Create a new media type. Body: { displayName, kind: 'images' | 'json' | 'generic' }.
  */
 export async function apiCreateMediaType(
-	body: { displayName: string; kind: 'images' | 'json' },
+	body: { displayName: string; kind: 'images' | 'json' | 'generic' },
 	fetchFn: typeof fetch = fetch
 ): Promise<MediaTypeSummary> {
 	const res = await fetchFn('/api/media-types', {
@@ -698,6 +698,35 @@ export async function apiUploadImageForTypeWithResolution(
 		body: form
 	});
 	await assertOk(res, 'Failed to upload image');
+	return await res.json();
+}
+
+export async function apiToggleExcludedFilesForType(
+	typeId: string,
+	filenames: string[],
+	action: 'exclude' | 'unexclude',
+	fetchFn: typeof fetch = fetch
+) {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/excluded`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ filenames, action })
+	});
+	await assertOk(res, 'Failed to toggle excluded files');
+	return await res.json();
+}
+
+export async function apiCleanExcludedFilesForType(
+	typeId: string,
+	filenames: string[],
+	fetchFn: typeof fetch = fetch
+) {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/excluded/clean`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ filenames })
+	});
+	await assertOk(res, 'Failed to clean excluded files');
 	return await res.json();
 }
 

@@ -209,8 +209,11 @@ export function createJsonRepoForType(typeId: string) {
 		}
 	}
 
-	function getSettings(): ReturnType<typeof readMediaTypeSettingsFileSync> {
-		return readMediaTypeSettingsFileSync(baseDir);
+	function getSettings() {
+		const s = readMediaTypeSettingsFileSync(baseDir);
+		if (!s) return null;
+		if (!s.schema) s.schema = {};
+		return s as Omit<typeof s, 'schema'> & { schema: SchemaDefinition };
 	}
 
 	async function getSchema(): Promise<SchemaDefinition> {
@@ -247,8 +250,8 @@ export function createJsonRepoForType(typeId: string) {
 						.map((item: unknown) =>
 							item != null && typeof item === 'object' && 'url' in (item as object)
 								? ((item as { display_name?: string; url?: string }).display_name ?? '').trim() ||
-									(item as { url: string }).url ||
-									''
+								(item as { url: string }).url ||
+								''
 								: String(item)
 						)
 						.join(', ');
