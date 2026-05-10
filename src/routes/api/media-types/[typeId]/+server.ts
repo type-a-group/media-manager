@@ -28,7 +28,7 @@ export const GET: RequestHandler = async ({ params }) => {
 			displayName,
 			kind: paths.kind,
 			baseDir: paths.baseDir,
-			...(paths.kind === 'images' && paths.filesDir ? { filesDir: paths.filesDir } : {})
+			...(paths.filesDir ? { filesDir: paths.filesDir } : {})
 		});
 	} catch (err) {
 		const e = err as Error;
@@ -52,6 +52,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') throw error(403, 'Globals group cannot be renamed');
 		const repo = getMediaTypeRepo(typeId); // validate typeId and that folder exists
 		const paths = getMediaTypePaths(typeId);
 		const schema = await repo.getSchema();
@@ -75,6 +76,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 export const DELETE: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') throw error(403, 'Globals group cannot be deleted');
 		getMediaTypeRepo(typeId); // validate typeId and that folder exists
 		await deleteMediaType(typeId);
 		return json({ success: true });

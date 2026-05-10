@@ -3,11 +3,11 @@ import * as fssync from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { getAssetPaths, getMediaTypePaths, listMediaTypeIds } from './paths.js';
+import { getMediaTypePaths, listMediaTypeIds, usesImageRepoKind } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { migrateImageDataFile, migrateSchemaFile } from './migrate.js';
-import { assertSafeImageFilename } from './filenames.js';
+import { assertSafeBasename, assertSafeImageFilename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
 import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 import {
@@ -52,7 +52,7 @@ import type { FieldType } from '$lib/core/types.js';
 export type ImageRepo = ReturnType<typeof createImageRepo>;
 
 /**
- * Paths shape expected by image repo (legacy getAssetPaths or from getMediaTypePaths).
+ * Paths shape expected by image repo (from getMediaTypePaths).
  */
 type ImageRepoPaths = {
 	baseDir: string;
@@ -63,7 +63,9 @@ type ImageRepoPaths = {
 
 function getPathsForType(typeId: string): ImageRepoPaths {
 	const mp = getMediaTypePaths(typeId);
-	if (mp.kind !== 'images' && mp.kind !== 'generic') throw new Error(`Media type ${typeId} is not an images or generic kind`);
+	if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') {
+		throw new Error(`Media type ${typeId} is not a file-backed image repo kind`);
+	}
 	if (!mp.filesDir) throw new Error(`Media type ${typeId} missing filesDir`);
 	return {
 		baseDir: mp.baseDir,
@@ -73,35 +75,18 @@ function getPathsForType(typeId: string): ImageRepoPaths {
 	};
 }
 
-export function createImageRepo(typeId?: string) {
+export function createImageRepo(typeId: string) {
 	/** Get current paths (re-reads settings so filename changes take effect). */
 	function p(): ImageRepoPaths {
-		if (typeId) return getPathsForType(typeId);
-		const ap = getAssetPaths();
-		return {
-			baseDir: ap.baseDir,
-			imageDataPath: ap.imageDataPath,
-			imagesDir: ap.imagesDir,
-			schemaPath: ap.schemaPath
-		};
+		return getPathsForType(typeId);
 	}
 
-	// Best-effort cleanup of stale lock files in dev (uses current paths). Skip when type-scoped (paths may not exist yet).
-	if (!typeId) {
-		(function () {
-			const paths = p();
-			for (const lock of [`${paths.imageDataPath}.lock`, `${paths.schemaPath}.lock`]) {
-				if (fssync.existsSync(lock)) {
-					try {
-						const stat = fssync.statSync(lock);
-						const ageMs = Date.now() - stat.mtimeMs;
-						if (ageMs > 10_000) fssync.unlinkSync(lock);
-					} catch {
-						/* ignore */
-					}
-				}
-			}
-		})();
+	/** Safe filename for disk paths: image extensions unless `generic` kind (any basename). */
+	function assertRecordFilename(name: string): string {
+		const paths = p();
+		const st = readMediaTypeSettingsFileSync(paths.baseDir);
+		if (st?.kind === 'generic' || st?.kind === 'blob_store') return assertSafeBasename(name);
+		return assertSafeImageFilename(name);
 	}
 
 	/**
@@ -141,27 +126,39 @@ export function createImageRepo(typeId?: string) {
 	}
 
 	async function loadAndMigrateSchema(): Promise<SchemaFile> {
-		if (typeId) {
-			const paths = p();
-			const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-			if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
-			const { file } = migrateSchemaFile({ schema: settings.schema });
-			return SchemaFileSchema.parse(file);
-		}
 		const paths = p();
-		return await withFileLock(`${paths.schemaPath}.lock`, async () => {
-			const raw = await readJsonFileOrInit(paths.schemaPath, null, { schema: {} });
-			const { file, changed } = migrateSchemaFile(raw);
-			if (changed) await writeJsonFileAtomic(paths.schemaPath, file);
-			return SchemaFileSchema.parse(file);
-		});
+		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+		const { file } = migrateSchemaFile({ schema: settings.schema });
+		return SchemaFileSchema.parse(file);
 	}
 
 	async function loadAndMigrateImageDataUnlocked(): Promise<ImageDataFile> {
 		const paths = p();
-		const raw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
-		const { file, changed } = migrateImageDataFile(raw);
-		if (changed) await writeJsonFileAtomic(paths.imageDataPath, file);
+		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+		const isFilesFormat = settings?.kind === 'generic' || settings?.kind === 'blob_store';
+		const defaultData = isFilesFormat ? { images: [], files: [] } : { images: [] };
+		const raw = await readJsonFileOrInit(paths.imageDataPath, null, defaultData);
+
+		// Normalize: accept { files: [] } as { images: [] } for generic/blob_store
+		const rawObj = raw as Record<string, unknown>;
+		if (isFilesFormat && Array.isArray(rawObj.files) && !Array.isArray(rawObj.images)) {
+			rawObj.images = rawObj.files;
+		}
+		// Also handle the case where generic type has both keys (backward compat)
+		if (isFilesFormat && Array.isArray(rawObj.files) && Array.isArray(rawObj.images) && (rawObj.images as unknown[]).length === 0) {
+			rawObj.images = rawObj.files;
+		}
+
+		const { file, changed } = migrateImageDataFile(rawObj);
+		if (changed) {
+			// Write back in the correct format for this kind
+			if (isFilesFormat) {
+				await writeJsonFileAtomic(paths.imageDataPath, { files: file.images });
+			} else {
+				await writeJsonFileAtomic(paths.imageDataPath, file);
+			}
+		}
 		return file;
 	}
 
@@ -184,7 +181,6 @@ export function createImageRepo(typeId?: string) {
 		const images = await Promise.all(
 			imageData.images.map(async (img) => {
 				if (img.width != null && img.height != null) return img;
-				if ((img as any).is_template) return img;
 				const filePath = path.join(paths.imagesDir, img.file_name);
 				if (!fssync.existsSync(filePath)) return img;
 				try {
@@ -209,7 +205,13 @@ export function createImageRepo(typeId?: string) {
 
 	async function writeImageData(imageData: ImageDataFile): Promise<void> {
 		const paths = p();
-		await writeJsonFileAtomic(paths.imageDataPath, imageData);
+		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+		const isFilesFormat = settings?.kind === 'generic' || settings?.kind === 'blob_store';
+		if (isFilesFormat) {
+			await writeJsonFileAtomic(paths.imageDataPath, { files: imageData.images });
+		} else {
+			await writeJsonFileAtomic(paths.imageDataPath, imageData);
+		}
 	}
 
 	function toListItem(rec: ImageRecord): ImageListItem {
@@ -393,14 +395,19 @@ export function createImageRepo(typeId?: string) {
 	}): Promise<ImageListResponse> {
 		const paths = p();
 		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
-		const isGenericGroup = settings?.kind === 'generic';
+		const isDiskOnlyList = settings?.kind === 'generic' || settings?.kind === 'blob_store';
 
-		if (isGenericGroup) {
+		if (isDiskOnlyList) {
 			const diskFiles = await fs.readdir(paths.imagesDir).catch(() => [] as string[]);
 			const unlinked = [];
 			const q = params?.query ? params.query.toLowerCase() : null;
+			const skip = new Set<string>(['settings.json']);
+			if (settings?.kind === 'blob_store') {
+				skip.add(path.basename(paths.imageDataPath));
+				skip.add('data.json');
+			}
 			for (const f of diskFiles) {
-				if (f === 'settings.json' || f.startsWith('.')) continue;
+				if (skip.has(f) || f.startsWith('.')) continue;
 				if (q && !f.toLowerCase().includes(q)) continue;
 				try {
 					const st = await fs.stat(path.join(paths.imagesDir, f));
@@ -444,11 +451,10 @@ export function createImageRepo(typeId?: string) {
 		// Linked = records in JSON that exist on disk. Unlinked = files on disk that are not in JSON.
 		const jsonFilenames = new Set(
 			imageData.images
-				.filter((r) => !(r as any).is_template)
 				.map((r) => r.file_name)
 		);
 		let linked = imageData.images.filter(
-			(r) => !(r as any).is_template && diskFiles.has(r.file_name)
+			(r) => diskFiles.has(r.file_name)
 		);
 		const unlinkedFilenames = [...diskFiles].filter((f) => !jsonFilenames.has(f) && !excludedFilenames.has(f));
 		const unlinked = unlinkedFilenames.map(toUnlinkedListItem);
@@ -479,7 +485,6 @@ export function createImageRepo(typeId?: string) {
 		}
 
 		const missing_files = imageData.images
-			.filter((r) => !(r as any).is_template)
 			.filter((r) => !diskFiles.has(r.file_name))
 			.map(toListItem);
 
@@ -549,13 +554,13 @@ export function createImageRepo(typeId?: string) {
 	}
 
 	async function getRecordByFilename(filename: string): Promise<ImageRecord | null> {
-		const safe = assertSafeImageFilename(filename);
+		const safe = assertRecordFilename(filename);
 		const data = await loadAndMigrateImageData();
 		return data.images.find((r) => r.file_name === safe) ?? null;
 	}
 
 	async function ensureRecordForFilename(filename: string): Promise<ImageRecord> {
-		const safe = assertSafeImageFilename(filename);
+		const safe = assertRecordFilename(filename);
 		const schemaFile = await loadAndMigrateSchema();
 
 		const paths = p();
@@ -566,12 +571,12 @@ export function createImageRepo(typeId?: string) {
 
 			const defaults: Record<string, any> = {};
 			for (const [key, def] of Object.entries(schemaFile.schema)) {
-				if (key === 'file_name' || key === 'last_modified' || key === 'default') continue;
+				if (key === 'file_name' || key === 'last_modified') continue;
 				// generic kind doesn't get image_name
 				if (key === 'image_name') {
 					if (typeId) {
 						const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-						if (settings?.kind === 'generic') continue;
+						if (settings?.kind === 'generic' || settings?.kind === 'blob_store') continue;
 					}
 				}
 
@@ -621,18 +626,17 @@ export function createImageRepo(typeId?: string) {
 
 			const record = base.images[idx] as any;
 
-			const isGeneric = typeId ? readMediaTypeSettingsFileSync(paths.baseDir)?.kind === 'generic' : false;
+			const stKind = typeId ? readMediaTypeSettingsFileSync(paths.baseDir)?.kind : null;
+			const isGenericLike = stKind === 'generic' || stKind === 'blob_store';
 
 			// Only allow schema-defined keys (plus image_name for images) to be updated here.
 			const allowedKeys = new Set(Object.keys(schemaFile.schema));
 			allowedKeys.delete('file_name');
 			allowedKeys.delete('last_modified');
-			allowedKeys.delete('default');
 			allowedKeys.delete('id');
-			allowedKeys.delete('is_template');
 			allowedKeys.delete('width');
 			allowedKeys.delete('height');
-			if (!isGeneric) allowedKeys.add('image_name');
+			if (!isGenericLike) allowedKeys.add('image_name');
 
 			const next: any = { ...record };
 			for (const [k, v] of Object.entries(patch)) {
@@ -640,7 +644,7 @@ export function createImageRepo(typeId?: string) {
 					next[k] = v;
 				} else if (
 					k in record &&
-					!['id', 'file_name', 'last_modified', 'is_template', 'width', 'height'].includes(k) &&
+					!['id', 'file_name', 'last_modified', 'width', 'height'].includes(k) &&
 					v === null
 				) {
 					// Allow removing custom/orphaned keys by setting to null.
@@ -683,11 +687,15 @@ export function createImageRepo(typeId?: string) {
 		multiselect?: boolean,
 		long?: boolean
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
 		const key = normalizeFieldKey(fieldName);
 
 		const paths = p();
+		if (typeId) {
+			const st0 = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (st0?.kind === 'blob_store') throw new Error('Schema is not editable for blob store media types');
+		}
 		const lockPath = typeId ? `${paths.schemaPath}.lock` : `${paths.schemaPath}.lock`;
 		return await withFileLock(lockPath, async () => {
 			let schemaFile: SchemaFile;
@@ -714,7 +722,9 @@ export function createImageRepo(typeId?: string) {
 			schemaFile.schema[key] = def;
 
 			if (typeId) {
-				await writeMediaTypeSettingsFile(paths.baseDir, { kind: 'images', schema: schemaFile.schema });
+				const st = readMediaTypeSettingsFileSync(paths.baseDir);
+				if (!st) throw new Error(`Not a valid media-type folder: ${typeId}`);
+				await writeMediaTypeSettingsFile(paths.baseDir, { kind: st.kind, schema: schemaFile.schema });
 			} else {
 				await writeJsonFileAtomic(paths.schemaPath, schemaFile);
 			}
@@ -772,11 +782,15 @@ export function createImageRepo(typeId?: string) {
 			long?: boolean;
 		}
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
 		const key = normalizeFieldKey(oldKey);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not modifiable');
 
 		const paths = p();
+		if (typeId) {
+			const st0 = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (st0?.kind === 'blob_store') throw new Error('Schema is not editable for blob store media types');
+		}
 		return await withFileLock(`${paths.schemaPath}.lock`, async () => {
 			let schemaFile: SchemaFile;
 			if (typeId) {
@@ -839,7 +853,9 @@ export function createImageRepo(typeId?: string) {
 			};
 
 			if (typeId) {
-				await writeMediaTypeSettingsFile(paths.baseDir, { kind: 'images', schema: schemaFile.schema });
+				const st = readMediaTypeSettingsFileSync(paths.baseDir);
+				if (!st) throw new Error(`Not a valid media-type folder: ${typeId}`);
+				await writeMediaTypeSettingsFile(paths.baseDir, { kind: st.kind, schema: schemaFile.schema });
 			} else {
 				await writeJsonFileAtomic(paths.schemaPath, schemaFile);
 			}
@@ -882,6 +898,10 @@ export function createImageRepo(typeId?: string) {
 		if (isProtectedSchemaKey(key)) throw new Error('Field not removable');
 
 		const paths = p();
+		if (typeId) {
+			const st0 = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (st0?.kind === 'blob_store') throw new Error('Schema is not editable for blob store media types');
+		}
 		return await withFileLock(`${paths.schemaPath}.lock`, async () => {
 			let schemaFile: SchemaFile;
 			if (typeId) {
@@ -899,7 +919,9 @@ export function createImageRepo(typeId?: string) {
 
 			delete schemaFile.schema[key];
 			if (typeId) {
-				await writeMediaTypeSettingsFile(paths.baseDir, { kind: 'images', schema: schemaFile.schema });
+				const st = readMediaTypeSettingsFileSync(paths.baseDir);
+				if (!st) throw new Error(`Not a valid media-type folder: ${typeId}`);
+				await writeMediaTypeSettingsFile(paths.baseDir, { kind: st.kind, schema: schemaFile.schema });
 			} else {
 				await writeJsonFileAtomic(paths.schemaPath, schemaFile);
 			}
@@ -968,7 +990,7 @@ export function createImageRepo(typeId?: string) {
 	async function getFilenameForId(id: ImageId): Promise<string | null> {
 		if (typeof id === 'string' && id.startsWith('unlinked:')) {
 			const decoded = decodeURIComponent(id.slice(9));
-			const safe = assertSafeImageFilename(decoded);
+			const safe = assertRecordFilename(decoded);
 			const paths = p();
 			const filePath = path.join(paths.imagesDir, safe);
 			try {
@@ -979,7 +1001,7 @@ export function createImageRepo(typeId?: string) {
 			}
 		}
 		const rec = await getRecordById(id);
-		return rec?.file_name ? assertSafeImageFilename(rec.file_name) : null;
+		return rec?.file_name ? assertRecordFilename(rec.file_name) : null;
 	}
 
 	/**
@@ -999,41 +1021,45 @@ export function createImageRepo(typeId?: string) {
 			if (e.code !== 'ENOENT') throw err;
 		});
 
-		if (typeof id === 'string' && id.startsWith('unlinked:')) return;
-
-		await withFileLock(`${paths.imageDataPath}.lock`, async () => {
-			const base = await loadAndMigrateImageDataUnlocked();
-			const idx = base.images.findIndex((r) => r.id === id);
-			if (idx === -1) return;
-
-			const images = base.images.filter((r) => r.id !== id);
-			await writeImageData({ images });
-		});
+		await removeCatalogReferencesToFileGlobally(filename);
 	}
 
 	/**
 	 * Rename an image file on disk and update its record in image-data.json.
 	 *
 	 * @param id - Image record id (UUID)
-	 * @param newFilename - New filename (validated via assertSafeImageFilename)
+	 * @param newFilename - New filename (validated via assertSafeImageFilename, or assertSafeBasename for generic)
 	 * @returns Updated ImageRecord
 	 * @throws Error if record not found, target exists, or rename fails
 	 */
 	async function renameFileById(id: ImageId, newFilename: string): Promise<ImageRecord> {
-		const safe = assertSafeImageFilename(newFilename);
+		const safe = assertRecordFilename(newFilename);
 		const paths = p();
 
 		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
-		const isGeneric = settings?.kind === 'generic';
+		const isGeneric = settings?.kind === 'generic' || settings?.kind === 'blob_store';
 
 		if (isGeneric && typeof id === 'string' && id.startsWith('unlinked:')) {
-			const oldFilename = decodeURIComponent(id.slice(9));
-			if (safe === oldFilename) return {} as ImageRecord; // Hack for return type
+			const oldFilename = assertRecordFilename(decodeURIComponent(id.slice(9)));
 			const oldPath = path.join(paths.imagesDir, oldFilename);
 			const newPath = path.join(paths.imagesDir, safe);
+			if (safe === oldFilename) {
+				return {
+					id,
+					file_name: safe,
+					image_name: '',
+					last_modified: new Date().toISOString()
+				} as ImageRecord;
+			}
 			if (fssync.existsSync(newPath)) throw new Error('Target filename already exists');
 			await fs.rename(oldPath, newPath);
-			return {} as ImageRecord;
+			const newId = (`unlinked:${encodeURIComponent(safe)}`) as ImageId;
+			return {
+				id: newId,
+				file_name: safe,
+				image_name: '',
+				last_modified: new Date().toISOString()
+			} as ImageRecord;
 		}
 
 		// Get current record
@@ -1128,16 +1154,24 @@ export function createImageRepo(typeId?: string) {
 							return v;
 						};
 
-						if (settings.kind === 'images' && Array.isArray(raw.images)) {
-							for (const rec of raw.images) {
-								if (rec.file_name === oldFilename && tId !== typeId) {
-									rec.file_name = safe;
-									changed = true;
-								}
-								for (const [k, v] of Object.entries(rec)) {
-									if (k === 'file_name' || k === 'id') continue;
-									const nextV = updateVal(v);
-									if (nextV !== v) rec[k] = nextV;
+						if (
+							(settings.kind === 'images' ||
+								settings.kind === 'generic' ||
+								settings.kind === 'blob_store')
+						) {
+							// Normalize: generic/blob_store may use { files: [] } instead of { images: [] }
+							const records = Array.isArray(raw.images) ? raw.images : Array.isArray(raw.files) ? raw.files : null;
+							if (records) {
+								for (const rec of records) {
+									if (rec.file_name === oldFilename && tId !== typeId) {
+										rec.file_name = safe;
+										changed = true;
+									}
+									for (const [k, v] of Object.entries(rec)) {
+										if (k === 'file_name' || k === 'id') continue;
+										const nextV = updateVal(v);
+										if (nextV !== v) rec[k] = nextV;
+									}
 								}
 							}
 						} else if (settings.kind === 'json' && Array.isArray(raw.records)) {
@@ -1172,7 +1206,7 @@ export function createImageRepo(typeId?: string) {
 
 	return {
 		get paths() {
-			return typeId ? getPathsForType(typeId) : getAssetPaths();
+			return getPathsForType(typeId);
 		},
 		getSchema,
 		getUniqueFieldValues,
@@ -1196,11 +1230,11 @@ export function createImageRepo(typeId?: string) {
  * Returns an image repo or JSON repo depending on the type's kind.
  *
  * @param typeId - Folder name under root (e.g. 'images', 'projects')
- * @returns ImageRepo for kind 'images', JsonRepo for kind 'json'
+ * @returns ImageRepo for file-backed kinds (`images`, `generic`, `blob_store`), JsonRepo for `json`
  */
 export function createMediaTypeRepo(typeId: string): ImageRepo | JsonRepo {
 	const paths = getMediaTypePaths(typeId);
-	if (paths.kind === 'images') return createImageRepo(typeId);
+	if (usesImageRepoKind(paths.kind)) return createImageRepo(typeId);
 	return createJsonRepoForType(typeId);
 }
 
@@ -1224,3 +1258,74 @@ export function generateUniqueFilename(baseFilename: string, dir: string): strin
 	throw new Error('Too many filename conflicts');
 }
 
+/**
+ * Remove every catalog row (images + generic types) that references `file_name` on the global blob store.
+ * Does not delete the file on disk.
+ *
+ * @param file_name - Basename in `root/files/`
+ * @returns typeIds whose catalog JSON was modified
+ */
+export async function removeCatalogReferencesToFileGlobally(file_name: string): Promise<string[]> {
+	const safe = assertSafeBasename(file_name);
+	const affected: string[] = [];
+	for (const tId of listMediaTypeIds()) {
+		const mp = getMediaTypePaths(tId);
+		if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') continue;
+		const didRemove = await withFileLock(`${mp.dataPath}.lock`, async () => {
+			if (!fssync.existsSync(mp.dataPath)) return false;
+			let raw: Record<string, unknown>;
+			try {
+				raw = (await readJsonFile(mp.dataPath)) as Record<string, unknown>;
+			} catch {
+				return false;
+			}
+			// Normalize: accept both { images: [] } and { files: [] }
+			const isFilesFormat = mp.kind === 'generic' || mp.kind === 'blob_store';
+			if (isFilesFormat && Array.isArray(raw.files) && !Array.isArray(raw.images)) {
+				raw.images = raw.files;
+			}
+			const { file, changed: migChanged } = migrateImageDataFile(raw);
+			const beforeLen = file.images.length;
+			const images = file.images.filter((r) => r.file_name !== safe);
+			if (images.length === beforeLen && !migChanged) return false;
+			if (isFilesFormat) {
+				await writeJsonFileAtomic(mp.dataPath, { files: images });
+			} else {
+				await writeJsonFileAtomic(mp.dataPath, { images });
+			}
+			return images.length !== beforeLen;
+		});
+		if (didRemove) affected.push(tId);
+	}
+	return affected;
+}
+
+/**
+ * Which image-catalog media types currently reference this filename (sync read for delete confirmations).
+ *
+ * @param file_name - Basename under global `files/`
+ */
+export function listCatalogTypesReferencingFileSync(file_name: string): { typeId: string; displayName: string }[] {
+	const safe = assertSafeBasename(file_name);
+	const out: { typeId: string; displayName: string }[] = [];
+	for (const tId of listMediaTypeIds()) {
+		const mp = getMediaTypePaths(tId);
+		if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') continue;
+		const settings = readMediaTypeSettingsFileSync(mp.baseDir);
+		if (!fssync.existsSync(mp.dataPath)) continue;
+		try {
+			const raw = JSON.parse(fssync.readFileSync(mp.dataPath, 'utf-8')) as Record<string, unknown>;
+			// Normalize: accept both { images: [] } and { files: [] }
+			if (Array.isArray(raw.files) && !Array.isArray(raw.images)) {
+				raw.images = raw.files;
+			}
+			const { file } = migrateImageDataFile(raw);
+			if (file.images.some((r) => r.file_name === safe)) {
+				out.push({ typeId: tId, displayName: settings?.displayName ?? tId });
+			}
+		} catch {
+			/* skip corrupt */
+		}
+	}
+	return out;
+}

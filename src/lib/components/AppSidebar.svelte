@@ -34,7 +34,6 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import {
 		apiCreateRecordForType,
-		apiGetConfig,
 		apiGetMediaType,
 		apiGetSchemaForType,
 		apiImageUrlByIdForType,
@@ -50,6 +49,7 @@
 	import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
 	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import { useSelection } from '$lib/state/selection.svelte';
+	import { isBrowseFirstFileKind } from '$lib/core/mediaKinds.js';
 
 	let imageLists = $state<{
 		linked: ImageListItem[];
@@ -85,6 +85,8 @@
 	const currentMediaType = $derived($currentMediaTypeStore);
 	const typeId = $derived(currentMediaType?.typeId ?? null);
 	const kind = $derived(currentMediaType?.kind ?? 'images');
+	const browseFirst = $derived(isBrowseFirstFileKind(kind));
+	const isGlobals = $derived(typeId === 'globals');
 
 	// This will hold the list items actually displayed in the sidebar
 	let displayedItems = $state<ImageListItem[]>([]);
@@ -188,7 +190,7 @@
 	 * For images: linked/unlinked. For json: single records list.
 	 */
 	async function fetchImageLists() {
-		if (!typeId) return;
+		if (!typeId || isGlobals) return;
 		loading = true;
 		try {
 			const apiFilters = buildFiltersForApi();
@@ -246,7 +248,7 @@
 	 */
 	function updateDisplayedItems() {
 		let baseItems: ImageListItem[] = [];
-		if (kind === 'generic') {
+		if (browseFirst) {
 			baseItems = imageLists.unlinked;
 		} else {
 			baseItems =
@@ -380,7 +382,7 @@
 		if (!files?.length) return;
 
 		const allowed = ALLOWED_IMAGE_MIME_TYPES as readonly string[];
-		const isGenericGroup = kind === 'generic';
+		const isGenericGroup = browseFirst;
 		const toUpload: File[] = [];
 		for (let i = 0; i < files.length; i++) {
 			const f = files[i];
@@ -495,10 +497,10 @@
 	 */
 	function getFieldTypeForField(
 		fieldKey: string
-	): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' {
+	): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file' {
 		if (!schema) return 'string';
 		const def = schema[fieldKey];
-		if (def?.type) return def.type as 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url';
+		if (def?.type) return def.type as 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
 		return 'string';
 	}
 
@@ -571,7 +573,7 @@
 	 * so the list and selection stay in sync and the editor can load the record without racing.
 	 */
 	async function createRecord() {
-		if (!typeId || kind !== 'json') return;
+		if (!typeId || kind !== 'json' || isGlobals) return;
 		try {
 			const created = await apiCreateRecordForType(typeId);
 			// Await list refresh so the new record is in displayedItems before we select (avoids race where GET by id fails or UI is stale).
@@ -610,7 +612,7 @@
 			>
 				<Home class="h-4 w-4" />
 			</Button>
-			{#if kind !== 'generic'}
+			{#if !browseFirst && !isGlobals}
 				<SchemaEditorButton />
 				<SettingsButton />
 			{/if}
@@ -622,7 +624,7 @@
 			multiple
 			bind:this={fileInput}
 			onchange={handleFileUpload}
-			accept={kind === 'generic' ? '*' : 'image/*,.heic,.heif'}
+			accept={browseFirst ? '*' : 'image/*,.heic,.heif'}
 			style="display: none;"
 			aria-label="Upload files"
 		/>
@@ -635,7 +637,7 @@
 			style="display: none;"
 			aria-label="Upload folder"
 		/>
-		{#if kind !== 'generic'}
+		{#if !browseFirst && !isGlobals}
 			<Sidebar.Group>
 				<Collapsible.Root>
 					<div class="flex flex-row gap-2 items-center justify-between">
@@ -789,8 +791,8 @@
 			</Sidebar.Group>
 		{/if}
 
-		{#if kind === 'images'}
-			<!-- View: Linked / Unlinked (images only; not shown for pure JSON or 'files') -->
+		{#if kind === 'images' || browseFirst}
+			<!-- View: Linked / Unlinked / Excluded (file-backed types; not pure JSON) -->
 			<Sidebar.Separator />
 			<Sidebar.Group>
 				<Sidebar.GroupLabel>View</Sidebar.GroupLabel>
@@ -827,13 +829,14 @@
 	<!-- Removed Key Section as liked/unliked fields don't exist -->
 
 	<!-- Upload Section -->
+	{#if !isGlobals}
 	<Sidebar.Content>
 		<!-- Image List -->
 		<Sidebar.Group>
 			<Sidebar.GroupLabel>
 				<div class="flex items-center justify-between gap-2 w-full">
 					<span class="ml-2"
-						>{kind === 'images' ? 'Images' : kind === 'generic' ? 'Files' : 'Records'} ({displayedItems.length})</span
+						>{kind === 'images' ? 'Images' : browseFirst ? 'Files' : 'Records'} ({displayedItems.length})</span
 					>
 					<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
 						<div class="flex items-center gap-2">
@@ -859,7 +862,7 @@
 										size="icon"
 										title={kind === 'json'
 											? 'Reload records'
-											: kind === 'generic'
+											: browseFirst
 												? 'Reload files'
 												: 'Reload images'}
 										onclick={syncImageLists}
@@ -872,12 +875,12 @@
 								<Tooltip.Content
 									>{kind === 'json'
 										? 'Sync records'
-										: kind === 'generic'
+										: browseFirst
 											? 'Sync files'
 											: 'Sync image lists'}</Tooltip.Content
 								>
 							</Tooltip.Root>
-							{#if kind === 'json'}
+							{#if kind === 'json' && !isGlobals}
 								<Tooltip.Root>
 									<Tooltip.Trigger>
 										<Button
@@ -893,7 +896,7 @@
 									</Tooltip.Trigger>
 									<Tooltip.Content>New record</Tooltip.Content>
 								</Tooltip.Root>
-							{:else if kind === 'images'}
+							{:else if kind === 'images' || browseFirst}
 								<DropdownMenu.Root>
 									<Tooltip.Root>
 										<Tooltip.Trigger>
@@ -923,7 +926,7 @@
 			<div class="px-3 pb-2">
 				<Input
 					type="text"
-					placeholder="Search files..."
+					placeholder={kind === 'json' ? 'Search records...' : 'Search files...'}
 					bind:value={searchQuery}
 					class="h-8 text-xs"
 				/>
@@ -947,7 +950,7 @@
 									{getDisplayName(item)}
 								</span>
 							</HoverCard.Trigger>
-							{#if selection.selectedImageId !== item.id && kind === 'images'}
+							{#if selection.selectedImageId !== item.id && (kind === 'images' || browseFirst)}
 								<HoverCard.Content
 									side="right"
 									align="center"
@@ -966,12 +969,13 @@
 					{/each}
 				{:else}
 					<li class="italic flex justify-center">
-						No {kind === 'images' ? selection.viewMode + ' images' : 'records'} found.
+						No {kind === 'images' || browseFirst ? selection.viewMode + (browseFirst ? ' files' : ' images') : 'records'} found.
 					</li>
 				{/if}
 			</ul>
 		</Sidebar.Group>
 	</Sidebar.Content>
+	{/if}
 </Sidebar.Root>
 
 <!-- Upload filename conflict dialog -->

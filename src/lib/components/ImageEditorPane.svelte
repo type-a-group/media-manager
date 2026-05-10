@@ -35,8 +35,10 @@
 		apiUpdatePropertiesByIdForType,
 		apiUnlinkByIdForType,
 		apiDeleteFromDiskByIdForType,
-		apiToggleExcludedFilesForType
+		apiToggleExcludedFilesForType,
+		apiGetGlobalFileUsage
 	} from '$lib/api/client.js';
+	import { isBrowseFirstFileKind } from '$lib/core/mediaKinds.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';
@@ -55,6 +57,9 @@
 	let loading = $state(false);
 	let saving = $state(false);
 	let deleteFromDiskOpen = $state(false);
+	/** Catalog groups referencing the selected file (global blob); loaded when delete dialog opens. */
+	let deleteDiskImpactGroups = $state<{ typeId: string; displayName: string }[] | null>(null);
+	let deleteDiskImpactLoading = $state(false);
 	let unlinkConfirmOpen = $state(false);
 
 	// NOTE: This is a class instance; do not destructure it or you’ll capture initial values.
@@ -157,6 +162,7 @@
 	const currentMediaType = $derived($currentMediaTypeStore);
 	const typeId = $derived(currentMediaType?.typeId ?? null);
 	const kind = $derived(currentMediaType?.kind ?? 'images');
+	const browseFirst = $derived(isBrowseFirstFileKind(kind));
 
 	/**
 	 * Fetches saved values for a list field (for autocomplete).
@@ -303,6 +309,34 @@
 			if (selection.selectedImageId) refresh();
 		});
 		return unsub;
+	});
+
+	$effect(() => {
+		if (!deleteFromDiskOpen) {
+			deleteDiskImpactGroups = null;
+			deleteDiskImpactLoading = false;
+			return;
+		}
+		const fn = record?.file_name ?? unlinkedFilename;
+		if (!fn) {
+			deleteDiskImpactGroups = [];
+			return;
+		}
+		deleteDiskImpactLoading = true;
+		let cancelled = false;
+		apiGetGlobalFileUsage(fn)
+			.then((r) => {
+				if (!cancelled) deleteDiskImpactGroups = r.groups;
+			})
+			.catch(() => {
+				if (!cancelled) deleteDiskImpactGroups = null;
+			})
+			.finally(() => {
+				if (!cancelled) deleteDiskImpactLoading = false;
+			});
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	/**
@@ -568,6 +602,14 @@
 	}
 
 	/**
+	 * Close delete dialog and hide the file from this group only (unlink + exclude), keeping the blob for others.
+	 */
+	async function excludeFromGroupInstead() {
+		deleteFromDiskOpen = false;
+		await handleExclude();
+	}
+
+	/**
 	 * Returns keys in the record that are not in schema and not system keys.
 	 * These are "custom fields" (orphaned data).
 	 */
@@ -608,7 +650,7 @@
 		<div class="flex-1 min-w-0 overflow-auto p-4">
 			<Card.Root>
 				<Card.Content>
-					{#if kind === 'generic'}
+					{#if browseFirst}
 						{@const filename = record?.file_name || unlinkedFilename || ''}
 						{@const parts = filename.split('.')}
 						<div class="flex flex-col items-center justify-center p-8 gap-4 min-h-[50vh]">
@@ -651,7 +693,7 @@
 				>
 					<ChevronRight />
 				</Button>
-				{#if kind !== 'generic'}
+				{#if !browseFirst}
 					{#if record}
 						<Button variant="outline" onclick={save} disabled={saving || loading || !isDirty}>
 							{saving ? 'Saving…' : 'Save'}
@@ -718,14 +760,32 @@
 				<AlertDialog.Root bind:open={deleteFromDiskOpen}>
 					<AlertDialog.Content>
 						<AlertDialog.Title>Delete from disk</AlertDialog.Title>
-						<AlertDialog.Description>
-							This will permanently delete the image file and remove it from the database. This
-							action cannot be undone.
+						<AlertDialog.Description class="space-y-2">
+							<p>
+								This permanently deletes the file from global storage and removes matching catalog
+								rows in every media group that references it.
+							</p>
+							{#if deleteDiskImpactLoading}
+								<p class="text-muted-foreground text-sm">Checking catalog references…</p>
+							{:else if deleteDiskImpactGroups && deleteDiskImpactGroups.length > 0}
+								<p class="text-sm">
+									<strong>Referenced in:</strong>
+									{deleteDiskImpactGroups.map((g) => g.displayName).join(', ')}
+								</p>
+							{/if}
+							<p class="text-sm text-muted-foreground">
+								To hide the file only in this group, use <strong>Exclude from this group</strong> instead.
+							</p>
 						</AlertDialog.Description>
-						<div class="flex justify-end gap-2 mt-4">
+						<div class="flex flex-wrap justify-end gap-2 mt-4">
 							<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-							<form onsubmit={handleDeleteFromDisk}>
-								<AlertDialog.Action type="submit">Delete</AlertDialog.Action>
+							<Button type="button" variant="outline" onclick={excludeFromGroupInstead}>
+								Exclude from this group
+							</Button>
+							<form onsubmit={handleDeleteFromDisk} class="inline">
+								<AlertDialog.Action type="submit" class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+									Delete from disk
+								</AlertDialog.Action>
 							</form>
 						</div>
 					</AlertDialog.Content>
@@ -744,7 +804,7 @@
 				{/if}
 				{#if loading}
 					<p class="px-3 pb-3 italic">Loading…</p>
-				{:else if schema && kind !== 'generic'}
+				{:else if schema && !browseFirst}
 					<div class="flex flex-col gap-3 p-3">
 						{#each getOrderedEditableKeys(schema) as key (key)}
 							{#if key !== 'file_name' && key !== 'last_modified' && key !== 'default'}

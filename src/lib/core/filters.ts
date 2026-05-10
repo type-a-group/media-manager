@@ -102,6 +102,7 @@ export function getOperatorsForFieldType(fieldType: FieldType): OperatorId[] {
 	switch (fieldType) {
 		case 'string':
 		case 'url':
+		case 'file':
 			return STRING_OPERATORS;
 		case 'number':
 			return NUMBER_OPERATORS;

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { z } from 'zod';
 
 const LinkBodySchema = z.object({ file_name: z.string().min(1) });
@@ -18,7 +18,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images') throw error(400, 'Link only supported for images media type');
+		if (!usesImageRepoKind(paths.kind)) throw error(400, 'Link only supported for file-backed media types');
+		if (paths.kind === 'blob_store') throw error(400, 'Link to catalog is not supported for the global Files group');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/repo.js').ImageRepo;
 		const record = await repo.ensureRecordForFilename(parsed.data.file_name);
 		return json(JSON.parse(JSON.stringify(record)));

@@ -10,16 +10,14 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
-		apiGetFileMetadataById,
 		apiGetFileMetadataByIdForType,
-		apiStripFileMetadataById,
 		apiStripFileMetadataByIdForType,
 		apiRenameFileByIdForType
 	} from '$lib/api/client.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { ImageId } from '$lib/core/ids.js';
 
-	/** Image record id (required for fetching by-id). Media type id when in media-type context. Filename for display only. */
+	/** Image record id (required for fetching by-id). Media type id (required). Filename for display only. */
 	let { id = undefined as ImageId | undefined, typeId = undefined as string | undefined, filename = undefined as string | undefined } = $props();
 
 	let isOpen = $state(false);
@@ -40,11 +38,10 @@
 	let renameError = $state<string | null>(null);
 
 	/**
-	 * Fetch metadata from the API by image id (and optional typeId).
-	 * Uses type-scoped or default file-metadata endpoint.
+	 * Fetch metadata from the API by image id and typeId.
 	 *
 	 * @param imageId - Image record id
-	 * @param mediaTypeId - Optional media type id for type-scoped API
+	 * @param mediaTypeId - Media type id for type-scoped API
 	 */
 	async function fetchMetadata(imageId: ImageId, mediaTypeId?: string) {
 		loading = true;
@@ -52,9 +49,8 @@
 		metadata = null;
 
 		try {
-			metadata = mediaTypeId
-				? await apiGetFileMetadataByIdForType(mediaTypeId, imageId)
-				: await apiGetFileMetadataById(imageId);
+			if (!mediaTypeId) throw new Error('typeId is required');
+			metadata = await apiGetFileMetadataByIdForType(mediaTypeId, imageId);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to fetch metadata';
 			console.error('Error fetching metadata:', err);
@@ -144,15 +140,11 @@
 	 * Strip all metadata from the image, then refetch.
 	 */
 	async function handleStripAll() {
-		if (!id) return;
+		if (!id || !typeId) return;
 		stripLoading = true;
 		confirmClearAllOpen = false;
 		try {
-			if (typeId) {
-				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'all');
-			} else {
-				metadata = await apiStripFileMetadataById(id, 'all');
-			}
+			metadata = await apiStripFileMetadataByIdForType(typeId, id, 'all');
 			toast.success('All metadata removed');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'Failed to strip metadata');
@@ -165,15 +157,11 @@
 	 * Strip only GPS/location metadata, then refetch.
 	 */
 	async function handleStripGps() {
-		if (!id) return;
+		if (!id || !typeId) return;
 		stripLoading = true;
 		confirmClearGpsOpen = false;
 		try {
-			if (typeId) {
-				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'gps');
-			} else {
-				metadata = await apiStripFileMetadataById(id, 'gps');
-			}
+			metadata = await apiStripFileMetadataByIdForType(typeId, id, 'gps');
 			toast.success('GPS metadata removed');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'Failed to strip GPS metadata');
@@ -224,10 +212,20 @@
 		renameError = null;
 		try {
 			const result = await apiRenameFileByIdForType(typeId, id, newFilename);
-			toast.success(`Renamed to ${result.record.file_name}`);
+			const name =
+				result?.record && typeof (result.record as { file_name?: string }).file_name === 'string'
+					? (result.record as { file_name: string }).file_name
+					: newFilename;
+			toast.success(`Renamed to ${name}`);
 			triggerImageListRefresh();
 			renameMode = false;
-			await fetchMetadata(id, typeId);
+			const nextId =
+				result?.record &&
+				'id' in (result.record as object) &&
+				(result.record as { id?: ImageId }).id != null
+					? (result.record as { id: ImageId }).id
+					: id;
+			await fetchMetadata(nextId, typeId);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Rename failed';
 			if (msg.includes('409') || msg.includes('already exists')) {

@@ -10,6 +10,7 @@ import { getMediaTypePaths } from '$lib/storage/paths.js';
 export const POST: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') throw error(403, 'Globals supports exactly one record');
 		const paths = getMediaTypePaths(typeId);
 		if (paths.kind !== 'json') throw error(400, 'Create record only supported for JSON media types');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/jsonRepo.js').JsonRepo;

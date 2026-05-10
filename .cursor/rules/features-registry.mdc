@@ -1,0 +1,16 @@
+---
+description: Keep docs/FEATURES.md accurate—read before feature work; update when behavior or code locations change.
+alwaysApply: true
+---
+
+# Feature registry maintenance
+
+1. **Before** substantive work on product behavior, routing, APIs, storage, or major UI flows, read **`docs/FEATURES.md`** and align with the documented feature map and file pointers.
+2. **When you change** any of the following, **update `docs/FEATURES.md` in the same change** (or immediately after, in the same session):
+   - User-visible behavior or status of a feature  
+   - HTTP routes or handler responsibilities  
+   - Media kind semantics (`images` / `json` / `generic`) or repo selection  
+   - Primary owning files for a feature (components, `src/lib/storage`, `src/routes/api`)  
+   - Known gaps / limitations called out in the doc  
+3. **Do not** duplicate long explanations in this rule—the registry is **`docs/FEATURES.md`**; this rule only enforces reading and updating it.
+4. **README** remains the install/data-layout guide; link from FEATURES where appropriate instead of copying large sections.

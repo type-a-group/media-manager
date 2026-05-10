@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { FilterClauseSchema } from '$lib/core/filters.js';
 import { z } from 'zod';
 
@@ -9,7 +9,7 @@ const FiltersParamSchema = z.array(FilterClauseSchema);
 
 /**
  * GET: List records for this media type.
- * For kind 'images': returns { linked, unlinked, missing_files } (ImageListResponse).
+ * For kind 'images' or 'generic': returns ImageListResponse.
  * For kind 'json': returns { records } (JsonListResponse).
  */
 export const GET: RequestHandler = async ({ params, url }) => {
@@ -30,7 +30,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 			}
 		}
 
-		if (paths.kind === 'images') {
+		if (usesImageRepoKind(paths.kind)) {
 			const imageRepo = repo as import('$lib/storage/repo.js').ImageRepo;
 			if (filters != null && filters.length > 0) {
 				const data = await imageRepo.listImages({ filters, groupBy });

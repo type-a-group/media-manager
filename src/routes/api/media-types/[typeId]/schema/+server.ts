@@ -14,6 +14,7 @@ import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 export const GET: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') return json({});
 		const repo = getMediaTypeRepo(typeId);
 		const schema = await repo.getSchema();
 		return json(schema);
@@ -30,6 +31,7 @@ export const GET: RequestHandler = async ({ params }) => {
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = AddFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid schema field payload');
@@ -60,6 +62,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = UpdateFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid update payload');
@@ -96,6 +99,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
  */
 export const DELETE: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = DeleteFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid delete payload');

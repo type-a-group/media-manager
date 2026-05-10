@@ -23,8 +23,10 @@
 		apiToggleExcludedFilesForType,
 		apiUploadImageForType,
 		apiCheckUploadConflictsForType,
-		apiUploadImageForTypeWithResolution
+		apiUploadImageForTypeWithResolution,
+		apiGetGlobalFileUsage
 	} from '$lib/api/client.js';
+	import { isBrowseFirstFileKind } from '$lib/core/mediaKinds.js';
 	import type { ImageId } from '$lib/core/ids.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
@@ -38,9 +40,12 @@
 	// NOTE: This is a class instance; do not destructure it or you'll capture initial values.
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
 	const kind = $derived($currentMediaTypeStore?.kind ?? 'images');
+	const browseFirst = $derived(isBrowseFirstFileKind(kind));
 	const selection = useSelection();
 
 	let deleteFromDiskOpen = $state(false);
+	let deleteDiskImpactGroups = $state<{ typeId: string; displayName: string }[] | null>(null);
+	let deleteDiskImpactLoading = $state(false);
 	let unlinkConfirmOpen = $state(false);
 	let setFieldDialogOpen = $state(false);
 	let setFieldSchema = $state<SchemaDefinition | null>(null);
@@ -103,6 +108,35 @@
 				})
 				.catch(() => {});
 		}
+	});
+
+	$effect(() => {
+		if (!deleteFromDiskOpen) {
+			deleteDiskImpactGroups = null;
+			deleteDiskImpactLoading = false;
+			return;
+		}
+		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
+		const unique = [...new Set(items.map((i) => i.file_name).filter(Boolean))];
+		if (unique.length === 0) {
+			deleteDiskImpactGroups = [];
+			return;
+		}
+		deleteDiskImpactLoading = true;
+		let cancelled = false;
+		apiGetGlobalFileUsage(unique)
+			.then((r) => {
+				if (!cancelled) deleteDiskImpactGroups = r.groups;
+			})
+			.catch(() => {
+				if (!cancelled) deleteDiskImpactGroups = null;
+			})
+			.finally(() => {
+				if (!cancelled) deleteDiskImpactLoading = false;
+			});
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	/**
@@ -244,7 +278,7 @@
 		if (selection.gridSelectMode) {
 			selection.toggleMultiselect(item.id);
 		} else {
-			if (kind === 'generic' || hasAllowedImageExtension(item.file_name)) {
+			if (browseFirst || hasAllowedImageExtension(item.file_name)) {
 				await selection.setGridViewActive(false);
 				selection.selectImage(item.id);
 			} else {
@@ -492,6 +526,32 @@
 		}
 	}
 
+	/**
+	 * From the delete confirmation: exclude all selected items from this group only (unlink + excluded list).
+	 */
+	async function excludeSelectedFromGroupFromDeleteDialog() {
+		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
+		if (!typeId || items.length === 0) return;
+		deleteFromDiskOpen = false;
+		const filenames = items.map((i) => i.file_name);
+		try {
+			for (const item of items) {
+				if (!String(item.id).startsWith('unlinked:')) {
+					await apiUnlinkByIdForType(typeId, item.id);
+				}
+			}
+			await apiToggleExcludedFilesForType(typeId, filenames, 'exclude');
+			toast.success(
+				`Excluded ${items.length} file${items.length === 1 ? '' : 's'} from this group`
+			);
+			selection.clearMultiselect();
+			triggerImageListRefresh();
+		} catch (e) {
+			console.error(e);
+			toast.error('Exclude failed');
+		}
+	}
+
 	async function handleToggleExcluded(action: 'exclude' | 'unexclude') {
 		const items = selection.visibleImageItems.filter((i) =>
 			selection.multiselectedIds.includes(i.id)
@@ -732,14 +792,33 @@
 		<AlertDialog.Content>
 			{@const deleteCount = selection.multiselectedIds.length}
 			<AlertDialog.Title>Delete from disk</AlertDialog.Title>
-			<AlertDialog.Description>
-				This will permanently delete {deleteCount} image {deleteCount === 1 ? 'file' : 'files'} and remove
-				{deleteCount === 1 ? 'it' : 'them'} from the database. This cannot be undone.
+			<AlertDialog.Description class="space-y-2">
+				<p>
+					This permanently deletes {deleteCount} file{deleteCount === 1 ? '' : 's'} from global storage and
+					removes matching catalog rows in every media group that references
+					{deleteCount === 1 ? 'it' : 'them'}.
+				</p>
+				{#if deleteDiskImpactLoading}
+					<p class="text-muted-foreground text-sm">Checking catalog references…</p>
+				{:else if deleteDiskImpactGroups && deleteDiskImpactGroups.length > 0}
+					<p class="text-sm">
+						<strong>Referenced in:</strong>
+						{deleteDiskImpactGroups.map((g) => g.displayName).join(', ')}
+					</p>
+				{/if}
+				<p class="text-sm text-muted-foreground">
+					To hide only in this group, use <strong>Exclude from this group</strong>.
+				</p>
 			</AlertDialog.Description>
-			<div class="flex justify-end gap-2 mt-4">
+			<div class="flex flex-wrap justify-end gap-2 mt-4">
 				<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-				<form onsubmit={handleDeleteFromDisk}>
-					<AlertDialog.Action type="submit">Delete</AlertDialog.Action>
+				<Button type="button" variant="outline" onclick={excludeSelectedFromGroupFromDeleteDialog}>
+					Exclude from this group
+				</Button>
+				<form onsubmit={handleDeleteFromDisk} class="inline">
+					<AlertDialog.Action type="submit" class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+						Delete from disk
+					</AlertDialog.Action>
 				</form>
 			</div>
 		</AlertDialog.Content>
@@ -977,7 +1056,7 @@
 											? 'aspect-square'
 											: ''} bg-muted/20 flex flex-col items-center justify-center"
 									>
-										{#if kind !== 'generic' && hasAllowedImageExtension(item.file_name)}
+										{#if !browseFirst && hasAllowedImageExtension(item.file_name)}
 											<img
 												src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
 												alt={getDisplayName(item)}
@@ -1024,7 +1103,7 @@
 											<div
 												class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
 											>
-												{#if kind !== 'generic' && hasAllowedImageExtension(item.file_name) && typeId}
+												{#if !browseFirst && hasAllowedImageExtension(item.file_name) && typeId}
 													<!-- svelte-ignore a11y_click_events_have_key_events -->
 													<div
 														role="button"

@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const CreateBodySchema = z.object({
 	displayName: z.string().min(1).max(256),
-	kind: z.enum(['images', 'json'])
+	kind: z.enum(['images', 'json', 'generic'])
 });
 
 /**
@@ -26,7 +26,7 @@ export const GET: RequestHandler = async () => {
 
 /**
  * POST: Create a new media type.
- * Body: { displayName, kind: 'images' | 'json' }.
+ * Body: { displayName, kind: 'images' | 'json' | 'generic' }.
  * Creates folder + settings.json + empty data file; for images also creates files subdir.
  */
 export const POST: RequestHandler = async ({ request }) => {

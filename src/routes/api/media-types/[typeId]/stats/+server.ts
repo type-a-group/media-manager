@@ -1,14 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import * as fs from 'node:fs/promises';
 
 /**
  * GET: Return stats for this media type: record count, kind, and last updated (data file mtime).
  * Use case: Info popup on the home page to show amount of images/records, group type, and last updated.
  *
- * Returns: { recordCount: number, kind: 'images' | 'json', lastUpdated: string | null }
+ * Returns: { recordCount: number, kind: 'images' | 'json' | 'generic', lastUpdated: string | null }
  * lastUpdated is ISO string of data file mtime, or null if file does not exist.
  *
  * Concerns / future improvements:
@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		const paths = getMediaTypePaths(typeId);
 
 		let recordCount: number;
-		if (paths.kind === 'images') {
+		if (usesImageRepoKind(paths.kind)) {
 			const imageRepo = repo as import('$lib/storage/repo.js').ImageRepo;
 			const data = await imageRepo.listImages({});
 			recordCount = data.linked.length + data.unlinked.length;

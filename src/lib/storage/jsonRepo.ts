@@ -10,6 +10,7 @@ import {
 	readMediaTypeSettingsFileSync,
 	writeMediaTypeSettingsFile
 } from './settingsFile.js';
+import { GLOBALS_RECORD_ID } from './mediaTypes.js';
 import { normalizeFieldKey } from './migrate.js';
 import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 
@@ -188,6 +189,7 @@ function applyFilters(
 export function createJsonRepoForType(typeId: string) {
 	const paths = getMediaTypePaths(typeId);
 	if (paths.kind !== 'json') throw new Error(`Media type ${typeId} is not JSON`);
+	const isGlobalsType = typeId === 'globals';
 
 	const dataPath = paths.dataPath;
 	const settingsPath = paths.settingsPath;
@@ -197,11 +199,28 @@ export function createJsonRepoForType(typeId: string) {
 		try {
 			const raw = await readJsonFile(dataPath);
 			const parsed = JsonDataFileSchema.parse(raw);
-			return parsed;
+			if (!isGlobalsType) return parsed;
+			const base =
+				parsed.records.find((r) => r.id === GLOBALS_RECORD_ID) ??
+				parsed.records[0] ??
+				({ id: GLOBALS_RECORD_ID } as JsonRecord);
+			const singleton = JsonRecordSchema.parse({
+				...base,
+				id: GLOBALS_RECORD_ID
+			});
+			if (parsed.records.length !== 1 || parsed.records[0]?.id !== GLOBALS_RECORD_ID) {
+				await writeJsonFileAtomic(dataPath, { records: [singleton] });
+			}
+			return { records: [singleton] };
 		} catch (err) {
 			const e = err as NodeJS.ErrnoException;
 			if (e.code === 'ENOENT') {
 				await fs.mkdir(path.dirname(dataPath), { recursive: true });
+				if (isGlobalsType) {
+					const singleton = JsonRecordSchema.parse({ id: GLOBALS_RECORD_ID });
+					await writeJsonFileAtomic(dataPath, { records: [singleton] });
+					return { records: [singleton] };
+				}
 				await writeJsonFileAtomic(dataPath, { records: [] });
 				return { records: [] };
 			}
@@ -219,6 +238,7 @@ export function createJsonRepoForType(typeId: string) {
 	async function getSchema(): Promise<SchemaDefinition> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+		if (isGlobalsType) return {};
 		return settings.schema;
 	}
 
@@ -307,8 +327,15 @@ export function createJsonRepoForType(typeId: string) {
 			const record = data.records[idx] as Record<string, unknown>;
 			const next = { ...record };
 			for (const [k, v] of Object.entries(patch)) {
-				if (allowedKeys.has(k)) next[k] = v;
+				if (k === 'id' || k === 'last_modified') continue;
+				if (isGlobalsType) {
+					if (v === null) delete next[k];
+					else next[k] = v;
+				} else if (allowedKeys.has(k)) next[k] = v;
 				else if (k in record && v === null) delete next[k];
+			}
+			if (isGlobalsType) {
+				next.id = GLOBALS_RECORD_ID;
 			}
 			(next as JsonRecord).last_modified = new Date().toISOString();
 			const parsed = JsonRecordSchema.parse(next);
@@ -323,6 +350,7 @@ export function createJsonRepoForType(typeId: string) {
 	 * Remove a record from the data file.
 	 */
 	async function deleteRecord(id: ImageId): Promise<void> {
+		if (isGlobalsType) throw new Error('Globals record cannot be deleted');
 		await withFileLock(`${dataPath}.lock`, async () => {
 			const data = await readData();
 			const idx = data.records.findIndex((r) => r.id === id);
@@ -336,6 +364,7 @@ export function createJsonRepoForType(typeId: string) {
 	 * Create a new record with schema defaults and append to data file.
 	 */
 	async function createRecord(): Promise<JsonRecord> {
+		if (isGlobalsType) throw new Error('Globals supports exactly one record');
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
 		const defaults: Record<string, unknown> = {};
@@ -377,7 +406,8 @@ export function createJsonRepoForType(typeId: string) {
 		multiselect?: boolean,
 		long?: boolean
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
+		if (isGlobalsType) throw new Error('Schema is not editable for globals');
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
 		const key = normalizeFieldKey(fieldName);
 
@@ -440,7 +470,8 @@ export function createJsonRepoForType(typeId: string) {
 			long?: boolean;
 		}
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
+		if (isGlobalsType) throw new Error('Schema is not editable for globals');
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
 		const key = normalizeFieldKey(oldKey);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not modifiable');
 
@@ -525,6 +556,7 @@ export function createJsonRepoForType(typeId: string) {
 	}
 
 	async function deleteSchemaField(fieldName: string, removeFromRecords?: boolean) {
+		if (isGlobalsType) throw new Error('Schema is not editable for globals');
 		const key = normalizeFieldKey(fieldName);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not removable');
 

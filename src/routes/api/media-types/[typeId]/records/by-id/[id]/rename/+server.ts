@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { z } from 'zod';
 
@@ -22,7 +22,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images') throw error(400, 'Rename only supported for images media type');
+		if (!usesImageRepoKind(paths.kind)) throw error(400, 'Rename only supported for file-backed media types');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/repo.js').ImageRepo;
 		const record = await repo.renameFileById(id.data, parsed.data.new_filename);
 		return json({ success: true, record });

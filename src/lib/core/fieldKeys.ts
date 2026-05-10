@@ -9,8 +9,6 @@ export const RESERVED_FIELD_KEYS = new Set([
 	'id',
 	'file_name',
 	'last_modified',
-	'default',
-	'is_template',
 	'width',
 	'height'
 ]);

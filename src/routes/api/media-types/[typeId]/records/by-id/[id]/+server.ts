@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
 
@@ -55,7 +55,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 };
 
 /**
- * DELETE: For images: unlink (remove record, file stays). For json: delete record.
+ * DELETE: For images/generic: unlink (remove record, file stays). For json: delete record.
  */
 export const DELETE: RequestHandler = async ({ params }) => {
 	const id = ImageIdSchema.safeParse(params.id);
@@ -65,10 +65,11 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		const typeId = params.typeId;
 		const repo = getMediaTypeRepo(typeId);
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind === 'images') {
+		if (usesImageRepoKind(paths.kind)) {
 			const imageRepo = repo as import('$lib/storage/repo.js').ImageRepo;
 			await imageRepo.unlinkById(id.data);
 		} else {
+			if (typeId === 'globals') throw error(403, 'Globals record cannot be deleted');
 			const jsonRepo = repo as import('$lib/storage/jsonRepo.js').JsonRepo;
 			await jsonRepo.deleteRecord(id.data);
 		}

@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import ImageEditorPane from '$lib/components/ImageEditorPane.svelte';
 	import JsonEditorPane from '$lib/components/JsonEditorPane.svelte';
+import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
 	import { apiGetMediaType } from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';
@@ -10,7 +11,11 @@
 	const selection = useSelection();
 
 	let typeId = $derived($page.params.typeId);
-	let typeInfo = $state<{ id: string; displayName: string; kind: 'images' | 'json' } | null>(null);
+	let typeInfo = $state<{
+		id: string;
+		displayName: string;
+		kind: 'images' | 'json' | 'generic' | 'blob_store';
+	} | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -60,8 +65,10 @@
 		<p class="text-destructive">{error}</p>
 		<a href="/" class="text-primary underline">Back to overview</a>
 	</div>
-{:else if typeInfo?.kind === 'images'}
+{:else if typeInfo?.kind === 'images' || typeInfo?.kind === 'generic' || typeInfo?.kind === 'blob_store'}
 	<ImageEditorPane />
+{:else if typeInfo?.id === 'globals'}
+	<GlobalsEditorPane />
 {:else if typeInfo?.kind === 'json'}
 	<JsonEditorPane />
 {:else}

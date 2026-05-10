@@ -1,10 +1,28 @@
 import path from 'node:path';
 import * as fssync from 'node:fs';
 import {
-	readSettingsFileSync,
 	readMediaTypeSettingsFileSync,
 	type MediaTypeKind
 } from './settingsFile.js';
+
+/** Folder name under {@link getRootDir} where all media blobs are stored (shared by every file-backed catalog). */
+export const GLOBAL_FILES_DIR_NAME = 'files' as const;
+
+/**
+ * Absolute path to the global blob directory (`<root>/files`).
+ */
+export function getGlobalFilesDir(): string {
+	return path.join(getRootDir(), GLOBAL_FILES_DIR_NAME);
+}
+
+/**
+ * Whether this media type uses {@link createImageRepo} (shared global `files/` dir for blobs).
+ *
+ * @param kind - From settings / {@link getMediaTypePaths}
+ */
+export function usesImageRepoKind(kind: MediaTypeKind): boolean {
+	return kind === 'images' || kind === 'generic' || kind === 'blob_store';
+}
 
 /**
  * Resolve the root directory for all media types (env MEDIA_MANAGER_ROOT).
@@ -30,7 +48,7 @@ export interface MediaTypePaths {
 	baseDir: string;
 	settingsPath: string;
 	dataPath: string;
-	/** Present only for kind 'images'. */
+	/** Global blob directory (`root/files`) for `images` / `generic`; same for `blob_store` (type folder is that dir). */
 	filesDir?: string;
 	kind: MediaTypeKind;
 }
@@ -53,8 +71,11 @@ export function getMediaTypePaths(typeId: string): MediaTypePaths {
 	if (!settings) {
 		throw new Error(`Not a valid media-type folder: ${typeId}`);
 	}
-	const dataFileName = settings.dataFileName ?? (settings.kind === 'images' ? 'image-data.json' : 'data.json');
+	const dataFileName =
+		settings.dataFileName ??
+		(settings.kind === 'images' || settings.kind === 'blob_store' ? 'image-data.json' : 'data.json');
 	const dataPath = path.join(baseDir, dataFileName);
+	const globalFiles = getGlobalFilesDir();
 	const result: MediaTypePaths = {
 		rootDir,
 		baseDir,
@@ -62,10 +83,9 @@ export function getMediaTypePaths(typeId: string): MediaTypePaths {
 		dataPath,
 		kind: settings.kind
 	};
-	if (settings.kind === 'images') {
-		result.filesDir = path.join(baseDir, settings.filesSubdir ?? 'files');
-	} else if (settings.kind === 'generic') {
-		result.filesDir = baseDir; // No subdir, the folder itself is the file store
+	if (settings.kind === 'images' || settings.kind === 'generic' || settings.kind === 'blob_store') {
+		// All binaries live under root/files; catalogs live per type under baseDir.
+		result.filesDir = globalFiles;
 	}
 	return result;
 }
@@ -96,44 +116,4 @@ export function listMediaTypeIds(): string[] {
 	return typeIds;
 }
 
-/**
- * Centralized filesystem paths for the current app storage layout (legacy single-folder).
- *
- * Use case:
- * - Avoid scattered string literals like `image-data.json`.
- * - Resolves paths from MEDIA_MANAGER_ROOT and settings.json.
- *
- * Layout:
- * - baseDir = MEDIA_MANAGER_ROOT
- * - imagesDir = baseDir/images
- * - imageDataPath = baseDir/{settings.imageDataFileName}
- * - schemaPath = baseDir/{settings.schemaFileName}
- * - settingsPath = baseDir/settings.json
- *
- * Concerns / future improvements:
- * - Kept for backward compat during refactor; prefer getRootDir + getMediaTypePaths(typeId) for new code.
- */
-export function getAssetPaths() {
-	const configured = process.env.MEDIA_MANAGER_ROOT?.trim();
-	// Fallback for build: vite build loads server modules but doesn't run them.
-	// At runtime, use the CLI (media-manager /path/to/root) or set MEDIA_MANAGER_ROOT.
-	const baseDir = configured ? path.resolve(configured) : path.resolve(process.cwd(), '.media-manager-build');
-	const settings = readSettingsFileSync(baseDir);
-	const imageDataFileName = settings.imageDataFileName ?? 'image-data.json';
-	const schemaFileName = settings.schemaFileName ?? 'schema.json';
 
-	const imagesDir = path.resolve(baseDir, 'images');
-	const imageDataPath = path.resolve(baseDir, imageDataFileName);
-	const schemaPath = path.resolve(baseDir, schemaFileName);
-	const settingsPath = path.resolve(baseDir, 'settings.json');
-
-	return {
-		root: process.cwd(),
-		baseDir,
-		assetsDir: baseDir,
-		imagesDir,
-		imageDataPath,
-		schemaPath,
-		settingsPath
-	};
-}

@@ -15,14 +15,14 @@ import { z } from 'zod';
 export const MediaTypeSummarySchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
-	kind: z.enum(['images', 'json', 'generic'])
+	kind: z.enum(['images', 'json', 'generic', 'blob_store'])
 });
 export type MediaTypeSummary = z.infer<typeof MediaTypeSummarySchema>;
 
 /** Media type stats from GET /api/media-types/[typeId]/stats. */
 export const MediaTypeStatsSchema = z.object({
 	recordCount: z.number(),
-	kind: z.enum(['images', 'json', 'generic']),
+	kind: z.enum(['images', 'json', 'generic', 'blob_store']),
 	lastUpdated: z.string().nullable()
 });
 export type MediaTypeStats = z.infer<typeof MediaTypeStatsSchema>;
@@ -47,91 +47,13 @@ async function assertOk(res: Response, message: string): Promise<void> {
 	throw new Error(`${message} (status ${res.status})${details ? `: ${details}` : ''}`);
 }
 
-/**
- * Fetch the current schema (field definitions).
- */
-export async function apiGetSchema(fetchFn: typeof fetch = fetch) {
-	const res = await fetchFn('/api/schema');
-	await assertOk(res, 'Failed to fetch schema');
-	const json = await res.json();
-	return SchemaDefinitionSchema.parse(json);
-}
 
+/** App config shape used by components. */
 const AppConfigSchema = z.object({
 	imagesDir: z.string(),
 	baseDir: z.string().optional()
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;
-
-/**
- * Fetch runtime configuration for the UI.
- *
- * Use case:
- * - Display active images directory (especially important for CLI/npx usage).
- */
-export async function apiGetConfig(fetchFn: typeof fetch = fetch) {
-	const res = await fetchFn('/api/config');
-	await assertOk(res, 'Failed to fetch config');
-	const json = await res.json();
-	return AppConfigSchema.parse(json);
-}
-
-/**
- * Add a field to the schema.
- *
- * @param payload - Field creation payload
- */
-export async function apiAddSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
-	const body = AddFieldRequestSchema.parse(payload);
-	const res = await fetchFn('/api/schema', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	await assertOk(res, 'Failed to add schema field');
-	return await res.json();
-}
-
-/**
- * Update a field in the schema (rename, type, default, options).
- *
- * @param payload - Update payload with fieldName and optional newFieldName, fieldType, defaultValue, options
- */
-export async function apiUpdateSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
-	const body = UpdateFieldRequestSchema.parse(payload);
-	const res = await fetchFn('/api/schema', {
-		method: 'PATCH',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	await assertOk(res, 'Failed to update schema field');
-	return await res.json();
-}
-
-/**
- * Delete a field from the schema.
- *
- * @param payload - Delete payload
- */
-export async function apiDeleteSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
-	const body = DeleteFieldRequestSchema.parse(payload);
-	const res = await fetchFn('/api/schema', {
-		method: 'DELETE',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	await assertOk(res, 'Failed to delete schema field');
-	return await res.json();
-}
 
 /** Filter clause for multi-filter list API. */
 export type ListImagesFilter = {
@@ -140,158 +62,7 @@ export type ListImagesFilter = {
 	value?: string | number | boolean;
 };
 
-/**
- * List images grouped by linked/unlinked.
- * When groupBy is set, each item includes group_by_value for that schema field.
- * When filters is provided and non-empty, it is sent as the filters param and legacy query/field/empty are omitted.
- *
- * @param params - Optional query, field, empty (legacy), groupBy, or filters (array of { field, operator, value? })
- */
-export async function apiListImages(
-	params?: {
-		query?: string;
-		field?: string;
-		empty?: boolean;
-		groupBy?: string;
-		filters?: ListImagesFilter[];
-	},
-	fetchFn: typeof fetch = fetch
-) {
-	const url = new URL('/api/images/list', globalThis.location?.origin ?? 'http://localhost');
-	if (params?.filters != null && params.filters.length > 0) {
-		url.searchParams.set('filters', JSON.stringify(params.filters));
-	} else {
-		if (params?.query) url.searchParams.set('query', params.query);
-		if (params?.field) url.searchParams.set('field', params.field);
-		if (params?.empty) url.searchParams.set('empty', 'true');
-	}
-	if (params?.groupBy) url.searchParams.set('groupBy', params.groupBy);
 
-	const res = await fetchFn(url.pathname + url.search);
-	await assertOk(res, 'Failed to list images');
-	const json = await res.json();
-	return ImageListResponseSchema.parse(json);
-}
-
-/**
- * Get unique values for a field across all image records.
- * Used for list field autocomplete (e.g. tags).
- *
- * @param fieldName - Schema field key
- * @returns Array of unique string values
- */
-export async function apiGetFieldValues(
-	fieldName: string,
-	fetchFn: typeof fetch = fetch
-): Promise<{ values: string[] }> {
-	const res = await fetchFn(`/api/images/field-values?field=${encodeURIComponent(fieldName)}`);
-	await assertOk(res, 'Failed to fetch field values');
-	const json = await res.json();
-	return { values: Array.isArray(json?.values) ? json.values : [] };
-}
-
-/**
- * Get properties for a given imageId.
- */
-export async function apiGetPropertiesById(id: ImageId, fetchFn: typeof fetch = fetch) {
-	ImageIdSchema.parse(id);
-	const res = await fetchFn(`/api/images/properties/by-id/${id}`);
-	await assertOk(res, 'Failed to fetch properties');
-	return await res.json();
-}
-
-/**
- * Update properties for a given imageId.
- *
- * @param id - imageId
- * @param patch - Partial properties update (schema-defined keys)
- */
-export async function apiUpdatePropertiesById(
-	id: ImageId,
-	patch: unknown,
-	fetchFn: typeof fetch = fetch
-) {
-	ImageIdSchema.parse(id);
-	const body = UpdatePropertiesRequestSchema.parse(patch);
-	const res = await fetchFn(`/api/images/properties/by-id/${id}`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
-	await assertOk(res, 'Failed to update properties');
-	return await res.json();
-}
-
-/**
- * Unlink/reset properties for a given imageId (keeps file on disk).
- */
-export async function apiUnlinkById(id: ImageId, fetchFn: typeof fetch = fetch) {
-	ImageIdSchema.parse(id);
-	const res = await fetchFn(`/api/images/by-id/${id}`, { method: 'DELETE' });
-	await assertOk(res, 'Failed to unlink image');
-	return SuccessResponseSchema.parse(await res.json());
-}
-
-/**
- * Delete the image file from disk and remove its record from image-data.json.
- */
-export async function apiDeleteImageFromDisk(id: ImageId, fetchFn: typeof fetch = fetch) {
-	ImageIdSchema.parse(id);
-	const res = await fetchFn(`/api/images/by-id/${id}/file`, { method: 'DELETE' });
-	await assertOk(res, 'Failed to delete image from disk');
-	return SuccessResponseSchema.parse(await res.json());
-}
-
-/**
- * Get a URL for displaying an image in `<img src=...>`.
- */
-export function apiImageUrlById(id: ImageId): string {
-	ImageIdSchema.parse(id);
-	return `/api/images/by-id/${id}`;
-}
-
-/**
- * Upload an image file.
- *
- * @param file - Browser File object
- * @returns server response containing `id` and `filename`
- */
-export async function apiUploadImage(file: File, fetchFn: typeof fetch = fetch) {
-	const form = new FormData();
-	form.append('image', file);
-	const res = await fetchFn('/api/images/upload', { method: 'POST', body: form });
-	await assertOk(res, 'Failed to upload image');
-	return await res.json();
-}
-
-/**
- * Fetch file metadata for an imageId.
- */
-export async function apiGetFileMetadataById(id: ImageId, fetchFn: typeof fetch = fetch) {
-	ImageIdSchema.parse(id);
-	const res = await fetchFn(`/api/images/file-metadata/by-id/${id}`);
-	await assertOk(res, 'Failed to fetch file metadata');
-	return await res.json();
-}
-
-/**
- * Strip file metadata for an imageId (all or GPS only).
- * Body: { mode: "all" | "gps" }. Returns updated metadata JSON.
- */
-export async function apiStripFileMetadataById(
-	id: ImageId,
-	mode: 'all' | 'gps',
-	fetchFn: typeof fetch = fetch
-) {
-	ImageIdSchema.parse(id);
-	const res = await fetchFn(`/api/images/file-metadata/by-id/${id}/strip`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ mode })
-	});
-	await assertOk(res, 'Failed to strip file metadata');
-	return await res.json();
-}
 
 // --- Media types (multi-type layout) ---
 
@@ -303,6 +74,30 @@ export async function apiListMediaTypes(fetchFn: typeof fetch = fetch): Promise<
 	await assertOk(res, 'Failed to list media types');
 	const json = await res.json();
 	return z.array(MediaTypeSummarySchema).parse(json);
+}
+
+/** Response from GET /api/media-types/global-file-usage — catalog groups referencing filenames on the global blob store. */
+export const GlobalFileUsageResponseSchema = z.object({
+	groups: z.array(z.object({ typeId: z.string(), displayName: z.string() }))
+});
+export type GlobalFileUsageResponse = z.infer<typeof GlobalFileUsageResponseSchema>;
+
+/**
+ * List media groups whose catalogs reference the given filename(s) under the global `files/` directory.
+ *
+ * @param filenames - One or more basenames (e.g. from `file_name` or unlinked id)
+ * @param fetchFn - Optional fetch (SvelteKit load)
+ */
+export async function apiGetGlobalFileUsage(
+	filenames: string | string[],
+	fetchFn: typeof fetch = fetch
+): Promise<GlobalFileUsageResponse> {
+	const list = (Array.isArray(filenames) ? filenames : [filenames]).filter(Boolean);
+	const sp = new URLSearchParams();
+	for (const f of list) sp.append('filename', f);
+	const res = await fetchFn(`/api/media-types/global-file-usage?${sp.toString()}`);
+	await assertOk(res, 'Failed to load global file usage');
+	return GlobalFileUsageResponseSchema.parse(await res.json());
 }
 
 /**
@@ -328,6 +123,33 @@ export async function apiCreateMediaType(
 export async function apiGetMediaType(typeId: string, fetchFn: typeof fetch = fetch) {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}`);
 	await assertOk(res, 'Failed to get media type');
+	return await res.json();
+}
+
+/**
+ * Read the singleton globals record (`/api/media-types/globals/record`).
+ */
+export async function apiGetGlobalsRecord(fetchFn: typeof fetch = fetch) {
+	const res = await fetchFn('/api/media-types/globals/record');
+	await assertOk(res, 'Failed to load globals record');
+	return await res.json();
+}
+
+/**
+ * Patch globals fields. Keys with `null` values are removed.
+ *
+ * @param patch - Partial object of field updates for the singleton globals record
+ */
+export async function apiUpdateGlobalsRecord(
+	patch: Record<string, unknown>,
+	fetchFn: typeof fetch = fetch
+) {
+	const res = await fetchFn('/api/media-types/globals/record', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(patch)
+	});
+	await assertOk(res, 'Failed to update globals record');
 	return await res.json();
 }
 

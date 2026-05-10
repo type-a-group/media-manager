@@ -12,6 +12,7 @@
 		FolderOpen,
 		Image,
 		FileJson,
+		Files,
 		Plus,
 		Pencil,
 		Trash2,
@@ -35,7 +36,7 @@
 	let createOpen = $state(false);
 	let createStep = $state(1);
 	let createDisplayName = $state('');
-	let createKind = $state<'images' | 'json'>('json');
+	let createKind = $state<'images' | 'json' | 'generic'>('json');
 	let createSubmitting = $state(false);
 	let renameOpen = $state(false);
 	let renameTypeId = $state<string | null>(null);
@@ -225,6 +226,8 @@
 								<div class="flex items-center gap-2">
 									{#if m.kind === 'images'}
 										<Image class="h-5 w-5 text-muted-foreground" />
+									{:else if m.kind === 'generic' || m.kind === 'blob_store'}
+										<Files class="h-5 w-5 text-muted-foreground" />
 									{:else}
 										<FileJson class="h-5 w-5 text-muted-foreground" />
 									{/if}
@@ -242,11 +245,18 @@
 											<Info class="mr-2 h-4 w-4" />
 											Info
 										</DropdownMenu.Item>
-										<DropdownMenu.Item onclick={() => openRename(m)}>
-											<Pencil class="mr-2 h-4 w-4" />
-											Rename
-										</DropdownMenu.Item>
-										{#if m.id === 'files'}
+										{#if m.id === 'files' || m.id === 'globals'}
+											<DropdownMenu.Item disabled class="text-muted-foreground">
+												<Pencil class="mr-2 h-4 w-4" />
+												Rename (Protected)
+											</DropdownMenu.Item>
+										{:else}
+											<DropdownMenu.Item onclick={() => openRename(m)}>
+												<Pencil class="mr-2 h-4 w-4" />
+												Rename
+											</DropdownMenu.Item>
+										{/if}
+										{#if m.id === 'files' || m.id === 'globals'}
 											<DropdownMenu.Item disabled class="text-muted-foreground">
 												<Trash2 class="mr-2 h-4 w-4" />
 												Delete (Protected)
@@ -265,7 +275,15 @@
 							</Card.Header>
 							<Card.Content class="flex-1">
 								<p class="text-muted-foreground text-sm">
-									{m.kind === 'images' ? 'Images with metadata' : 'Pure JSON records'}
+									{m.id === 'globals'
+										? 'Singleton global object (free-form fields)'
+										: m.kind === 'images'
+										? 'Images with metadata'
+										: m.kind === 'blob_store'
+											? 'Global file store (browse all blobs)'
+											: m.kind === 'generic'
+												? 'Files in folder (optional metadata)'
+												: 'Pure JSON records'}
 								</p>
 							</Card.Content>
 							<Card.Footer>
@@ -289,7 +307,7 @@
 		<Dialog.Description>
 			{createStep === 1
 				? 'Give it a display name. The folder name will be derived from this.'
-				: 'Images: files + metadata. Pure JSON: metadata only (e.g. projects list).'}
+				: 'Images: files + metadata. Files (generic): loose files in the type folder. Pure JSON: metadata only.'}
 		</Dialog.Description>
 		{#if createStep === 1}
 			<div class="grid gap-4 py-4">
@@ -304,18 +322,26 @@
 			</div>
 		{:else}
 			<div class="grid gap-4 py-4">
-				<div class="flex gap-4">
+				<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
 					<Button
 						variant={createKind === 'images' ? 'default' : 'outline'}
-						class="flex-1"
+						class="flex-1 min-w-[8rem]"
 						onclick={() => (createKind = 'images')}
 					>
 						<Image class="mr-2 h-4 w-4" />
 						Images
 					</Button>
 					<Button
+						variant={createKind === 'generic' ? 'default' : 'outline'}
+						class="flex-1 min-w-[8rem]"
+						onclick={() => (createKind = 'generic')}
+					>
+						<Files class="mr-2 h-4 w-4" />
+						Files
+					</Button>
+					<Button
 						variant={createKind === 'json' ? 'default' : 'outline'}
-						class="flex-1"
+						class="flex-1 min-w-[8rem]"
 						onclick={() => (createKind = 'json')}
 					>
 						<FileJson class="mr-2 h-4 w-4" />
@@ -408,7 +434,17 @@
 				</div>
 				<div>
 					<dt class="font-medium text-muted-foreground">Group type</dt>
-					<dd class="mt-0.5">{infoMediaType.kind === 'images' ? 'Images' : 'Pure JSON records'}</dd>
+					<dd class="mt-0.5">
+						{infoMediaType.kind === 'images'
+							? 'Images'
+							: infoMediaType.id === 'globals'
+								? 'Globals singleton'
+							: infoMediaType.kind === 'blob_store'
+								? 'Global Files (blob store)'
+								: infoMediaType.kind === 'generic'
+									? 'Files (generic)'
+									: 'Pure JSON records'}
+					</dd>
 				</div>
 				<div>
 					<dt class="font-medium text-muted-foreground">Amount</dt>
@@ -416,7 +452,12 @@
 						{#if infoStatsLoading}
 							Loading…
 						{:else if infoStats != null}
-							{infoStats.recordCount} {infoMediaType.kind === 'images' ? 'images' : 'records'}
+							{infoStats.recordCount}
+							{infoMediaType.kind === 'images'
+								? 'images'
+								: infoMediaType.kind === 'generic' || infoMediaType.kind === 'blob_store'
+									? 'files'
+									: 'records'}
 						{:else}
 							—
 						{/if}

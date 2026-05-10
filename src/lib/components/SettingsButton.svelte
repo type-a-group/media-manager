@@ -12,12 +12,14 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { SettingsIcon } from 'lucide-svelte';
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
+	import { isBrowseFirstFileKind } from '$lib/core/mediaKinds.js';
 
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
 	const kind = $derived($currentMediaTypeStore?.kind ?? null);
 	const selection = setSelectionContext();
-	/** Label for "item" in navigation settings (record vs image). */
-	const itemLabel = $derived(kind === 'json' ? 'record' : 'image');
+	const browseFirst = $derived(isBrowseFirstFileKind(kind));
+	/** Label for "item" in navigation settings (record vs file vs image). */
+	const itemLabel = $derived(kind === 'json' ? 'record' : browseFirst ? 'file' : 'image');
 
 	let settings = $state<AppSettings>({
 		autoAdvanceToNextUnlinked: false,
@@ -152,14 +154,14 @@
 						<div class="flex flex-col gap-2">
 							<h3 class="text-lg font-bold">Navigation</h3>
 							<div class="flex flex-col gap-2">
-								{#if kind === 'images'}
+								{#if kind === 'images' || browseFirst}
 									<div class="flex flex-row gap-2 items-center">
 										<Checkbox
 											id="auto-advance"
 											checked={settings.autoAdvanceToNextUnlinked}
 											onCheckedChange={(checked) => handleAutoAdvanceChange(!!checked)}
 										/>
-										<Label for="auto-advance">Auto-advance to next unlinked image</Label>
+										<Label for="auto-advance">Auto-advance to next unlinked {itemLabel}</Label>
 									</div>
 								{/if}
 								<div class="flex flex-row gap-2 items-center">

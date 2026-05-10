@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import * as fs from 'node:fs';
 import path from 'node:path';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
 
 /**
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images' || !paths.filesDir) throw error(400, 'Not an images media type');
+		if (!usesImageRepoKind(paths.kind) || !paths.filesDir) throw error(400, 'Not a file-backed media type');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/repo.js').ImageRepo;
 		const filename = await repo.getFilenameForId(id.data);
 		if (!filename) throw error(404, 'Image not found');
@@ -56,7 +56,7 @@ export const DELETE: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images') throw error(400, 'Not an images media type');
+		if (!usesImageRepoKind(paths.kind)) throw error(400, 'Not a file-backed media type');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/repo.js').ImageRepo;
 		await repo.deleteFromDiskById(id.data);
 		return json({ success: true });

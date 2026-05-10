@@ -104,7 +104,6 @@ export type SchemaDefinition = z.infer<typeof SchemaDefinitionSchema>;
  * - `id` is the stable identity used by UI and API endpoints.
  * - `file_name` is the current filename on disk (may change in the future).
  * - Presence in JSON means "linked"; files on disk with no record are "unlinked".
- * - `is_template` is used for an optional default/template record.
  *
  * Concerns / future improvements:
  * - Consider splitting system fields from user fields explicitly instead of `catchall`.
@@ -116,7 +115,6 @@ export const ImageRecordSchema = z
 		file_name: z.string().min(1),
 		image_name: z.string().default(''),
 		last_modified: z.string().optional(),
-		is_template: z.boolean().optional(),
 		width: z.number().optional(),
 		height: z.number().optional()
 	})

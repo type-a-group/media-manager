@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { readImageFileMetadata, stripImageFileMetadata } from '$lib/server/fileMetadata.js';
 import type { ImageRepo } from '$lib/storage/repo.js';
@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images' || !paths.filesDir) throw error(400, 'Not an images media type');
+		if (!usesImageRepoKind(paths.kind) || !paths.filesDir) throw error(400, 'Not a file-backed media type');
 		const repo = getMediaTypeRepo(typeId) as ImageRepo;
 		const filename = await repo.getFilenameForId(id.data);
 		if (!filename) throw error(404, 'Image not found');

@@ -55,15 +55,13 @@ export function migrateSchemaFile(raw: unknown): { file: SchemaFile; changed: bo
 /**
  * Migrate the image-data.json structure:
  * - add stable `id` to each record if missing
- * - drop records that had linked === false (they become "unlinked" = not in JSON)
- * - remove `linked` from remaining records; presence in JSON means linked
  * - normalize legacy field keys on each record
  *
  * @param raw - Parsed JSON from image-data.json
  * @returns migrated image data file and whether it changed
  */
 export function migrateImageDataFile(raw: unknown): { file: ImageDataFile; changed: boolean } {
-	// We intentionally accept legacy records here (they may not have `id` / `linked` yet).
+	// We intentionally accept legacy records here (they may not have `id` yet).
 	const LegacyImageDataFileSchema = z.object({
 		images: z.array(z.record(z.any())).default([])
 	});
@@ -74,9 +72,6 @@ export function migrateImageDataFile(raw: unknown): { file: ImageDataFile; chang
 	const migratedImages: ImageRecord[] = [];
 
 	for (const oldRecord of parsed.images ?? []) {
-		// Detect old “template” record shape, if any.
-		const isTemplate = Boolean((oldRecord as any).default === true || (oldRecord as any).is_template === true);
-
 		let id = (oldRecord as any).id as string | undefined;
 		if (!id || typeof id !== 'string' || id.length === 0) {
 			id = newImageId();
@@ -90,33 +85,19 @@ export function migrateImageDataFile(raw: unknown): { file: ImageDataFile; chang
 		}
 		seenIds.add(id);
 
-		const wasLinked =
-			typeof (oldRecord as any).linked === 'boolean'
-				? (oldRecord as any).linked
-				: isTemplate
-					? false
-					: true;
-		if (!wasLinked) {
-			changed = true;
-			continue;
-		}
-
-		// Normalize keys; omit linked from output (no longer in schema).
+		// Normalize keys.
 		const migrated: Record<string, any> = {};
 		for (const [k, v] of Object.entries(oldRecord)) {
-			if (k === 'linked') continue;
 			const norm = normalizeFieldKey(k);
 			migrated[norm] = v;
 			if (norm !== k) changed = true;
 		}
 
 		migrated.id = id;
-		if (isTemplate) migrated.is_template = true;
 
 		// Ensure required fields exist.
 		if (typeof migrated.file_name !== 'string' || migrated.file_name.length === 0) {
-			// Template records may omit filename; keep a sentinel.
-			migrated.file_name = migrated.file_name || '__template__';
+			migrated.file_name = migrated.file_name || '__unknown__';
 			changed = true;
 		}
 		if (typeof migrated.image_name !== 'string') migrated.image_name = '';
@@ -126,4 +107,5 @@ export function migrateImageDataFile(raw: unknown): { file: ImageDataFile; chang
 
 	return { file: ImageDataFileSchema.parse({ images: migratedImages }), changed };
 }
+
 

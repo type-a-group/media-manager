@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
+import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
 import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 import { generateUniqueFilename } from '$lib/storage/repo.js';
@@ -23,7 +23,7 @@ function isHeicExtension(filename: string): boolean {
 }
 
 /**
- * POST: Upload an image file (images kind only).
+ * POST: Upload a file (images: images only; generic: any file).
  * Accepts multipart/form-data with an 'image' field.
  *
  * Optional form fields:
@@ -35,17 +35,17 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	try {
 		const typeId = params.typeId;
 		const paths = getMediaTypePaths(typeId);
-		if (paths.kind !== 'images' && paths.kind !== 'generic' || !paths.filesDir) {
-			throw error(400, 'Upload only supported for images and generic media types');
+		if (!usesImageRepoKind(paths.kind) || !paths.filesDir) {
+			throw error(400, 'Upload only supported for file-backed media types');
 		}
-		const isGeneric = paths.kind === 'generic';
+		const allowAnyMime = paths.kind === 'generic' || paths.kind === 'blob_store';
 		const imagesDirPath = paths.filesDir;
 
 		const formData = await request.formData();
 		const imageFile = formData.get('image') as File;
 		if (!imageFile) throw error(400, 'No file provided');
 
-		if (!isGeneric && !(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
+		if (!allowAnyMime && !(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
 			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, SVG, WebP, and HEIC images are allowed.');
 		}
 		if (!fs.existsSync(imagesDirPath)) {
@@ -60,15 +60,17 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		let safeFileName: string;
 
 		// Convert HEIC/HEIF to JPEG (only if not generic)
-		if (!isGeneric && (isHeicMime(imageFile.type) || isHeicExtension(imageFile.name))) {
+		if (!allowAnyMime && (isHeicMime(imageFile.type) || isHeicExtension(imageFile.name))) {
 			const converted = await convert({ buffer: buffer as unknown as ArrayBufferLike, format: 'JPEG', quality: 0.92 });
-			buffer = Buffer.from(converted);
+			buffer = Buffer.from(converted instanceof Uint8Array ? converted : new Uint8Array(converted));
 			// Change extension to .jpg
 			const baseName = path.basename(imageFile.name, path.extname(imageFile.name));
 			safeFileName = assertSafeImageFilename(`${baseName}.jpg`);
 		} else {
 			// for generic types, we still use the filename assertion or fallback
-			safeFileName = isGeneric ? path.basename(imageFile.name).replace(/[^a-zA-Z0-9.\-_]/g, '_') : assertSafeImageFilename(imageFile.name);
+			safeFileName = allowAnyMime
+				? path.basename(imageFile.name).replace(/[^a-zA-Z0-9.\-_]/g, '_')
+				: assertSafeImageFilename(imageFile.name);
 		}
 
 		const targetPath = path.join(imagesDirPath, safeFileName);

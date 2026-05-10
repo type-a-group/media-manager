@@ -26,7 +26,6 @@ export const GET: RequestHandler = async ({ params }) => {
 			displayName: settings.displayName,
 			kind: settings.kind,
 			dataFileName: settings.dataFileName,
-			filesSubdir: settings.filesSubdir,
 			gridSize: settings.gridSize ?? 'medium',
 			autoAdvanceToNextUnlinked: settings.autoAdvanceToNextUnlinked ?? false,
 			autoSaveOnAdvance: settings.autoSaveOnAdvance ?? false
