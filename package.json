@@ -26,7 +26,8 @@
 		"lint:eslint": "eslint .",
 		"lint": "npm run lint:prettier && npm run lint:eslint",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"upgrade-data": "node scripts/upgrade-data.mjs"
 	},
 	"devDependencies": {
 		"@internationalized/date": "^3.8.2",

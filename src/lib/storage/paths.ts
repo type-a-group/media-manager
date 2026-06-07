@@ -1,6 +1,7 @@
 import path from 'node:path';
 import * as fssync from 'node:fs';
 import {
+	readSettingsFileSync,
 	readMediaTypeSettingsFileSync,
 	type MediaTypeKind
 } from './settingsFile.js';
@@ -116,4 +117,44 @@ export function listMediaTypeIds(): string[] {
 	return typeIds;
 }
 
+/**
+ * Centralized filesystem paths for the current app storage layout (legacy single-folder).
+ *
+ * Use case:
+ * - Avoid scattered string literals like `image-data.json`.
+ * - Resolves paths from MEDIA_MANAGER_ROOT and settings.json.
+ *
+ * Layout:
+ * - baseDir = MEDIA_MANAGER_ROOT
+ * - imagesDir = baseDir/images
+ * - imageDataPath = baseDir/{settings.imageDataFileName}
+ * - schemaPath = baseDir/{settings.schemaFileName}
+ * - settingsPath = baseDir/settings.json
+ *
+ * Concerns / future improvements:
+ * - Kept for backward compat during refactor; prefer getRootDir + getMediaTypePaths(typeId) for new code.
+ */
+export function getAssetPaths() {
+	const configured = process.env.MEDIA_MANAGER_ROOT?.trim();
+	// Fallback for build: vite build loads server modules but doesn't run them.
+	// At runtime, use the CLI (media-manager /path/to/root) or set MEDIA_MANAGER_ROOT.
+	const baseDir = configured ? path.resolve(configured) : path.resolve(process.cwd(), '.media-manager-build');
+	const settings = readSettingsFileSync(baseDir);
+	const imageDataFileName = settings.imageDataFileName ?? 'image-data.json';
+	const schemaFileName = settings.schemaFileName ?? 'schema.json';
 
+	const imagesDir = path.resolve(baseDir, 'images');
+	const imageDataPath = path.resolve(baseDir, imageDataFileName);
+	const schemaPath = path.resolve(baseDir, schemaFileName);
+	const settingsPath = path.resolve(baseDir, 'settings.json');
+
+	return {
+		root: process.cwd(),
+		baseDir,
+		assetsDir: baseDir,
+		imagesDir,
+		imageDataPath,
+		schemaPath,
+		settingsPath
+	};
+}

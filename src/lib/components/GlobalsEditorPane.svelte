@@ -12,8 +12,15 @@
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 
-	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url';
 	type UrlValue = { display_name: string; url: string };
+
+	/**
+	 * Reserved record key used to persist each field's chosen UI type across reloads.
+	 * Globals has no schema, so the kind hint is stored alongside the data as a JSON-encoded
+	 * string (the record's value schema allows strings). Hidden from the editable field list.
+	 */
+	const FIELD_KINDS_KEY = '__field_kinds';
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -29,10 +36,35 @@
 	function editableFromRecord(rec: Record<string, unknown>): Record<string, unknown> {
 		const out: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(rec)) {
-			if (k === 'id' || k === 'last_modified') continue;
+			if (k === 'id' || k === 'last_modified' || k === FIELD_KINDS_KEY) continue;
 			out[k] = v;
 		}
 		return out;
+	}
+
+	/** Parse persisted field-kind hints from the reserved record key (tolerant of malformed input). */
+	function parseStoredKinds(rec: Record<string, unknown>): Record<string, ValueKind> {
+		const raw = rec[FIELD_KINDS_KEY];
+		if (typeof raw !== 'string') return {};
+		try {
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
+			const out: Record<string, ValueKind> = {};
+			for (const [k, v] of Object.entries(parsed)) {
+				if (
+					v === 'string' ||
+					v === 'number' ||
+					v === 'boolean' ||
+					v === 'dropdown' ||
+					v === 'list' ||
+					v === 'url'
+				) {
+					out[k] = v;
+				}
+			}
+			return out;
+		} catch {
+			return {};
+		}
 	}
 
 	function inferKind(v: unknown): ValueKind {
@@ -75,8 +107,9 @@
 		try {
 			const rec = (await apiGetGlobalsRecord()) as Record<string, unknown>;
 			const editable = editableFromRecord(rec);
+			const storedKinds = parseStoredKinds(rec);
 			const nextKinds: Record<string, ValueKind> = {};
-			for (const [k, v] of Object.entries(editable)) nextKinds[k] = inferKind(v);
+			for (const [k, v] of Object.entries(editable)) nextKinds[k] = storedKinds[k] ?? inferKind(v);
 			baseValues = editable;
 			formValues = { ...editable };
 			fieldKinds = nextKinds;
@@ -94,6 +127,9 @@
 		const next = { ...formValues };
 		delete next[key];
 		formValues = next;
+		const nextKinds = { ...fieldKinds };
+		delete nextKinds[key];
+		fieldKinds = nextKinds;
 		if (key in baseValues) {
 			const s = new Set(deletedKeys);
 			s.add(key);
@@ -104,7 +140,7 @@
 	function addField() {
 		const key = addKey.trim();
 		if (!key) return;
-		if (key === 'id' || key === 'last_modified') {
+		if (key === 'id' || key === 'last_modified' || key === FIELD_KINDS_KEY) {
 			toast.error('This key is reserved');
 			return;
 		}
@@ -153,6 +189,10 @@
 			const patch: Record<string, unknown> = {};
 			for (const [k, v] of Object.entries(formValues)) patch[k] = v;
 			for (const k of deletedKeys) patch[k] = null;
+			// Persist per-field type hints so dropdown/string (and other ambiguous) kinds survive reloads.
+			const kindsToStore: Record<string, ValueKind> = {};
+			for (const k of Object.keys(formValues)) kindsToStore[k] = getFieldKind(k);
+			patch[FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
 			await apiUpdateGlobalsRecord(patch);
 			toast.success('Globals saved');
 			triggerImageListRefresh();
@@ -201,7 +241,6 @@
 											<Select.Item value="dropdown">dropdown</Select.Item>
 											<Select.Item value="list">list</Select.Item>
 											<Select.Item value="url">url</Select.Item>
-											<Select.Item value="file">file</Select.Item>
 										</Select.Content>
 									</Select.Root>
 									<Button variant="ghost" size="icon" onclick={() => removeField(key)}>
@@ -321,7 +360,6 @@
 									<Select.Item value="dropdown">dropdown</Select.Item>
 									<Select.Item value="list">list</Select.Item>
 									<Select.Item value="url">url</Select.Item>
-									<Select.Item value="file">file</Select.Item>
 								</Select.Content>
 							</Select.Root>
 							<Input placeholder="initial value" bind:value={addValue} />

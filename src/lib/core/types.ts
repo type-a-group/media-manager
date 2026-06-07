@@ -116,7 +116,8 @@ export const ImageRecordSchema = z
 		image_name: z.string().default(''),
 		last_modified: z.string().optional(),
 		width: z.number().optional(),
-		height: z.number().optional()
+		height: z.number().optional(),
+		_missing_files: z.record(z.string()).optional()
 	})
 	.catchall(
 		z
@@ -161,7 +162,8 @@ export type SchemaFile = z.infer<typeof SchemaFileSchema>;
 export const JsonRecordSchema = z
 	.object({
 		id: ImageIdSchema,
-		last_modified: z.string().optional()
+		last_modified: z.string().optional(),
+		_missing_files: z.record(z.string()).optional()
 	})
 	.catchall(
 		z
@@ -194,7 +196,8 @@ export const JsonListItemSchema = z.object({
 	name: z.string().optional(),
 	group_by_value: z
 		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
-		.optional()
+		.optional(),
+	missing_file_fields: z.array(z.string()).optional()
 });
 export type JsonListItem = z.infer<typeof JsonListItemSchema>;
 
@@ -219,7 +222,8 @@ export const ImageListItemSchema = z.object({
 		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
 		.optional(),
 	width: z.number().optional(),
-	height: z.number().optional()
+	height: z.number().optional(),
+	missing_file_fields: z.array(z.string()).optional()
 });
 export type ImageListItem = z.infer<typeof ImageListItemSchema>;
 

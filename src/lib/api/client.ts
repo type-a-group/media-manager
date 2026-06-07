@@ -47,13 +47,91 @@ async function assertOk(res: Response, message: string): Promise<void> {
 	throw new Error(`${message} (status ${res.status})${details ? `: ${details}` : ''}`);
 }
 
+/**
+ * Fetch the current schema (field definitions).
+ */
+export async function apiGetSchema(fetchFn: typeof fetch = fetch) {
+	const res = await fetchFn('/api/schema');
+	await assertOk(res, 'Failed to fetch schema');
+	const json = await res.json();
+	return SchemaDefinitionSchema.parse(json);
+}
 
-/** App config shape used by components. */
 const AppConfigSchema = z.object({
 	imagesDir: z.string(),
 	baseDir: z.string().optional()
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+/**
+ * Fetch runtime configuration for the UI.
+ *
+ * Use case:
+ * - Display active images directory (especially important for CLI/npx usage).
+ */
+export async function apiGetConfig(fetchFn: typeof fetch = fetch) {
+	const res = await fetchFn('/api/config');
+	await assertOk(res, 'Failed to fetch config');
+	const json = await res.json();
+	return AppConfigSchema.parse(json);
+}
+
+/**
+ * Add a field to the schema.
+ *
+ * @param payload - Field creation payload
+ */
+export async function apiAddSchemaField(
+	payload: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	const body = AddFieldRequestSchema.parse(payload);
+	const res = await fetchFn('/api/schema', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to add schema field');
+	return await res.json();
+}
+
+/**
+ * Update a field in the schema (rename, type, default, options).
+ *
+ * @param payload - Update payload with fieldName and optional newFieldName, fieldType, defaultValue, options
+ */
+export async function apiUpdateSchemaField(
+	payload: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	const body = UpdateFieldRequestSchema.parse(payload);
+	const res = await fetchFn('/api/schema', {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to update schema field');
+	return await res.json();
+}
+
+/**
+ * Delete a field from the schema.
+ *
+ * @param payload - Delete payload
+ */
+export async function apiDeleteSchemaField(
+	payload: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	const body = DeleteFieldRequestSchema.parse(payload);
+	const res = await fetchFn('/api/schema', {
+		method: 'DELETE',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to delete schema field');
+	return await res.json();
+}
 
 /** Filter clause for multi-filter list API. */
 export type ListImagesFilter = {
@@ -62,7 +140,158 @@ export type ListImagesFilter = {
 	value?: string | number | boolean;
 };
 
+/**
+ * List images grouped by linked/unlinked.
+ * When groupBy is set, each item includes group_by_value for that schema field.
+ * When filters is provided and non-empty, it is sent as the filters param and legacy query/field/empty are omitted.
+ *
+ * @param params - Optional query, field, empty (legacy), groupBy, or filters (array of { field, operator, value? })
+ */
+export async function apiListImages(
+	params?: {
+		query?: string;
+		field?: string;
+		empty?: boolean;
+		groupBy?: string;
+		filters?: ListImagesFilter[];
+	},
+	fetchFn: typeof fetch = fetch
+) {
+	const url = new URL('/api/images/list', globalThis.location?.origin ?? 'http://localhost');
+	if (params?.filters != null && params.filters.length > 0) {
+		url.searchParams.set('filters', JSON.stringify(params.filters));
+	} else {
+		if (params?.query) url.searchParams.set('query', params.query);
+		if (params?.field) url.searchParams.set('field', params.field);
+		if (params?.empty) url.searchParams.set('empty', 'true');
+	}
+	if (params?.groupBy) url.searchParams.set('groupBy', params.groupBy);
 
+	const res = await fetchFn(url.pathname + url.search);
+	await assertOk(res, 'Failed to list images');
+	const json = await res.json();
+	return ImageListResponseSchema.parse(json);
+}
+
+/**
+ * Get unique values for a field across all image records.
+ * Used for list field autocomplete (e.g. tags).
+ *
+ * @param fieldName - Schema field key
+ * @returns Array of unique string values
+ */
+export async function apiGetFieldValues(
+	fieldName: string,
+	fetchFn: typeof fetch = fetch
+): Promise<{ values: string[] }> {
+	const res = await fetchFn(`/api/images/field-values?field=${encodeURIComponent(fieldName)}`);
+	await assertOk(res, 'Failed to fetch field values');
+	const json = await res.json();
+	return { values: Array.isArray(json?.values) ? json.values : [] };
+}
+
+/**
+ * Get properties for a given imageId.
+ */
+export async function apiGetPropertiesById(id: ImageId, fetchFn: typeof fetch = fetch) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(`/api/images/properties/by-id/${id}`);
+	await assertOk(res, 'Failed to fetch properties');
+	return await res.json();
+}
+
+/**
+ * Update properties for a given imageId.
+ *
+ * @param id - imageId
+ * @param patch - Partial properties update (schema-defined keys)
+ */
+export async function apiUpdatePropertiesById(
+	id: ImageId,
+	patch: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	ImageIdSchema.parse(id);
+	const body = UpdatePropertiesRequestSchema.parse(patch);
+	const res = await fetchFn(`/api/images/properties/by-id/${id}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to update properties');
+	return await res.json();
+}
+
+/**
+ * Unlink/reset properties for a given imageId (keeps file on disk).
+ */
+export async function apiUnlinkById(id: ImageId, fetchFn: typeof fetch = fetch) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(`/api/images/by-id/${id}`, { method: 'DELETE' });
+	await assertOk(res, 'Failed to unlink image');
+	return SuccessResponseSchema.parse(await res.json());
+}
+
+/**
+ * Delete the image file from disk and remove its record from image-data.json.
+ */
+export async function apiDeleteImageFromDisk(id: ImageId, fetchFn: typeof fetch = fetch) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(`/api/images/by-id/${id}/file`, { method: 'DELETE' });
+	await assertOk(res, 'Failed to delete image from disk');
+	return SuccessResponseSchema.parse(await res.json());
+}
+
+/**
+ * Get a URL for displaying an image in `<img src=...>`.
+ */
+export function apiImageUrlById(id: ImageId): string {
+	ImageIdSchema.parse(id);
+	return `/api/images/by-id/${id}`;
+}
+
+/**
+ * Upload an image file.
+ *
+ * @param file - Browser File object
+ * @returns server response containing `id` and `filename`
+ */
+export async function apiUploadImage(file: File, fetchFn: typeof fetch = fetch) {
+	const form = new FormData();
+	form.append('image', file);
+	const res = await fetchFn('/api/images/upload', { method: 'POST', body: form });
+	await assertOk(res, 'Failed to upload image');
+	return await res.json();
+}
+
+/**
+ * Fetch file metadata for an imageId.
+ */
+export async function apiGetFileMetadataById(id: ImageId, fetchFn: typeof fetch = fetch) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(`/api/images/file-metadata/by-id/${id}`);
+	await assertOk(res, 'Failed to fetch file metadata');
+	return await res.json();
+}
+
+/**
+ * Strip file metadata for an imageId (all or GPS only).
+ * Body: { mode: "all" | "gps" }. Returns updated metadata JSON.
+ */
+export async function apiStripFileMetadataById(
+	id: ImageId,
+	mode: 'all' | 'gps',
+	fetchFn: typeof fetch = fetch
+) {
+	ImageIdSchema.parse(id);
+	const res = await fetchFn(`/api/images/file-metadata/by-id/${id}/strip`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ mode })
+	});
+	await assertOk(res, 'Failed to strip file metadata');
+	return await res.json();
+}
 
 // --- Media types (multi-type layout) ---
 
@@ -249,6 +478,96 @@ export async function apiDeleteSchemaFieldForType(
 		body: JSON.stringify(body)
 	});
 	await assertOk(res, 'Failed to delete schema field');
+	return await res.json();
+}
+
+/**
+ * Replace a media type's entire schema (used by schema import from file and clone-from-type).
+ *
+ * @param typeId - Target media type
+ * @param schema - Full schema definition (validated before sending)
+ */
+export async function apiImportSchemaForType(
+	typeId: string,
+	schema: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	const body = SchemaDefinitionSchema.parse(schema);
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/schema`, {
+		method: 'PUT',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to import schema');
+	return await res.json();
+}
+
+/**
+ * Validate (and optionally fix) records against the current schema.
+ *
+ * @param typeId - Target media type
+ * @param dryRun - When true, only report issues; when false, apply fixes
+ * @returns Issues found and number of records fixed
+ */
+export async function apiRepairRecordsForType(
+	typeId: string,
+	dryRun: boolean,
+	fetchFn: typeof fetch = fetch
+): Promise<{ issues: { id: string; field: string; issue: string; fix?: unknown }[]; fixed: number }> {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/repair`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ dryRun })
+	});
+	await assertOk(res, 'Failed to repair records');
+	const json = await res.json();
+	return {
+		issues: Array.isArray(json?.issues) ? json.issues : [],
+		fixed: typeof json?.fixed === 'number' ? json.fixed : 0
+	};
+}
+
+/**
+ * Apply the same property patch to many records in one call.
+ *
+ * @param typeId - Target media type
+ * @param ids - Record ids to update
+ * @param patch - Property patch applied to each record
+ */
+export async function apiBulkUpdatePropertiesForType(
+	typeId: string,
+	ids: ImageId[],
+	patch: unknown,
+	fetchFn: typeof fetch = fetch
+) {
+	const body = { ids: ids.map((id) => ImageIdSchema.parse(id)), patch: UpdatePropertiesRequestSchema.parse(patch) };
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/bulk-update`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to bulk update records');
+	return await res.json();
+}
+
+/**
+ * Delete (file-backed: unlink) many records in one call.
+ *
+ * @param typeId - Target media type
+ * @param ids - Record ids to delete
+ */
+export async function apiBulkDeleteForType(
+	typeId: string,
+	ids: ImageId[],
+	fetchFn: typeof fetch = fetch
+) {
+	const body = { ids: ids.map((id) => ImageIdSchema.parse(id)) };
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/bulk-delete`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+	await assertOk(res, 'Failed to bulk delete records');
 	return await res.json();
 }
 

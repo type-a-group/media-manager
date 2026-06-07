@@ -407,7 +407,7 @@ export function createJsonRepoForType(typeId: string) {
 		long?: boolean
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
 		const key = normalizeFieldKey(fieldName);
 
@@ -471,7 +471,7 @@ export function createJsonRepoForType(typeId: string) {
 		}
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const key = normalizeFieldKey(oldKey);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not modifiable');
 
@@ -615,6 +615,140 @@ export function createJsonRepoForType(typeId: string) {
 		return [...seen].sort();
 	}
 
+	/**
+	 * Compute the default value for a schema field definition (mirrors createRecord defaults).
+	 *
+	 * @param def - Field definition from the schema
+	 * @returns A sensible empty/default value for the field's type
+	 */
+	function defaultForFieldDef(def: {
+		type?: string;
+		defaultValue?: unknown;
+		options?: string[];
+		multiselect?: boolean;
+	}): unknown {
+		if (def?.defaultValue !== undefined && def.defaultValue !== null) {
+			return def.type === 'url' ? normalizeUrlValue(def.defaultValue) : def.defaultValue;
+		}
+		switch (def?.type) {
+			case 'boolean':
+				return false;
+			case 'number':
+				return 0;
+			case 'dropdown':
+				return def.multiselect ? [] : (def.options?.[0] ?? '');
+			case 'list':
+				return [];
+			case 'url':
+				return { display_name: '', url: '' };
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * Update the same properties on many records in one call.
+	 *
+	 * @param ids - Record ids to update
+	 * @param patch - Property patch applied to each
+	 * @returns The updated records
+	 */
+	async function bulkUpdatePropertiesByIds(
+		ids: ImageId[],
+		patch: Record<string, unknown>
+	): Promise<JsonRecord[]> {
+		const out: JsonRecord[] = [];
+		for (const id of ids) {
+			out.push(await updatePropertiesById(id, patch));
+		}
+		return out;
+	}
+
+	/**
+	 * Delete many records in one call.
+	 *
+	 * @param ids - Record ids to delete
+	 */
+	async function bulkDeleteRecordsByIds(ids: ImageId[]): Promise<void> {
+		if (isGlobalsType) throw new Error('Globals record cannot be deleted');
+		await withFileLock(`${dataPath}.lock`, async () => {
+			const data = await readData();
+			const toRemove = new Set(ids);
+			const records = data.records.filter((r) => !toRemove.has(r.id));
+			await writeJsonFileAtomic(dataPath, { records });
+		});
+	}
+
+	/**
+	 * Scan all records against the current schema and report records missing schema-defined fields.
+	 * Missing fields are filled with the field's default value.
+	 *
+	 * @param dryRun - When true, only report issues; when false, persist fixes
+	 * @returns Issues found and number of records modified (0 on dry run)
+	 */
+	async function repairRecords(
+		dryRun = true
+	): Promise<{ issues: { id: string; field: string; issue: string; fix?: unknown }[]; fixed: number }> {
+		const settings = getSettings();
+		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+		const schema = settings.schema;
+		return await withFileLock(`${dataPath}.lock`, async () => {
+			const data = await readData();
+			const issues: { id: string; field: string; issue: string; fix?: unknown }[] = [];
+			let fixed = 0;
+			const records = data.records.map((rec) => {
+				const recAny = rec as Record<string, unknown>;
+				const next: Record<string, unknown> = { ...recAny };
+				let recChanged = false;
+				for (const [key, def] of Object.entries(schema)) {
+					if (recAny[key] === undefined) {
+						const fix = defaultForFieldDef(def as never);
+						issues.push({ id: rec.id as string, field: key, issue: 'Missing value', fix });
+						if (!dryRun) {
+							next[key] = fix;
+							recChanged = true;
+						}
+					}
+				}
+				if (recChanged) {
+					fixed++;
+					return JsonRecordSchema.parse(next);
+				}
+				return rec;
+			});
+			if (!dryRun && fixed > 0) await writeJsonFileAtomic(dataPath, { records });
+			return { issues, fixed };
+		});
+	}
+
+	/**
+	 * Replace this media type's entire schema (used by schema import and clone-from-type).
+	 * Validates the incoming definition, persists it, then backfills defaults for newly added fields.
+	 *
+	 * @param schema - Full schema definition to apply
+	 * @returns The validated schema that was written
+	 */
+	async function importSchema(schema: SchemaDefinition): Promise<{ schema: SchemaDefinition }> {
+		if (isGlobalsType) throw new Error('Schema is not editable for globals');
+		return await withFileLock(`${settingsPath}.lock`, async () => {
+			const settings = getSettings();
+			if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
+			await withFileLock(`${dataPath}.lock`, async () => {
+				const data = await readData();
+				const records = data.records.map((rec) => {
+					const next = { ...(rec as Record<string, unknown>) };
+					for (const [key, def] of Object.entries(schema)) {
+						if (next[key] === undefined) next[key] = defaultForFieldDef(def as never);
+					}
+					return JsonRecordSchema.parse(next);
+				});
+				await writeJsonFileAtomic(dataPath, { records });
+			});
+			return { schema };
+		});
+	}
+
 	return {
 		get paths() {
 			return getMediaTypePaths(typeId);
@@ -624,11 +758,15 @@ export function createJsonRepoForType(typeId: string) {
 		listRecords,
 		getRecordById,
 		updatePropertiesById,
+		bulkUpdatePropertiesByIds,
 		deleteRecord,
+		bulkDeleteRecordsByIds,
 		createRecord,
+		repairRecords,
 		addSchemaField,
 		updateSchemaField,
 		deleteSchemaField,
+		importSchema,
 		getUniqueFieldValues
 	};
 }

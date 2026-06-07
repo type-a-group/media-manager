@@ -3,7 +3,7 @@ import * as fssync from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
-import { getMediaTypePaths, listMediaTypeIds, usesImageRepoKind } from './paths.js';
+import { getAssetPaths, getMediaTypePaths, listMediaTypeIds, usesImageRepoKind } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { migrateImageDataFile, migrateSchemaFile } from './migrate.js';
@@ -52,7 +52,7 @@ import type { FieldType } from '$lib/core/types.js';
 export type ImageRepo = ReturnType<typeof createImageRepo>;
 
 /**
- * Paths shape expected by image repo (from getMediaTypePaths).
+ * Paths shape expected by image repo (legacy getAssetPaths or from getMediaTypePaths).
  */
 type ImageRepoPaths = {
 	baseDir: string;
@@ -75,18 +75,45 @@ function getPathsForType(typeId: string): ImageRepoPaths {
 	};
 }
 
-export function createImageRepo(typeId: string) {
+export function createImageRepo(typeId?: string) {
 	/** Get current paths (re-reads settings so filename changes take effect). */
 	function p(): ImageRepoPaths {
-		return getPathsForType(typeId);
+		if (typeId) return getPathsForType(typeId);
+		const ap = getAssetPaths();
+		return {
+			baseDir: ap.baseDir,
+			imageDataPath: ap.imageDataPath,
+			imagesDir: ap.imagesDir,
+			schemaPath: ap.schemaPath
+		};
 	}
 
 	/** Safe filename for disk paths: image extensions unless `generic` kind (any basename). */
 	function assertRecordFilename(name: string): string {
-		const paths = p();
-		const st = readMediaTypeSettingsFileSync(paths.baseDir);
-		if (st?.kind === 'generic' || st?.kind === 'blob_store') return assertSafeBasename(name);
+		if (typeId) {
+			const paths = p();
+			const st = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (st?.kind === 'generic' || st?.kind === 'blob_store') return assertSafeBasename(name);
+		}
 		return assertSafeImageFilename(name);
+	}
+
+	// Best-effort cleanup of stale lock files in dev (uses current paths). Skip when type-scoped (paths may not exist yet).
+	if (!typeId) {
+		(function () {
+			const paths = p();
+			for (const lock of [`${paths.imageDataPath}.lock`, `${paths.schemaPath}.lock`]) {
+				if (fssync.existsSync(lock)) {
+					try {
+						const stat = fssync.statSync(lock);
+						const ageMs = Date.now() - stat.mtimeMs;
+						if (ageMs > 10_000) fssync.unlinkSync(lock);
+					} catch {
+						/* ignore */
+					}
+				}
+			}
+		})();
 	}
 
 	/**
@@ -126,39 +153,27 @@ export function createImageRepo(typeId: string) {
 	}
 
 	async function loadAndMigrateSchema(): Promise<SchemaFile> {
+		if (typeId) {
+			const paths = p();
+			const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+			const { file } = migrateSchemaFile({ schema: settings.schema });
+			return SchemaFileSchema.parse(file);
+		}
 		const paths = p();
-		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
-		const { file } = migrateSchemaFile({ schema: settings.schema });
-		return SchemaFileSchema.parse(file);
+		return await withFileLock(`${paths.schemaPath}.lock`, async () => {
+			const raw = await readJsonFileOrInit(paths.schemaPath, null, { schema: {} });
+			const { file, changed } = migrateSchemaFile(raw);
+			if (changed) await writeJsonFileAtomic(paths.schemaPath, file);
+			return SchemaFileSchema.parse(file);
+		});
 	}
 
 	async function loadAndMigrateImageDataUnlocked(): Promise<ImageDataFile> {
 		const paths = p();
-		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-		const isFilesFormat = settings?.kind === 'generic' || settings?.kind === 'blob_store';
-		const defaultData = isFilesFormat ? { images: [], files: [] } : { images: [] };
-		const raw = await readJsonFileOrInit(paths.imageDataPath, null, defaultData);
-
-		// Normalize: accept { files: [] } as { images: [] } for generic/blob_store
-		const rawObj = raw as Record<string, unknown>;
-		if (isFilesFormat && Array.isArray(rawObj.files) && !Array.isArray(rawObj.images)) {
-			rawObj.images = rawObj.files;
-		}
-		// Also handle the case where generic type has both keys (backward compat)
-		if (isFilesFormat && Array.isArray(rawObj.files) && Array.isArray(rawObj.images) && (rawObj.images as unknown[]).length === 0) {
-			rawObj.images = rawObj.files;
-		}
-
-		const { file, changed } = migrateImageDataFile(rawObj);
-		if (changed) {
-			// Write back in the correct format for this kind
-			if (isFilesFormat) {
-				await writeJsonFileAtomic(paths.imageDataPath, { files: file.images });
-			} else {
-				await writeJsonFileAtomic(paths.imageDataPath, file);
-			}
-		}
+		const raw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
+		const { file, changed } = migrateImageDataFile(raw);
+		if (changed) await writeJsonFileAtomic(paths.imageDataPath, file);
 		return file;
 	}
 
@@ -181,6 +196,7 @@ export function createImageRepo(typeId: string) {
 		const images = await Promise.all(
 			imageData.images.map(async (img) => {
 				if (img.width != null && img.height != null) return img;
+				if ((img as any).is_template) return img;
 				const filePath = path.join(paths.imagesDir, img.file_name);
 				if (!fssync.existsSync(filePath)) return img;
 				try {
@@ -205,13 +221,7 @@ export function createImageRepo(typeId: string) {
 
 	async function writeImageData(imageData: ImageDataFile): Promise<void> {
 		const paths = p();
-		const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-		const isFilesFormat = settings?.kind === 'generic' || settings?.kind === 'blob_store';
-		if (isFilesFormat) {
-			await writeJsonFileAtomic(paths.imageDataPath, { files: imageData.images });
-		} else {
-			await writeJsonFileAtomic(paths.imageDataPath, imageData);
-		}
+		await writeJsonFileAtomic(paths.imageDataPath, imageData);
 	}
 
 	function toListItem(rec: ImageRecord): ImageListItem {
@@ -395,7 +405,11 @@ export function createImageRepo(typeId: string) {
 	}): Promise<ImageListResponse> {
 		const paths = p();
 		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
-		const isDiskOnlyList = settings?.kind === 'generic' || settings?.kind === 'blob_store';
+		// blob_store is the global file browser: a flat, browse-only listing of every blob (no
+		// linked/unlinked/excluded split). `generic` is a real catalog and gets the same
+		// linked/unlinked/excluded semantics as `images`, but allows any file extension.
+		const isDiskOnlyList = settings?.kind === 'blob_store';
+		const allowAnyExtension = settings?.kind === 'generic';
 
 		if (isDiskOnlyList) {
 			const diskFiles = await fs.readdir(paths.imagesDir).catch(() => [] as string[]);
@@ -442,19 +456,26 @@ export function createImageRepo(typeId: string) {
 			return synced.imageData;
 		});
 
+		// For `generic` catalogs, any non-hidden file counts; `images` (and legacy) only consider
+		// allowed image extensions. Directories are excluded via dirent type.
+		const dirents = await fs
+			.readdir(paths.imagesDir, { withFileTypes: true })
+			.catch(() => [] as fssync.Dirent[]);
 		const diskFiles = new Set(
-			(await fs.readdir(paths.imagesDir).catch(() => [] as string[])).filter(
-				(f) => hasAllowedImageExtension(f)
-			)
+			dirents
+				.filter((d) => d.isFile() && !d.name.startsWith('.'))
+				.map((d) => d.name)
+				.filter((f) => (allowAnyExtension ? true : hasAllowedImageExtension(f)))
 		);
 
 		// Linked = records in JSON that exist on disk. Unlinked = files on disk that are not in JSON.
 		const jsonFilenames = new Set(
 			imageData.images
+				.filter((r) => !(r as any).is_template)
 				.map((r) => r.file_name)
 		);
 		let linked = imageData.images.filter(
-			(r) => diskFiles.has(r.file_name)
+			(r) => !(r as any).is_template && diskFiles.has(r.file_name)
 		);
 		const unlinkedFilenames = [...diskFiles].filter((f) => !jsonFilenames.has(f) && !excludedFilenames.has(f));
 		const unlinked = unlinkedFilenames.map(toUnlinkedListItem);
@@ -485,6 +506,7 @@ export function createImageRepo(typeId: string) {
 		}
 
 		const missing_files = imageData.images
+			.filter((r) => !(r as any).is_template)
 			.filter((r) => !diskFiles.has(r.file_name))
 			.map(toListItem);
 
@@ -571,7 +593,7 @@ export function createImageRepo(typeId: string) {
 
 			const defaults: Record<string, any> = {};
 			for (const [key, def] of Object.entries(schemaFile.schema)) {
-				if (key === 'file_name' || key === 'last_modified') continue;
+				if (key === 'file_name' || key === 'last_modified' || key === 'default') continue;
 				// generic kind doesn't get image_name
 				if (key === 'image_name') {
 					if (typeId) {
@@ -633,7 +655,9 @@ export function createImageRepo(typeId: string) {
 			const allowedKeys = new Set(Object.keys(schemaFile.schema));
 			allowedKeys.delete('file_name');
 			allowedKeys.delete('last_modified');
+			allowedKeys.delete('default');
 			allowedKeys.delete('id');
+			allowedKeys.delete('is_template');
 			allowedKeys.delete('width');
 			allowedKeys.delete('height');
 			if (!isGenericLike) allowedKeys.add('image_name');
@@ -644,7 +668,7 @@ export function createImageRepo(typeId: string) {
 					next[k] = v;
 				} else if (
 					k in record &&
-					!['id', 'file_name', 'last_modified', 'width', 'height'].includes(k) &&
+					!['id', 'file_name', 'last_modified', 'is_template', 'width', 'height'].includes(k) &&
 					v === null
 				) {
 					// Allow removing custom/orphaned keys by setting to null.
@@ -678,6 +702,171 @@ export function createImageRepo(typeId: string) {
 		});
 	}
 
+	/**
+	 * Compute the default value for a schema field definition (mirrors addSchemaField defaults).
+	 *
+	 * @param def - Field definition from the schema
+	 * @returns A sensible empty/default value for the field's type
+	 */
+	function defaultForFieldDef(def: {
+		type?: string;
+		defaultValue?: unknown;
+		options?: string[];
+		multiselect?: boolean;
+	}): unknown {
+		if (def?.defaultValue !== undefined && def.defaultValue !== null) {
+			return def.type === 'url' ? normalizeUrlValue(def.defaultValue) : def.defaultValue;
+		}
+		switch (def?.type) {
+			case 'boolean':
+				return false;
+			case 'number':
+				return 0;
+			case 'dropdown':
+				return def.multiselect ? [] : (def.options?.[0] ?? '');
+			case 'list':
+				return [];
+			case 'url':
+				return { display_name: '', url: '' };
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * Update the same properties on many records in one call.
+	 *
+	 * @param ids - Record ids to update
+	 * @param patch - Property patch applied to each (schema-validated per record)
+	 * @returns The updated records
+	 *
+	 * Concerns / future improvements:
+	 * - Takes the data-file lock once per record; acceptable for typical selection sizes.
+	 */
+	async function bulkUpdatePropertiesByIds(
+		ids: ImageId[],
+		patch: Record<string, unknown>
+	): Promise<ImageRecord[]> {
+		const out: ImageRecord[] = [];
+		for (const id of ids) {
+			out.push(await updatePropertiesById(id, patch));
+		}
+		return out;
+	}
+
+	/**
+	 * Unlink many records (remove their catalog rows; files stay on disk).
+	 *
+	 * @param ids - Record ids to unlink
+	 */
+	async function bulkUnlinkByIds(ids: ImageId[]): Promise<void> {
+		for (const id of ids) {
+			await unlinkById(id);
+		}
+	}
+
+	/**
+	 * Delete many files from disk (global blob store) in one call. Each delete also strips the file's
+	 * references from every catalog (see {@link deleteFromDiskById}).
+	 *
+	 * @param ids - Record ids whose backing files should be deleted
+	 */
+	async function bulkDeleteFromDiskByIds(ids: ImageId[]): Promise<void> {
+		for (const id of ids) {
+			await deleteFromDiskById(id);
+		}
+	}
+
+	/**
+	 * Scan all (non-template) records against the current schema and report records that are missing
+	 * schema-defined fields. Missing fields are filled with the field's default value.
+	 *
+	 * @param dryRun - When true, only report issues; when false, persist fixes
+	 * @returns Issues found and number of records modified (0 on dry run)
+	 *
+	 * Concerns / future improvements:
+	 * - Currently only detects/fills missing fields; does not coerce type mismatches (kept conservative
+	 *   to avoid destructive changes).
+	 */
+	async function repairRecords(
+		dryRun = true
+	): Promise<{ issues: { id: string; field: string; issue: string; fix?: unknown }[]; fixed: number }> {
+		const schemaFile = await loadAndMigrateSchema();
+		const schema = schemaFile.schema;
+		const paths = p();
+		return await withFileLock(`${paths.imageDataPath}.lock`, async () => {
+			const base = await loadAndMigrateImageDataUnlocked();
+			const issues: { id: string; field: string; issue: string; fix?: unknown }[] = [];
+			let fixed = 0;
+			const images = base.images.map((rec) => {
+				if ((rec as { is_template?: boolean }).is_template) return rec;
+				const recAny = rec as Record<string, unknown>;
+				const next: Record<string, unknown> = { ...recAny };
+				let recChanged = false;
+				for (const [key, def] of Object.entries(schema)) {
+					if (key === 'file_name') continue;
+					if (recAny[key] === undefined) {
+						const fix = defaultForFieldDef(def as never);
+						issues.push({ id: rec.id as string, field: key, issue: 'Missing value', fix });
+						if (!dryRun) {
+							next[key] = fix;
+							recChanged = true;
+						}
+					}
+				}
+				return recChanged ? ImageRecordSchema.parse(next) : rec;
+			});
+			const fixedCount = images.filter((img, i) => img !== base.images[i]).length;
+			fixed = fixedCount;
+			if (!dryRun && fixed > 0) await writeImageData({ images });
+			return { issues, fixed };
+		});
+	}
+
+	/**
+	 * Replace this media type's entire schema (used by schema import and clone-from-type).
+	 * Validates the incoming definition, persists it, then backfills defaults for any newly added
+	 * fields onto existing records.
+	 *
+	 * @param schema - Full schema definition to apply
+	 * @returns The validated schema that was written
+	 */
+	async function importSchema(schema: SchemaDefinition): Promise<{ schema: SchemaDefinition }> {
+		const paths = p();
+		if (typeId) {
+			const st0 = readMediaTypeSettingsFileSync(paths.baseDir);
+			if (st0?.kind === 'blob_store') throw new Error('Schema is not editable for blob store media types');
+		}
+		const validated = SchemaFileSchema.parse(migrateSchemaFile({ schema }).file).schema;
+		return await withFileLock(`${paths.schemaPath}.lock`, async () => {
+			if (typeId) {
+				const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+				if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+				await writeMediaTypeSettingsFile(paths.baseDir, { kind: settings.kind, schema: validated });
+			} else {
+				await writeJsonFileAtomic(paths.schemaPath, { schema: validated });
+			}
+			await withFileLock(`${paths.imageDataPath}.lock`, async () => {
+				const dataRaw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
+				const { file: imageData } = migrateImageDataFile(dataRaw);
+				let didChange = false;
+				const images = imageData.images.map((img) => {
+					const next = { ...(img as Record<string, unknown>) };
+					for (const [key, def] of Object.entries(validated)) {
+						if (key === 'file_name') continue;
+						if (next[key] === undefined) {
+							next[key] = defaultForFieldDef(def as never);
+							didChange = true;
+						}
+					}
+					return ImageRecordSchema.parse(next);
+				});
+				if (didChange) await writeImageData({ images });
+			});
+			return { schema: validated };
+		});
+	}
+
 	async function addSchemaField(
 		fieldName: string,
 		fieldType: string,
@@ -687,7 +876,7 @@ export function createImageRepo(typeId: string) {
 		multiselect?: boolean,
 		long?: boolean
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
 		const key = normalizeFieldKey(fieldName);
 
@@ -782,7 +971,7 @@ export function createImageRepo(typeId: string) {
 			long?: boolean;
 		}
 	) {
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
+		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const key = normalizeFieldKey(oldKey);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not modifiable');
 
@@ -1025,6 +1214,125 @@ export function createImageRepo(typeId: string) {
 	}
 
 	/**
+	 * Propagate a filename change to every media type in the workspace that references the old basename.
+	 *
+	 * Because the blob lives in the single shared global `files/` store, the same basename can be
+	 * referenced by many catalogs at once. After renaming the physical file, this rewrites, across
+	 * all types:
+	 * - `settings.excludedFiles` entries (`oldFilename` -> `safe`)
+	 * - `images`/`generic`/`blob_store` record `file_name` fields
+	 * - embedded filename values in any field (plain string, `{ url }`, or arrays thereof) for both
+	 *   file-backed records and `json` records
+	 *
+	 * @param oldFilename - Current basename being renamed away from.
+	 * @param safe - Validated new basename.
+	 * @param currentTypeId - The renaming type's id (or `null` for the legacy single-folder layout).
+	 *   Its own record `file_name` is skipped here because the caller already updated it; passing it
+	 *   avoids a redundant double-write. Embedded field values in the current type are still updated.
+	 *
+	 * Concerns / future improvements:
+	 * - This is O(number of media types) per rename and matches on string equality; a stable file id
+	 *   (see `docs/STABLE_FILE_IDS.md`) would make this a single manifest update instead.
+	 */
+	async function propagateFilenameRename(
+		oldFilename: string,
+		safe: string,
+		currentTypeId: string | null | undefined
+	): Promise<void> {
+		const allTypes = listMediaTypeIds();
+		for (const tId of allTypes) {
+			const mPaths = getMediaTypePaths(tId);
+			const settings = readMediaTypeSettingsFileSync(mPaths.baseDir);
+			if (!settings) continue;
+
+			if (settings.excludedFiles?.includes(oldFilename)) {
+				const newExcluded = settings.excludedFiles.map((f) => (f === oldFilename ? safe : f));
+				await writeMediaTypeSettingsFile(mPaths.baseDir, {
+					kind: settings.kind,
+					schema: settings.schema,
+					excludedFiles: newExcluded
+				});
+			}
+
+			const dataPath = mPaths.dataPath;
+			const lockPath = `${dataPath}.lock`;
+			await withFileLock(lockPath, async () => {
+				try {
+					const raw = (await readJsonFile(dataPath)) as any;
+					let changed = false;
+
+					const updateVal = (v: any): any => {
+						if (typeof v === 'string' && v === oldFilename) {
+							changed = true;
+							return safe;
+						}
+						if (v && typeof v === 'object' && 'url' in v && (v as any).url === oldFilename) {
+							changed = true;
+							return { ...(v as any), url: safe };
+						}
+						if (Array.isArray(v)) {
+							const updatedArr = [];
+							let arrChanged = false;
+							for (const item of v) {
+								if (typeof item === 'string' && item === oldFilename) {
+									updatedArr.push(safe);
+									arrChanged = true;
+								} else if (item && typeof item === 'object' && 'url' in item && (item as any).url === oldFilename) {
+									updatedArr.push({ ...(item as any), url: safe });
+									arrChanged = true;
+								} else {
+									updatedArr.push(item);
+								}
+							}
+							if (arrChanged) {
+								changed = true;
+								return updatedArr;
+							}
+						}
+						return v;
+					};
+
+					if (
+						(settings.kind === 'images' ||
+							settings.kind === 'generic' ||
+							settings.kind === 'blob_store') &&
+						Array.isArray(raw.images)
+					) {
+						for (const rec of raw.images) {
+							if (rec.file_name === oldFilename && tId !== currentTypeId) {
+								rec.file_name = safe;
+								changed = true;
+							}
+							for (const [k, v] of Object.entries(rec)) {
+								if (k === 'file_name' || k === 'id') continue;
+								const nextV = updateVal(v);
+								if (nextV !== v) rec[k] = nextV;
+							}
+						}
+					} else if (settings.kind === 'json' && Array.isArray(raw.records)) {
+						for (const rec of raw.records) {
+							for (const [k, v] of Object.entries(rec)) {
+								if (k === 'id') continue;
+								const nextV = updateVal(v);
+								if (nextV !== v) rec[k] = nextV;
+							}
+						}
+					}
+
+					if (changed) {
+						await writeJsonFileAtomic(dataPath, raw);
+					}
+				} catch (e) {
+					const err = e as NodeJS.ErrnoException;
+					if (err.code !== 'ENOENT') {
+						console.error(`Error updating refs in ${tId}:`, e);
+					}
+				}
+			});
+		}
+	}
+
+	/**
 	 * Rename an image file on disk and update its record in image-data.json.
 	 *
 	 * @param id - Image record id (UUID)
@@ -1053,6 +1361,16 @@ export function createImageRepo(typeId: string) {
 			}
 			if (fssync.existsSync(newPath)) throw new Error('Target filename already exists');
 			await fs.rename(oldPath, newPath);
+			// The blob is shared across the workspace; keep every catalog reference in sync. This
+			// path (blob_store / unlinked items) previously skipped propagation, leaving dangling
+			// references after a rename.
+			try {
+				await propagateFilenameRename(oldFilename, safe, typeId);
+			} catch (err) {
+				// Best-effort rollback so disk and catalogs do not drift on partial failure.
+				await fs.rename(newPath, oldPath).catch(() => {});
+				throw err;
+			}
 			const newId = (`unlinked:${encodeURIComponent(safe)}`) as ImageId;
 			return {
 				id: newId,
@@ -1100,101 +1418,8 @@ export function createImageRepo(typeId: string) {
 				return parsed;
 			});
 
-			// Cross-session updates
-			const allTypes = listMediaTypeIds();
-			for (const tId of allTypes) {
-				const mPaths = getMediaTypePaths(tId);
-				const settings = readMediaTypeSettingsFileSync(mPaths.baseDir);
-				if (!settings) continue;
-
-				if (settings.excludedFiles?.includes(oldFilename)) {
-					const newExcluded = settings.excludedFiles.map(f => f === oldFilename ? safe : f);
-					await writeMediaTypeSettingsFile(mPaths.baseDir, {
-						kind: settings.kind,
-						schema: settings.schema,
-						excludedFiles: newExcluded
-					});
-				}
-
-				const dataPath = mPaths.dataPath;
-				const lockPath = `${dataPath}.lock`;
-				await withFileLock(lockPath, async () => {
-					try {
-						const raw = (await readJsonFile(dataPath)) as any;
-						let changed = false;
-
-						const updateVal = (v: any): any => {
-							if (typeof v === 'string' && v === oldFilename) {
-								changed = true;
-								return safe;
-							}
-							if (v && typeof v === 'object' && 'url' in v && (v as any).url === oldFilename) {
-								changed = true;
-								return { ...(v as any), url: safe };
-							}
-							if (Array.isArray(v)) {
-								const updatedArr = [];
-								let arrChanged = false;
-								for (const item of v) {
-									if (typeof item === 'string' && item === oldFilename) {
-										updatedArr.push(safe);
-										arrChanged = true;
-									} else if (item && typeof item === 'object' && 'url' in item && (item as any).url === oldFilename) {
-										updatedArr.push({ ...(item as any), url: safe });
-										arrChanged = true;
-									} else {
-										updatedArr.push(item);
-									}
-								}
-								if (arrChanged) {
-									changed = true;
-									return updatedArr;
-								}
-							}
-							return v;
-						};
-
-						if (
-							(settings.kind === 'images' ||
-								settings.kind === 'generic' ||
-								settings.kind === 'blob_store')
-						) {
-							// Normalize: generic/blob_store may use { files: [] } instead of { images: [] }
-							const records = Array.isArray(raw.images) ? raw.images : Array.isArray(raw.files) ? raw.files : null;
-							if (records) {
-								for (const rec of records) {
-									if (rec.file_name === oldFilename && tId !== typeId) {
-										rec.file_name = safe;
-										changed = true;
-									}
-									for (const [k, v] of Object.entries(rec)) {
-										if (k === 'file_name' || k === 'id') continue;
-										const nextV = updateVal(v);
-										if (nextV !== v) rec[k] = nextV;
-									}
-								}
-							}
-						} else if (settings.kind === 'json' && Array.isArray(raw.records)) {
-							for (const rec of raw.records) {
-								for (const [k, v] of Object.entries(rec)) {
-									if (k === 'id') continue;
-									const nextV = updateVal(v);
-									if (nextV !== v) rec[k] = nextV;
-								}
-							}
-						}
-
-						if (changed) {
-							await writeJsonFileAtomic(dataPath, raw);
-						}
-					} catch (e) {
-						const err = e as NodeJS.ErrnoException;
-						if (err.code !== 'ENOENT') {
-							console.error(`Error updating refs in ${tId}:`, e);
-						}
-					}
-				});
-			}
+			// Propagate the new filename to every other catalog that references the old basename.
+			await propagateFilenameRename(oldFilename, safe, typeId);
 
 			return updatedRecord;
 		} catch (err) {
@@ -1206,21 +1431,26 @@ export function createImageRepo(typeId: string) {
 
 	return {
 		get paths() {
-			return getPathsForType(typeId);
+			return typeId ? getPathsForType(typeId) : getAssetPaths();
 		},
 		getSchema,
 		getUniqueFieldValues,
 		addSchemaField,
 		updateSchemaField,
 		deleteSchemaField,
+		importSchema,
 		listImages,
 		getRecordById,
 		getRecordByFilename,
 		ensureRecordForFilename,
 		getFilenameForId,
 		updatePropertiesById,
+		bulkUpdatePropertiesByIds,
 		unlinkById,
+		bulkUnlinkByIds,
+		repairRecords,
 		deleteFromDiskById,
+		bulkDeleteFromDiskByIds,
 		renameFileById
 	};
 }
@@ -1273,26 +1503,17 @@ export async function removeCatalogReferencesToFileGlobally(file_name: string): 
 		if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') continue;
 		const didRemove = await withFileLock(`${mp.dataPath}.lock`, async () => {
 			if (!fssync.existsSync(mp.dataPath)) return false;
-			let raw: Record<string, unknown>;
+			let raw: unknown;
 			try {
-				raw = (await readJsonFile(mp.dataPath)) as Record<string, unknown>;
+				raw = await readJsonFile(mp.dataPath);
 			} catch {
 				return false;
-			}
-			// Normalize: accept both { images: [] } and { files: [] }
-			const isFilesFormat = mp.kind === 'generic' || mp.kind === 'blob_store';
-			if (isFilesFormat && Array.isArray(raw.files) && !Array.isArray(raw.images)) {
-				raw.images = raw.files;
 			}
 			const { file, changed: migChanged } = migrateImageDataFile(raw);
 			const beforeLen = file.images.length;
 			const images = file.images.filter((r) => r.file_name !== safe);
 			if (images.length === beforeLen && !migChanged) return false;
-			if (isFilesFormat) {
-				await writeJsonFileAtomic(mp.dataPath, { files: images });
-			} else {
-				await writeJsonFileAtomic(mp.dataPath, { images });
-			}
+			await writeJsonFileAtomic(mp.dataPath, { images });
 			return images.length !== beforeLen;
 		});
 		if (didRemove) affected.push(tId);
@@ -1314,11 +1535,7 @@ export function listCatalogTypesReferencingFileSync(file_name: string): { typeId
 		const settings = readMediaTypeSettingsFileSync(mp.baseDir);
 		if (!fssync.existsSync(mp.dataPath)) continue;
 		try {
-			const raw = JSON.parse(fssync.readFileSync(mp.dataPath, 'utf-8')) as Record<string, unknown>;
-			// Normalize: accept both { images: [] } and { files: [] }
-			if (Array.isArray(raw.files) && !Array.isArray(raw.images)) {
-				raw.images = raw.files;
-			}
+			const raw = JSON.parse(fssync.readFileSync(mp.dataPath, 'utf-8')) as unknown;
 			const { file } = migrateImageDataFile(raw);
 			if (file.images.some((r) => r.file_name === safe)) {
 				out.push({ typeId: tId, displayName: settings?.displayName ?? tId });

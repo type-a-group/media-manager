@@ -17,7 +17,10 @@
 		apiGetSchemaForType,
 		apiAddSchemaFieldForType,
 		apiUpdateSchemaFieldForType,
-		apiDeleteSchemaFieldForType
+		apiDeleteSchemaFieldForType,
+		apiImportSchemaForType,
+		apiListMediaTypes,
+		apiRepairRecordsForType
 	} from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { triggerImageListRefresh, triggerSchemaRefresh } from '$lib/stores/refreshTrigger.js';
@@ -73,6 +76,15 @@
 
 	// Turn off multiselect confirmation
 	let multiselectOffConfirmOpen = $state(false);
+
+	let importFileRef = $state<HTMLInputElement | null>(null);
+	let cloneDialogOpen = $state(false);
+	let cloneFromTypeId = $state('');
+	let availableTypes = $state<{id: string, displayName: string}[]>([]);
+
+	let repairDialogOpen = $state(false);
+	let repairIssues = $state<{id: string, field: string, issue: string, fix?: unknown}[]>([]);
+	let repairing = $state(false);
 
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
 
@@ -402,6 +414,97 @@
 			toast.error('Failed to delete field');
 		}
 	}
+
+	async function handleExportSchema() {
+		if (!schema) return;
+		const blob = new Blob([JSON.stringify(schema, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `schema_${typeId}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	async function handleImportSchema(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+
+		try {
+			const text = await file.text();
+			const json = JSON.parse(text);
+			await apiImportSchemaForType(typeId!, json);
+			toast.success('Schema imported successfully');
+			triggerImageListRefresh();
+			triggerSchemaRefresh();
+			await fetchSchema();
+		} catch (err) {
+			console.error(err);
+			toast.error('Failed to import schema. Make sure the file is a valid JSON schema.');
+		} finally {
+			target.value = '';
+		}
+	}
+
+	async function openCloneDialog() {
+		try {
+			const types = await apiListMediaTypes();
+			availableTypes = types.filter(t => t.id !== typeId && t.id !== 'globals');
+			cloneFromTypeId = availableTypes[0]?.id ?? '';
+			cloneDialogOpen = true;
+		} catch (err) {
+			console.error(err);
+			toast.error('Failed to load media types');
+		}
+	}
+
+	async function handleCloneSchema() {
+		if (!cloneFromTypeId) return;
+		try {
+			const otherSchema = await apiGetSchemaForType(cloneFromTypeId);
+			await apiImportSchemaForType(typeId!, otherSchema);
+			toast.success('Schema cloned successfully');
+			cloneDialogOpen = false;
+			triggerImageListRefresh();
+			triggerSchemaRefresh();
+			await fetchSchema();
+		} catch (err) {
+			console.error(err);
+			toast.error('Failed to clone schema');
+		}
+	}
+
+	async function handleValidateData() {
+		if (!typeId || typeId === 'globals') return;
+		repairing = true;
+		try {
+			const res = await apiRepairRecordsForType(typeId, true);
+			repairIssues = res.issues;
+			repairDialogOpen = true;
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to validate records');
+		} finally {
+			repairing = false;
+		}
+	}
+
+	async function handleFixData() {
+		if (!typeId || typeId === 'globals') return;
+		repairing = true;
+		try {
+			const res = await apiRepairRecordsForType(typeId, false);
+			toast.success(`Repaired ${res.fixed} records`);
+			repairDialogOpen = false;
+			triggerImageListRefresh();
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to repair records');
+		} finally {
+			repairing = false;
+		}
+	}
 </script>
 
 <Dialog.Root bind:open={isOpen}>
@@ -411,7 +514,26 @@
 		</Button>
 	</Dialog.Trigger>
 	<Dialog.Content class="max-w-2xl max-h-[90vh] flex flex-col">
-		<Dialog.Title>Schema</Dialog.Title>
+		<div class="flex items-center justify-between">
+			<Dialog.Title>Schema</Dialog.Title>
+			<div class="flex items-center gap-2 pr-6">
+				{#if typeId !== 'globals'}
+					<Button variant="outline" size="sm" onclick={handleValidateData} disabled={repairing}>
+						Validate & Repair
+					</Button>
+				{/if}
+				<Button variant="outline" size="sm" onclick={handleExportSchema}>Export</Button>
+				<Button variant="outline" size="sm" onclick={() => importFileRef?.click()}>Import</Button>
+				<input
+					type="file"
+					accept=".json"
+					bind:this={importFileRef}
+					onchange={handleImportSchema}
+					class="hidden"
+				/>
+				<Button variant="outline" size="sm" onclick={openCloneDialog}>Clone</Button>
+			</div>
+		</div>
 		<Dialog.Description>
 			Add, edit, or remove fields. Filename and image name cannot be modified.
 		</Dialog.Description>
@@ -759,3 +881,67 @@
 		</div>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<Dialog.Root bind:open={cloneDialogOpen}>
+	<Dialog.Content>
+		<Dialog.Title>Clone Schema</Dialog.Title>
+		<Dialog.Description>
+			Select a media type to clone its schema. This will overwrite the current schema entirely. Continue?
+		</Dialog.Description>
+		<div class="flex flex-col gap-4 py-4">
+			<div class="flex flex-col gap-2">
+				<Label for="clone-from">Clone from</Label>
+				<Select.Root type="single" bind:value={cloneFromTypeId}>
+					<Select.Trigger id="clone-from" class="w-full">
+						{availableTypes.find((t) => t.id === cloneFromTypeId)?.displayName ?? 'Select media type'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each availableTypes as t}
+							<Select.Item value={t.id}>{t.displayName}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (cloneDialogOpen = false)}>Cancel</Button>
+			<Button onclick={handleCloneSchema} disabled={!cloneFromTypeId}>Clone</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root bind:open={repairDialogOpen}>
+	<Dialog.Content class="max-w-3xl max-h-[90vh] flex flex-col">
+		<Dialog.Title>Validate & Repair Records</Dialog.Title>
+		<Dialog.Description>
+			Scanned all records against the current schema. Found {repairIssues.length} issue(s).
+		</Dialog.Description>
+		<div class="flex-1 overflow-y-auto">
+			{#if repairIssues.length === 0}
+				<div class="p-8 text-center text-muted-foreground border rounded-lg">
+					All records are valid! No issues found.
+				</div>
+			{:else}
+				<div class="flex flex-col gap-2">
+					{#each repairIssues as issue}
+						<div class="p-3 border rounded-lg bg-muted/30 flex flex-col gap-1 text-sm">
+							<div><span class="font-semibold">Record ID:</span> {issue.id}</div>
+							<div><span class="font-semibold">Field:</span> {issue.field}</div>
+							<div class="text-destructive"><span class="font-semibold text-foreground">Issue:</span> {issue.issue}</div>
+							<div>
+								<span class="font-semibold">Proposed Fix:</span>
+								<span class="font-mono bg-muted px-1 py-0.5 rounded text-xs">{JSON.stringify(issue.fix)}</span>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (repairDialogOpen = false)}>Close</Button>
+			{#if repairIssues.length > 0}
+				<Button onclick={handleFixData} disabled={repairing}>Fix All</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

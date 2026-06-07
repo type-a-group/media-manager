@@ -6,7 +6,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { CheckSquare, Square, Trash2 } from 'lucide-svelte';
+	import { CheckSquare, Square, Trash2, TriangleAlert } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ImageListItem } from '$lib/core/types.js';
@@ -14,8 +14,8 @@
 	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import {
 		apiGetSchemaForType,
-		apiUpdatePropertiesByIdForType,
-		apiDeleteRecordForType
+		apiBulkUpdatePropertiesForType,
+		apiBulkDeleteForType
 	} from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';
@@ -124,9 +124,7 @@
 		const value = getCoercedValue();
 		if (value === null && setFieldSchema?.[setFieldKey]?.type !== 'number') return;
 		try {
-			for (const id of ids) {
-				await apiUpdatePropertiesByIdForType(typeId!, id, { [setFieldKey]: value });
-			}
+			await apiBulkUpdatePropertiesForType(typeId!, ids, { [setFieldKey]: value });
 			toast.success(`Updated ${ids.length} record${ids.length === 1 ? '' : 's'}`);
 			setFieldDialogOpen = false;
 			triggerImageListRefresh();
@@ -172,9 +170,7 @@
 		const ids = [...selection.multiselectedIds];
 		if (ids.length === 0 || !typeId) return;
 		try {
-			for (const id of ids) {
-				await apiDeleteRecordForType(typeId, id);
-			}
+			await apiBulkDeleteForType(typeId, ids);
 			toast.success(`Deleted ${ids.length} record${ids.length === 1 ? '' : 's'}`);
 			deleteConfirmOpen = false;
 			selection.clearMultiselect();
@@ -466,6 +462,14 @@
 										{getDisplayName(item)}
 									</span>
 								</div>
+								{#if item.missing_file_fields && item.missing_file_fields.length > 0}
+									<div
+										class="absolute top-1 right-1 p-1 rounded-full bg-destructive text-destructive-foreground shadow-sm"
+										title={`Missing files for: ${item.missing_file_fields.join(', ')}`}
+									>
+										<TriangleAlert class="h-4 w-4" />
+									</div>
+								{/if}
 							</button>
 						{/each}
 					</div>

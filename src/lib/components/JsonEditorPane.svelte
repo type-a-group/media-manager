@@ -6,7 +6,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { toast } from 'svelte-sonner';
-	import { ChevronLeft, ChevronRight, Trash2, X } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, Trash2, X, TriangleAlert } from 'lucide-svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import JsonRecordGrid from '$lib/components/JsonRecordGrid.svelte';
 	import FilePicker from '$lib/components/FilePicker.svelte';
@@ -488,10 +488,17 @@
 											/>
 										</div>
 									{:else if type === 'file'}
-										<FilePicker
-											value={formValues[key] as string}
-											onSelect={(id) => (formValues[key] = id)}
-										/>
+										<div class="flex flex-col gap-1 w-full">
+											<FilePicker
+												value={formValues[key] as string}
+												onSelect={(id) => (formValues[key] = id)}
+											/>
+											{#if (record as any)?._missing_files?.[key] && formValues[key] === (record as any)._missing_files[key]}
+												<span class="text-xs text-destructive flex items-center gap-1 mt-1">
+													<TriangleAlert class="h-3 w-3" /> File not found on disk
+												</span>
+											{/if}
+										</div>
 									{:else}
 										<Input
 											id={key}

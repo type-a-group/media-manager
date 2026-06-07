@@ -41,6 +41,11 @@
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
 	const kind = $derived($currentMediaTypeStore?.kind ?? 'images');
 	const browseFirst = $derived(isBrowseFirstFileKind(kind));
+	/**
+	 * Blob store ("Files") is a flat file manager: no linked/unlinked/excluded actions.
+	 * The reserved `files` group is always the blob store even if its on-disk kind is still legacy `generic`.
+	 */
+	const isBlobStore = $derived(kind === 'blob_store' || typeId === 'files');
 	const selection = useSelection();
 
 	let deleteFromDiskOpen = $state(false);
@@ -746,24 +751,26 @@
 				<span class="text-sm text-muted-foreground">
 					{selection.multiselectedIds.length} selected
 				</span>
-				{#if selection.viewMode === 'linked'}
-					<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
-				{/if}
-				{#if hasLinkedSelected}
-					<Button variant="outline" size="sm" onclick={() => (unlinkConfirmOpen = true)}>
-						<Unlink class="h-4 w-4 mr-1" />
-						Unlink
-					</Button>
-				{/if}
-				{#if selection.viewMode === 'unlinked'}
-					<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('exclude')}>
-						Exclude
-					</Button>
-				{/if}
-				{#if selection.viewMode === 'excluded'}
-					<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('unexclude')}>
-						Unlink
-					</Button>
+				{#if !isBlobStore}
+					{#if selection.viewMode === 'linked'}
+						<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
+					{/if}
+					{#if hasLinkedSelected}
+						<Button variant="outline" size="sm" onclick={() => (unlinkConfirmOpen = true)}>
+							<Unlink class="h-4 w-4 mr-1" />
+							Unlink
+						</Button>
+					{/if}
+					{#if selection.viewMode === 'unlinked'}
+						<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('exclude')}>
+							Exclude
+						</Button>
+					{/if}
+					{#if selection.viewMode === 'excluded'}
+						<Button variant="outline" size="sm" onclick={() => handleToggleExcluded('unexclude')}>
+							Unlink
+						</Button>
+					{/if}
 				{/if}
 				<Button variant="destructive" size="sm" onclick={() => (deleteFromDiskOpen = true)}>
 					<Trash2 class="h-4 w-4 mr-1" />
@@ -1056,7 +1063,7 @@
 											? 'aspect-square'
 											: ''} bg-muted/20 flex flex-col items-center justify-center"
 									>
-										{#if !browseFirst && hasAllowedImageExtension(item.file_name)}
+										{#if hasAllowedImageExtension(item.file_name)}
 											<img
 												src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
 												alt={getDisplayName(item)}

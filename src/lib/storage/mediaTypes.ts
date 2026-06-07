@@ -5,10 +5,17 @@ import { getRootDir, listMediaTypeIds } from './paths.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
 import type { MediaTypeKind } from './settingsFile.js';
 import { writeJsonFileAtomic } from './json.js';
+import { DEFAULT_FILES_SUBDIR } from './settingsFile.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
 
 /** Canonical globals singleton record id (must satisfy ImageIdSchema UUID validation). */
 export const GLOBALS_RECORD_ID = '00000000-0000-4000-8000-000000000001' as const;
+
+/**
+ * Type ids that are auto-managed/protected: cannot be created by users, renamed, or deleted.
+ * `files` is the global blob store; `globals` is the singleton settings object.
+ */
+export const RESERVED_TYPE_IDS = new Set(['files', 'globals']);
 
 /**
  * Media type summary returned by listMediaTypes (id = folder name).
@@ -69,8 +76,7 @@ export async function createMediaType(
 	const rootDir = getRootDir();
 	let typeId = slugify(displayName);
 	if (!typeId) typeId = 'media';
-	const PROTECTED_TYPE_IDS = new Set(['files', 'globals']);
-	if (PROTECTED_TYPE_IDS.has(typeId)) {
+	if (RESERVED_TYPE_IDS.has(typeId)) {
 		throw new Error(`"${typeId}" is a reserved name and cannot be used for a media type`);
 	}
 	const baseDir = path.join(rootDir, typeId);
@@ -115,12 +121,15 @@ export async function createMediaType(
 		kind,
 		schema: defaultSchema,
 		dataFileName,
+		...(kind === 'images' ? { filesSubdir: DEFAULT_FILES_SUBDIR } : {})
 	});
 
 	if (kind === 'images') {
 		await writeJsonFileAtomic(dataPath, { images: [] });
+		const filesDir = path.join(finalBaseDir, DEFAULT_FILES_SUBDIR);
+		await fs.mkdir(filesDir, { recursive: true });
 	} else if (kind === 'generic') {
-		await writeJsonFileAtomic(dataPath, { files: [] });
+		await writeJsonFileAtomic(dataPath, { images: [] });
 	} else {
 		await writeJsonFileAtomic(dataPath, { records: [] });
 	}
@@ -136,8 +145,8 @@ export async function createMediaType(
  * @throws If typeId is invalid or path is outside root
  */
 export async function deleteMediaType(typeId: string): Promise<void> {
-	if (typeId === 'files') {
-		throw new Error('Cannot delete the protected "files" media type');
+	if (RESERVED_TYPE_IDS.has(typeId)) {
+		throw new Error(`Cannot delete the protected "${typeId}" media type`);
 	}
 	if (typeId === 'globals') {
 		throw new Error('Cannot delete the protected "globals" media type');

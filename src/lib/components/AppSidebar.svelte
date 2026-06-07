@@ -34,6 +34,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import {
 		apiCreateRecordForType,
+		apiGetConfig,
 		apiGetMediaType,
 		apiGetSchemaForType,
 		apiImageUrlByIdForType,
@@ -87,6 +88,11 @@
 	const kind = $derived(currentMediaType?.kind ?? 'images');
 	const browseFirst = $derived(isBrowseFirstFileKind(kind));
 	const isGlobals = $derived(typeId === 'globals');
+	/**
+	 * Blob store ("Files") is a flat file manager: no linked/unlinked/excluded split.
+	 * The reserved `files` group is always the blob store even if its on-disk kind is still legacy `generic`.
+	 */
+	const isBlobStore = $derived(kind === 'blob_store' || typeId === 'files');
 
 	// This will hold the list items actually displayed in the sidebar
 	let displayedItems = $state<ImageListItem[]>([]);
@@ -248,7 +254,8 @@
 	 */
 	function updateDisplayedItems() {
 		let baseItems: ImageListItem[] = [];
-		if (browseFirst) {
+		if (isBlobStore) {
+			// Blob store is a flat file manager: always show the full file list.
 			baseItems = imageLists.unlinked;
 		} else {
 			baseItems =
@@ -497,10 +504,10 @@
 	 */
 	function getFieldTypeForField(
 		fieldKey: string
-	): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file' {
+	): 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' {
 		if (!schema) return 'string';
 		const def = schema[fieldKey];
-		if (def?.type) return def.type as 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+		if (def?.type) return def.type as 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url';
 		return 'string';
 	}
 
@@ -791,8 +798,8 @@
 			</Sidebar.Group>
 		{/if}
 
-		{#if kind === 'images' || browseFirst}
-			<!-- View: Linked / Unlinked / Excluded (file-backed types; not pure JSON) -->
+		{#if (kind === 'images' || browseFirst) && !isBlobStore}
+			<!-- View: Linked / Unlinked / Excluded (file-backed catalogs; blob store is a flat file manager) -->
 			<Sidebar.Separator />
 			<Sidebar.Group>
 				<Sidebar.GroupLabel>View</Sidebar.GroupLabel>

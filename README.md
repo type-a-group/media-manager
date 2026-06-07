@@ -57,46 +57,47 @@ Open the app in the browser. You’ll see the **overview** of media types. Use *
 
 ## Data layout
 
-**Root folder** (e.g. `./my-data`) contains one **subfolder per media type** plus a shared **`files/`** directory for all file-backed types. The app scans the root for subfolders that contain a valid `settings.json` (our format). No manifest file.
+**Root folder** (e.g. `./my-data`) contains one **subfolder per media type**. The app scans the root for subfolders that contain a valid `settings.json` (our format). No manifest file.
 
+### Images media type (e.g. `my-data/images/`)
+
+- **settings.json** – display name, `kind: "images"`, `schema` (field definitions), app settings (grid size, etc.), `dataFileName`, `filesSubdir`
+- **image-data.json** (or name in settings) – image records `{ id, file_name, linked, ...custom fields }`
+- **files/** (or name in settings) – the image files
+
+### Pure JSON media type (e.g. `my-data/projects/`)
+
+- **settings.json** – display name, `kind: "json"`, `schema`, app settings, `dataFileName`
+- **data.json** (or name in settings) – records `{ id, last_modified?, ...custom fields }`
+
+### Generic / “files” media type (e.g. `my-data/files/`)
+
+- **settings.json** – display name, `kind: "generic"`, optional `schema`, `dataFileName` (default `data.json`)
+- **data.json** – image-catalog format `{ images: [] }` when created via the API (may be created on first use otherwise)
+- **Files** live directly in the type folder (no separate `files/` subfolder)
+
+## Migration from the old single-folder layout
+
+If you previously used a single folder (e.g. `my-images/` with `settings.json`, `schema.json`, `image-data.json`, and `images/` inside):
+
+1. Create a root folder and an `images` subfolder, e.g. `my-data/images/`.
+2. Move your **image files** from `my-images/images/` into `my-data/images/files/` (or keep the name `images` and set `filesSubdir` in settings).
+3. Merge **schema into settings**: create `my-data/images/settings.json` with:
+   - `displayName`: e.g. `"Images"`
+   - `kind`: `"images"`
+   - `schema`: copy the contents of your old `schema.json` (the `schema` object).
+   - `dataFileName`: `"image-data.json"`
+   - `filesSubdir`: `"files"` (or `"images"` if you kept that name)
+   - `gridSize`, etc. from your old `settings.json`
+4. Move **image-data.json** into `my-data/images/image-data.json`.
+
+**Optional migration script** (copies old folder into root/images/ with merged settings):
+
+```bash
+node scripts/migrate-to-media-types.mjs ./my-images ./my-data
 ```
-my-data/
-├── files/                  # Global shared file storage (all images/files live here)
-├── images/                 # An "images" media type
-│   ├── settings.json       # kind: "images", schema, app preferences
-│   └── image-data.json     # { images: [...] } — linked records
-├── documents/              # A "generic" media type
-│   ├── settings.json       # kind: "generic", schema
-│   └── data.json           # { files: [...] } — linked records
-├── projects/               # A "json" media type
-│   ├── settings.json       # kind: "json", schema
-│   └── data.json           # { records: [...] }
-└── files-catalog/          # Auto-created "blob_store" (browse files/)
-    └── settings.json       # kind: "blob_store"
-```
 
-### Images media type
-
-- **settings.json** – `kind: "images"`, `schema` (field definitions), `dataFileName`, app preferences (grid size, etc.)
-- **image-data.json** – `{ images: [{ id, file_name, image_name, ...custom fields }] }`
-- Files are stored in the root-level **`files/`** directory (shared across all file-backed types)
-
-### Pure JSON media type
-
-- **settings.json** – `kind: "json"`, `schema`, `dataFileName`
-- **data.json** – `{ records: [{ id, name, last_modified?, ...custom fields }] }`
-
-### Generic / "files" media type
-
-- **settings.json** – `kind: "generic"`, optional `schema`, `dataFileName`
-- **data.json** – `{ files: [{ id, file_name, ...custom fields }] }`
-- Files are stored in the root-level **`files/`** directory
-
-### Blob store (auto-created)
-
-- **settings.json** – `kind: "blob_store"` (read-only schema, browse-only)
-- Provides a view of all files in `files/` without editing capabilities
-
+The folder name (e.g. `images`) is the **media type id**; the display name is in `settings.json` and can be renamed in the UI.
 
 ## Key concepts
 
