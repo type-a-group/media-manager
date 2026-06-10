@@ -1,0 +1,20 @@
+{
+	"displayName": "Notes",
+	"kind": "json",
+	"schema": {
+		"title": { "type": "string", "removable": true, "defaultValue": "" },
+		"body": { "type": "string", "removable": true, "long": true, "defaultValue": "" },
+		"done": { "type": "boolean", "removable": true, "defaultValue": false },
+		"priority": {
+			"type": "dropdown",
+			"removable": true,
+			"options": ["low", "medium", "high"],
+			"defaultValue": "medium"
+		}
+	},
+	"dataFileName": "data.json",
+	"gridSize": "medium",
+	"autoAdvanceToNextUnlinked": false,
+	"autoSaveOnAdvance": false,
+	"excludedFiles": []
+}

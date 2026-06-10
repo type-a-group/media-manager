@@ -24,3 +24,11 @@ vite.config.ts.timestamp-*
 
 # Build fallback (when MEDIA_MANAGER_ROOT is not set)
 .media-manager-build
+
+# Disposable working copy of test-fixtures/ created by `npm run test:serve`.
+# The pristine seed lives in test-fixtures/ (tracked); this copy is mutated at runtime.
+/test-data
+
+# UI screenshots/videos captured by the Playwright UI-capture helper (scripts/ui-capture.mjs).
+# Dev artifacts for eyeballing a feature; not source. Includes throwaway capture scripts (_*.mjs).
+/.screenshots

@@ -1,0 +1,12 @@
+{
+	"displayName": "Documents",
+	"kind": "generic",
+	"schema": {
+		"description": { "type": "string", "removable": true, "long": true, "defaultValue": "" }
+	},
+	"dataFileName": "data.json",
+	"gridSize": "medium",
+	"autoAdvanceToNextUnlinked": false,
+	"autoSaveOnAdvance": false,
+	"excludedFiles": []
+}

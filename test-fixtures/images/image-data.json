@@ -1,0 +1,37 @@
+{
+	"images": [
+		{
+			"id": "11111111-1111-4111-8111-111111111111",
+			"file_name": "sunset.png",
+			"image_name": "Sunset",
+			"caption": "Warm sunset over the hills",
+			"rating": 5,
+			"favorite": true,
+			"category": "nature",
+			"tags": ["warm", "sky"],
+			"source": { "display_name": "Sample", "url": "https://example.com/sunset" }
+		},
+		{
+			"id": "22222222-2222-4222-8222-222222222222",
+			"file_name": "forest.png",
+			"image_name": "Forest",
+			"caption": "Green forest canopy",
+			"rating": 4,
+			"favorite": false,
+			"category": "nature",
+			"tags": ["green", "trees"],
+			"source": { "display_name": "", "url": "" }
+		},
+		{
+			"id": "33333333-3333-4333-8333-333333333333",
+			"file_name": "ocean.png",
+			"image_name": "Ocean",
+			"caption": "Deep blue ocean",
+			"rating": 3,
+			"favorite": false,
+			"category": "abstract",
+			"tags": ["blue", "water"],
+			"source": { "display_name": "", "url": "" }
+		}
+	]
+}

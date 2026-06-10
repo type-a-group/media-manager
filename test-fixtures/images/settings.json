@@ -1,0 +1,27 @@
+{
+	"displayName": "Images",
+	"kind": "images",
+	"schema": {
+		"caption": { "type": "string", "removable": true, "defaultValue": "" },
+		"rating": { "type": "number", "removable": true },
+		"favorite": { "type": "boolean", "removable": true, "defaultValue": false },
+		"category": {
+			"type": "dropdown",
+			"removable": true,
+			"options": ["nature", "abstract", "portrait"],
+			"defaultValue": "nature"
+		},
+		"tags": { "type": "list", "removable": true, "itemTypes": ["string"], "defaultValue": [] },
+		"source": {
+			"type": "url",
+			"removable": true,
+			"defaultValue": { "display_name": "", "url": "" }
+		}
+	},
+	"dataFileName": "image-data.json",
+	"filesSubdir": "files",
+	"gridSize": "medium",
+	"autoAdvanceToNextUnlinked": false,
+	"autoSaveOnAdvance": false,
+	"excludedFiles": []
+}

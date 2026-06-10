@@ -1,0 +1,3 @@
+Sample non-image file for the `documents` (generic) media type.
+Generic catalogs accept any extension; this file lives in the shared global
+files/ blob directory alongside the image blobs.
