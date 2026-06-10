@@ -2,7 +2,7 @@
 
 **Purpose:** Single map of product behavior, implementation locations, and known gaps.  
 **Audience:** Humans and agents working in this repo.  
-**Companion:** User-facing setup, data layout, and how to run the built app live in [`README.md`](../README.md). Informal backlog / ideas live in [`tasks.md`](../tasks.md).
+**Companion:** User-facing setup, data layout, and how to run the built app live in [`README.md`](../README.md). The deferred-work backlog lives in [`FUTURE_CHANGES.md`](FUTURE_CHANGES.md) (the old `tasks.md` has been consolidated there).
 
 **Last reviewed:** 2026-06-07
 
@@ -134,11 +134,11 @@ Type-scoped and legacy fetch helpers: [`src/lib/api/client.ts`](../src/lib/api/c
 ## Residual notes
 
 - **README** is the canonical place for install, **build + run** (`npm run build`, `node build`, `media-manager <root>`), and data layout examples.
-- **`tasks.md`** holds non-committing ideas; do not treat it as the shipped feature set.
+- **`docs/FUTURE_CHANGES.md`** is the deferred-work backlog (non-committing ideas; do not treat it as the shipped feature set). `tasks.md` has been consolidated into it and is now just a pointer.
 - **Data upgrade tool:** [`scripts/upgrade-data.mjs`](../scripts/upgrade-data.mjs) (`npm run upgrade-data -- <root>` or `... -- <root> --apply`) scans a data root and reports/applies the expected upgrades: `files/` → `blob_store`, `globals/` singleton heal (canonical UUID), and relocating legacy per-type blobs into the shared global `files/` store (basenames preserved; name conflicts are reported, never clobbered). Dry-run by default.
 
 ---
 
 ## Roadmap / non-authoritative ideas
 
-See [`tasks.md`](../tasks.md). Items there are **not** commitments; this file describes what the codebase is meant to do today.
+See [`FUTURE_CHANGES.md`](FUTURE_CHANGES.md). Items there are **not** commitments; this file describes what the codebase is meant to do today.

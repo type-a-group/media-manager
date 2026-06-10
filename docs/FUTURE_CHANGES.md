@@ -128,3 +128,78 @@ Planned improvements and features that were identified during the codebase audit
 - One static bundle per media type, or a single combined site with navigation?
 - How much interactivity (filters, compare view) to keep vs. a pure read-only gallery?
 - Hosting target assumptions (flat static host vs. one allowing redirects/clean URLs)?
+
+---
+
+## 8. Configurable & Verbose Grid Display
+
+**Priority**: High (user-requested)
+**Context**: The grid views surface very little per card today. The JSON grid ([`JsonRecordGrid.svelte`](../src/lib/components/JsonRecordGrid.svelte)) shows a single label via `getDisplayName` (the `name` field, else `group_by_value`, else the id prefix) — there's no way to choose which field is shown or to see several fields at once. The image grid ([`ImageViewGrid.svelte`](../src/lib/components/ImageViewGrid.svelte)) shows the thumbnail plus one display name. Users want (a) to pick which field is displayed for JSON records, and (b) a "verbose" mode that shows a lot of information at once for visual scanning (lightroom-style). Supersedes the `tasks.md` "Verbose mode", "larger grid view", and "experiment with an image grid renderer" notes.
+
+### What's needed
+- **Display-field selector** in the grid header (mirroring the existing Group by / Size selectors) to choose which schema field is the primary label for JSON records.
+- **Verbose view mode** toggle that renders a multi-field card (key/value rows or compact chips) showing a chosen subset of fields per record; for image grids, show metadata fields next to a larger thumbnail.
+- **Field-subset picker** for verbose mode (multi-select of schema fields) with a sensible default (e.g. `name`/`image_name` + first few user fields).
+- Persistence: per-session via selection state and/or durable per-type defaults via settings.
+
+### Implementation pointers
+- Generalize `getDisplayName` in [`JsonRecordGrid.svelte`](../src/lib/components/JsonRecordGrid.svelte) to render the selected field(s); reuse the `gridSchemaFields` fetch and the Group by/Size `Select` pattern already present in both grids.
+- Extend selection state ([`selection.svelte.ts`](../src/lib/state/selection.svelte.ts), which already holds `gridGroupByField`/`gridSize`) with `gridDisplayField` / `gridVerbose` / `gridVerboseFields`; optionally persist defaults in [`settingsFile.ts`](../src/lib/storage/settingsFile.ts) + the `.../settings` API.
+- List items are currently sparse (the list response carries `group_by_value` but not arbitrary field values). Verbose/custom display needs the selected field values per item — either extend the list response (`records/list` + repos) to include requested fields, or fetch per record. Prefer extending the list response for grid performance.
+
+### Open questions
+- Per-type persistent default vs. per-session only?
+- Verbose layout: key/value rows, a mini table, or chips?
+- How many fields before large lists get noisy / slow, and do we cap or virtualize?
+
+---
+
+## 9. Sorting & Ordering
+
+**Priority**: Medium
+**Context**: Grids and lists support Group by and filters but have no explicit sort. From `tasks.md`: "optionally organize by timestamp."
+
+### What's needed
+- A sort control (field + direction) in the grid/sidebar headers.
+- Built-in sorts: by `last_modified`/created timestamp, by name, and by any schema field.
+- Persist the choice per type and/or session.
+
+### Implementation pointers
+- Apply sorting in the list endpoints (`records/list`) via the repos ([`repo.ts`](../src/lib/storage/repo.ts) `listImages`, [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)), with the active sort tracked in selection state.
+
+---
+
+## 10. Filter for Missing / Empty Fields
+
+**Priority**: Medium
+**Context**: From `tasks.md`: "filter for images with missing fields." The filter engine ([`filters.ts`](../src/lib/core/filters.ts)) already supports multi-clause filters including empty checks, but there's no first-class "show records with missing/empty fields" entry point. Complements Item 2 (missing **file** references).
+
+### What's needed
+- A quick filter for records with any empty user field, or a specific empty field.
+- Compose with existing multi-clause filters; surface it in the sidebar filter UI.
+
+---
+
+## 11. AI / External Field Enrichment (application-specific)
+
+**Priority**: Low (downstream apps; not core)
+**Context**: Ideas from `tasks.md` aimed at specific downstream uses (e.g. a food/web catalog), not the core local tool. Listed so they aren't lost.
+
+### Ideas
+- Auto-fill schema fields via an external vision API (labels, OCR, etc.).
+- Offline semantic search over the enriched fields.
+- A local vector database over field values (and possibly EXIF) for fast, fully-local search.
+
+### Considerations
+- Keep the core app provider-agnostic; gate any integration behind opt-in config.
+- Privacy: prefer local-first; be explicit when data would leave the machine.
+
+---
+
+## 12. Open Design Questions
+
+**Priority**: n/a (decisions to make before related work)
+**Context**: Carried over from `tasks.md` so the backlog is captured in one place.
+
+- **Default values**: is storing explicit defaults (beyond `false` for booleans / `0` for numbers) worth it, or is filtering for empty values sufficient?
+- **Svelte usage guidance**: expand [`.cursor/rules/svelte5.mdc`](../.cursor/rules/svelte5.mdc) with an explicit do/don't list, including when `$bindable` is appropriate vs. confusing.
