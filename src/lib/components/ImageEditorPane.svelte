@@ -21,6 +21,7 @@
 	} from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
+	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
 	import { fieldLabel, isUserFieldKey, RESERVED_FIELD_KEYS } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -1007,14 +1008,14 @@
 										</div>
 									{:else if schema[key]?.type === 'file'}
 										<FilePicker bind:value={formValues[key]} />
-									{:else if schema[key]?.type === 'string' && (schema[key] as { long?: boolean }).long}
+									{:else}
 										<textarea
 											bind:value={formValues[key]}
-											rows="4"
-											class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+											rows="1"
+											use:autogrow={formValues[key]}
+											onkeydown={(e) => blurSaveOnEnter(e, save)}
+											class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
 										></textarea>
-									{:else}
-										<Input type="text" bind:value={formValues[key]} />
 									{/if}
 								</div>
 							{/if}

@@ -3,7 +3,7 @@
 	"kind": "json",
 	"schema": {
 		"title": { "type": "string", "removable": true, "defaultValue": "" },
-		"body": { "type": "string", "removable": true, "long": true, "defaultValue": "" },
+		"body": { "type": "string", "removable": true, "defaultValue": "" },
 		"done": { "type": "boolean", "removable": true, "defaultValue": false },
 		"priority": {
 			"type": "dropdown",

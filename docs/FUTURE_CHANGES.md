@@ -196,7 +196,87 @@ Planned improvements and features that were identified during the codebase audit
 
 ---
 
-## 12. Open Design Questions
+## 12. Fix / Normalize File Extension
+
+**Priority**: Low
+**Context**: From the vault backlog: "some sort of option to fix the file extension." Uploaded blobs may carry a wrong, missing, or mis-cased extension (e.g. a JPEG named `.jpeg` vs `.jpg`, or no extension), which affects per-kind extension filtering in `images` catalogs.
+
+### What's needed
+- A per-file action to rename the extension (reusing the existing rename/`propagateFilenameRename` path in [`repo.ts`](../src/lib/storage/repo.ts) so cross-catalog references stay intact).
+- Optionally detect the true type (magic bytes / sharp) and suggest the correct extension.
+
+### Considerations
+- Sequence after / alongside Item 6 (stable file IDs): if identity decouples from filename, an extension fix becomes a pure display-name change.
+
+---
+
+## 13. Swap Width/Height (orientation fix)
+
+**Priority**: Low
+**Context**: From the vault backlog: "add a swap width/height option (for bugs) — or have a warning if they are swapped and recommend fixing them." Stored `width`/`height` (written automatically on upload) can end up transposed for some rotated/EXIF-oriented images.
+
+### What's needed
+- A per-record action to swap the stored `width` and `height` values.
+- Optionally a heuristic warning when stored dimensions appear inconsistent with the actual decoded image (compare against `sharp` metadata) and offer the swap.
+
+---
+
+## 14. Markdown Blog Media Kind
+
+**Priority**: Medium (part of the original multi-type vision)
+**Context**: From the vault backlog: "support markdown blogs as a project type — have a setting as to whether to include the metadata in the yaml, or just in a json as well, or sync between." A `markdown` kind would manage a set of markdown files (e.g. blog posts) with schema-driven metadata, alongside the existing `images`/`generic`/`json`/`blob_store` kinds.
+
+### What's needed
+- A new `markdown` value in [`MediaTypeKind`](../src/lib/storage/settingsFile.ts) and a repository (likely a sibling of [`repo.ts`](../src/lib/storage/repo.ts)/[`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)) that lists/reads/writes `.md` files.
+- A dedicated editor pane for markdown body + metadata, switched on by kind in [`media/[typeId]/+page.svelte`](../src/routes/media/[typeId]/+page.svelte).
+- A metadata-source setting: store metadata in the file's YAML frontmatter, in a sidecar JSON catalog, or keep both in sync.
+
+### Open questions
+- Frontmatter as source of truth vs. JSON catalog vs. bidirectional sync — sync is the most useful but the hardest to keep consistent.
+- How body content interacts with filtering/search (Item 10) and grid display (Item 8).
+
+---
+
+## 15. Image Compression Management
+
+**Priority**: Low (explicitly non-urgent in the vault note)
+**Context**: From the vault backlog: a way to manage compressed variants of images. Idea: keep a folder of compressed copies, regenerate them on upload/modify, store paths to both the original and compressed variant in the catalog, and let the user pick which to use.
+
+### What's needed
+- A per-media-type compression setting (e.g. quality/target size).
+- On upload/modify, generate a compressed variant (via `sharp`) into a dedicated location and record both paths.
+- UI to choose original vs. compressed per record (or per export — ties into Item 7 Static Site Export, which also wants thumbnails/resizing).
+
+### Considerations
+- Strong overlap with Item 7's asset-volume concerns (thumbnails, selective export); consider designing them together to avoid two parallel resize pipelines.
+
+---
+
+## 17. Capture Nested Folder Path on Folder Upload
+
+**Priority**: Medium (user-requested)
+**Context**: When a user uploads a **folder** containing nested subfolders, the directory structure is lost today — all blobs land flat in the shared global `files/` store (`getGlobalFilesDir()`), and only the basename (`file_name`) is recorded. Users want the option to **automatically save each file's relative path within the dropped folder** (e.g. `2024/trip/photo.jpg`) into a schema field, so the original organization isn't lost when files are flattened into the global store.
+
+### Decisions (from clarification)
+- **Captured value**: the **relative path within the uploaded folder** (not absolute, not just the parent segment). Portable and describes the import's internal structure.
+- **Storage target**: at upload time, the user **picks an existing schema field** to receive the path (e.g. a `string` field). Not auto-created and not a reserved key — the user opts in per upload by choosing where it goes.
+- **Browser limitation (accepted)**: a browser only exposes relative paths via a folder picker (`<input webkitdirectory>` / `webkitRelativePath`) or the drag-and-drop `FileSystemEntry` API. True absolute filesystem paths are **not available** from the browser, so this feature is **relative-path-only**. (A CLI/server-side import could capture absolute paths later — out of scope here.)
+
+### What's needed
+- Folder upload that preserves per-file relative paths: use `<input type="file" webkitdirectory>` and/or drag-drop directory traversal (`DataTransferItem.webkitGetAsEntry()` → recurse) so each `File` carries its `webkitRelativePath`.
+- An upload-time option ("Save folder path to field") with a **field selector** (existing schema fields, likely `string`/`url`-typed) — mirror the Group by / display-field `Select` pattern already used in the grids.
+- On import, write each file's relative path into the chosen field on the created/linked catalog record, alongside the existing `file_name`.
+- Wire through the upload path in [`ImageEditorPane.svelte`](../src/lib/components/ImageEditorPane.svelte) and the file-backed repo write in [`repo.ts`](../src/lib/storage/repo.ts); the relative path must ride along with each uploaded file from client → API → record.
+
+### Open questions
+- **Filename collisions**: the global store is flat, so `a/photo.jpg` and `b/photo.jpg` collide on `file_name`. Do we de-dupe/rename on import (and is the relative path then the disambiguator)? Sequences naturally after Item 6 (stable file IDs), which removes filename-as-identity.
+- Should the path field be **auto-populated only when empty**, or always overwritten on re-upload?
+- Default field choice / remembering the last-used field per media type (persist in [`settingsFile.ts`](../src/lib/storage/settingsFile.ts)?).
+- Drag-and-drop directory support is more involved than the `webkitdirectory` input — ship the input first, drag-drop folders later?
+
+---
+
+## 16. Open Design Questions
 
 **Priority**: n/a (decisions to make before related work)
 **Context**: Carried over from `tasks.md` so the backlog is captured in one place.

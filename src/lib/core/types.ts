@@ -85,9 +85,7 @@ export const FieldDefinitionSchema = z.object({
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
 	/** When true, dropdown stores string[]; otherwise a single string. Omit/false = single. */
-	multiselect: z.boolean().optional(),
-	/** When true, string fields render as a multiline textarea instead of a single-line input. */
-	long: z.boolean().optional()
+	multiselect: z.boolean().optional()
 });
 export type FieldDefinition = z.infer<typeof FieldDefinitionSchema>;
 
@@ -268,8 +266,7 @@ export const AddFieldRequestSchema = z.object({
 		.optional(),
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
-	multiselect: z.boolean().optional(),
-	long: z.boolean().optional()
+	multiselect: z.boolean().optional()
 });
 export type AddFieldRequest = z.infer<typeof AddFieldRequestSchema>;
 
@@ -304,8 +301,7 @@ export const UpdateFieldRequestSchema = z.object({
 		.optional(),
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
-	multiselect: z.boolean().optional(),
-	long: z.boolean().optional()
+	multiselect: z.boolean().optional()
 });
 export type UpdateFieldRequest = z.infer<typeof UpdateFieldRequestSchema>;
 

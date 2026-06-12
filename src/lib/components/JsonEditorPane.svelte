@@ -10,6 +10,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import JsonRecordGrid from '$lib/components/JsonRecordGrid.svelte';
 	import FilePicker from '$lib/components/FilePicker.svelte';
+	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
 	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -500,16 +501,19 @@
 											{/if}
 										</div>
 									{:else}
-										<Input
+										<textarea
 											id={key}
-											type="text"
+											rows="1"
+											use:autogrow={formValues[key]}
+											onkeydown={(e) => blurSaveOnEnter(e, save)}
+											class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
 											value={String(formValues[key] ?? '')}
 											oninput={(e) =>
 												(formValues = {
 													...formValues,
-													[key]: (e.currentTarget as HTMLInputElement).value
+													[key]: (e.currentTarget as HTMLTextAreaElement).value
 												})}
-										/>
+										></textarea>
 									{/if}
 								</div>
 							{/each}

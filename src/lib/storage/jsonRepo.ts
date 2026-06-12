@@ -403,8 +403,7 @@ export function createJsonRepoForType(typeId: string) {
 		defaultValue: unknown,
 		options?: string[],
 		itemTypes?: string[],
-		multiselect?: boolean,
-		long?: boolean
+		multiselect?: boolean
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
@@ -421,8 +420,7 @@ export function createJsonRepoForType(typeId: string) {
 				defaultValue: defaultValue as never,
 				...(parsedType === 'dropdown' && options?.length ? { options } : {}),
 				...(parsedType === 'dropdown' && multiselect ? { multiselect: true } : {}),
-				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(parsedType === 'string' && long ? { long: true } : {})
+				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 
@@ -467,7 +465,6 @@ export function createJsonRepoForType(typeId: string) {
 			options?: string[];
 			itemTypes?: string[];
 			multiselect?: boolean;
-			long?: boolean;
 		}
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
@@ -512,7 +509,6 @@ export function createJsonRepoForType(typeId: string) {
 			}
 
 			const schema = { ...settings.schema };
-			const long = type === 'string' ? (updates.long ?? (def as any).long ?? false) : false;
 
 			delete schema[key];
 			schema[newKey] = {
@@ -521,8 +517,7 @@ export function createJsonRepoForType(typeId: string) {
 				defaultValue: defaultValue as never,
 				...(options?.length ? { options } : {}),
 				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(type === 'dropdown' && multiselect ? { multiselect: true } : {}),
-				...(type === 'string' && long ? { long: true } : {})
+				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 

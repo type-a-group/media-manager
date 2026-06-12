@@ -2,7 +2,7 @@
 	"displayName": "Documents",
 	"kind": "generic",
 	"schema": {
-		"description": { "type": "string", "removable": true, "long": true, "defaultValue": "" }
+		"description": { "type": "string", "removable": true, "defaultValue": "" }
 	},
 	"dataFileName": "data.json",
 	"gridSize": "medium",

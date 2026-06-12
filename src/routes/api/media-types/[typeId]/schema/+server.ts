@@ -71,8 +71,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			parsed.data.defaultValue,
 			parsed.data.options,
 			parsed.data.itemTypes,
-			parsed.data.multiselect,
-			parsed.data.long
+			parsed.data.multiselect
 		);
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
@@ -105,8 +104,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			defaultValue: parsed.data.defaultValue,
 			options: parsed.data.options,
 			itemTypes: parsed.data.itemTypes,
-			multiselect: parsed.data.multiselect,
-			long: parsed.data.long
+			multiselect: parsed.data.multiselect
 		});
 		return json({ success: true, schema: result.schema });
 	} catch (err) {

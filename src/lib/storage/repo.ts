@@ -873,8 +873,7 @@ export function createImageRepo(typeId?: string) {
 		defaultValue: unknown,
 		options?: string[],
 		itemTypes?: string[],
-		multiselect?: boolean,
-		long?: boolean
+		multiselect?: boolean
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
@@ -907,7 +906,6 @@ export function createImageRepo(typeId?: string) {
 				if (multiselect) def.multiselect = true;
 			}
 			if (parsedType === 'list' && itemTypes?.length) def.itemTypes = itemTypes;
-			if (parsedType === 'string' && long) def.long = true;
 			schemaFile.schema[key] = def;
 
 			if (typeId) {
@@ -968,7 +966,6 @@ export function createImageRepo(typeId?: string) {
 			options?: string[];
 			itemTypes?: string[];
 			multiselect?: boolean;
-			long?: boolean;
 		}
 	) {
 		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
@@ -1028,8 +1025,6 @@ export function createImageRepo(typeId?: string) {
 				throw new Error('List default must be an array');
 			}
 
-			const long = type === 'string' ? (updates.long ?? (def as any).long ?? false) : false;
-
 			delete schemaFile.schema[key];
 			schemaFile.schema[newKey] = {
 				type,
@@ -1037,8 +1032,7 @@ export function createImageRepo(typeId?: string) {
 				defaultValue: defaultValue as any,
 				...(options?.length ? { options } : {}),
 				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(type === 'dropdown' && multiselect ? { multiselect: true } : {}),
-				...(type === 'string' && long ? { long: true } : {})
+				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
 			};
 
 			if (typeId) {

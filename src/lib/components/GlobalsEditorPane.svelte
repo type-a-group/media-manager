@@ -9,6 +9,7 @@
 	import { toast } from 'svelte-sonner';
 	import { Trash2 } from 'lucide-svelte';
 	import { apiGetGlobalsRecord, apiUpdateGlobalsRecord } from '$lib/api/client.js';
+	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 
@@ -334,15 +335,18 @@
 									</div>
 								</div>
 							{:else}
-								<Input
-									type="text"
+								<textarea
+									rows="1"
+									use:autogrow={formValues[key]}
+									onkeydown={(e) => blurSaveOnEnter(e, save)}
+									class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
 									value={String(formValues[key] ?? '')}
 									oninput={(e) =>
 										(formValues = {
 											...formValues,
-											[key]: (e.currentTarget as HTMLInputElement).value
+											[key]: (e.currentTarget as HTMLTextAreaElement).value
 										})}
-								/>
+								></textarea>
 							{/if}
 						</div>
 					{/each}
