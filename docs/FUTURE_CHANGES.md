@@ -75,32 +75,20 @@ Planned improvements and features that were identified during the codebase audit
 
 ---
 
-## 6. Stable File IDs (decouple identity from filename)
+## 6. Stable File IDs (decouple identity from filename) — ✅ Shipped
 
-**Priority**: Medium
-**Context**: Today the **filename** (`file_name` basename in the shared global `files/` store) is the cross-catalog primary key. The same blob can be referenced by many catalogs, so a rename must fan out across every media type — rewriting record `file_name`, embedded `url`/`file`/array field values, and `settings.excludedFiles` — via `propagateFilenameRename` in [`repo.ts`](../src/lib/storage/repo.ts). This is O(number of media types) per rename and breaks if any reference path is missed (e.g. the blob-store `unlinked:` rename bug we just fixed). Full pros/cons analysis lives in [`STABLE_FILE_IDS.md`](STABLE_FILE_IDS.md).
+**Status**: **Shipped (Option 3).** Blobs are now identified by a stable, workspace-scoped id in a global manifest ([`files/manifest.json`](../src/lib/storage/manifest.ts)); a file-backed catalog row's `id` value **is** that manifest id, and the filename is resolved from the manifest at read time. Rename is an O(1) manifest update (the old `propagateFilenameRename` fan-out is gone), the `unlinked:` id scheme is gone (an unlinked file is a manifest id with no row; linking keeps the same id), `excludedFiles` and `file`-field values store ids, and list calls lazy-heal the manifest against disk (`healed: { added, missing }` + a toast). See [`STABLE_FILE_IDS.md`](STABLE_FILE_IDS.md) and the "Shared global blob store + manifest" section of [`FEATURES.md`](FEATURES.md).
 
-### What's needed
-- A global file **manifest** (e.g. `files/manifest.json`) mapping `file_id -> { file_name, size, hash?, created_at }` — the single place the filename lives.
-- Catalogs reference `file_id` instead of `file_name`; display name resolved via the manifest.
-- Rename becomes a **single manifest update** instead of a workspace-wide rewrite.
-- A migration pass (extend [`scripts/upgrade-data.mjs`](../scripts/upgrade-data.mjs)) to: generate the manifest for existing blobs, rewrite all catalog refs (including embedded `url`/`file`/`excludedFiles` values) to ids, and report conflicts without clobbering.
-- A reconcile/repair path for files added or removed outside the app (startup scan, lazy heal, or explicit "rescan").
+### Decisions locked at implementation
+- **id = random UUID** (not a content hash); a `hash?` slot may be added later.
+- **Unified identity on `id` everywhere** (disk + API + selection + json). A file-backed row's `id` value is the blob's manifest id (shared across catalogs); a `json` row's `id` is record-local. They share the field name and differ only in uniqueness scope (documented on `ImageRecordSchema`). The per-row `id` value and stored `file_name` from the old layout were removed.
+  - *(Interim note: the first implementation keyed file-backed rows by a distinct `file_id` field; that was renamed to `id` for whole-system consistency. The migration handles both layouts, and `manifest.ts` / the `*FileId` helpers keep "file id" as the name for the manifest concept.)*
+- **Migration is explicit-only** via `npm run upgrade-data -- <root> --apply` (Check 4); the app errors loudly on a row not in the current `id`-keyed shape rather than fabricating identity.
 
-### Recommended approach (from the design note)
-- **Option 3** — reference by id, keep human-readable names on disk: catalogs store `file_id`, blobs keep readable names, manifest maps id↔name. Most of the benefit (atomic rename, no string drift, dedupe/metadata hooks) without an opaque `files/` directory.
-- Defer **Option 4** (full content-addressed storage) unless immutability/dedupe becomes a product goal.
-
-### Open questions
-- ID scheme: random UUID (simple) vs. content hash (enables dedupe, but identical content collapses on rename)?
-- Where the manifest lives and how it's reconciled with on-disk reality.
-- Whether to unify `file_id` with the per-catalog record `id` or keep them distinct.
-
-### Benefits unlocked
-- O(1) atomic rename; no dangling references from string drift.
-- Duplicate detection / dedupe via content hash.
-- Safe display-name collisions (two blobs named `IMG_001.jpg` can coexist).
-- Centralized per-file metadata (size, hash, created time, tags).
+### Follow-ups not in scope of the initial ship
+- Content hashing for dedupe / duplicate detection (would change the name-based idempotency assumption — documented in [`manifest.ts`](../src/lib/storage/manifest.ts)).
+- Clearing embedded `file`-field references (not just whole rows) when a blob is deleted.
+- Centralized per-file metadata beyond `size`/`created_at` (tags, hash).
 
 ---
 

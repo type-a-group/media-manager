@@ -4,8 +4,9 @@ import { getMediaTypePaths } from '$lib/storage/paths.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from '$lib/storage/settingsFile.js';
 import { z } from 'zod';
 
+// Removes stale excluded entries by file_id (the blob's manifest identity).
 const RequestSchema = z.object({
-    filenames: z.array(z.string()).min(1)
+    file_ids: z.array(z.string()).min(1)
 });
 
 export const POST: RequestHandler = async ({ params, request }) => {
@@ -13,7 +14,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
     const parsed = RequestSchema.safeParse(body);
 
     if (!parsed.success) {
-        throw error(400, 'Invalid request body. Expected { filenames: string[] }');
+        throw error(400, 'Invalid request body. Expected { file_ids: string[] }');
     }
 
     try {
@@ -23,7 +24,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
         if (!settings) throw error(404, 'Media type settings not found');
 
         const currentExcluded = settings.excludedFiles ?? [];
-        const toRemove = new Set(parsed.data.filenames);
+        const toRemove = new Set(parsed.data.file_ids);
         const newExcluded = currentExcluded.filter(f => !toRemove.has(f));
 
         await writeMediaTypeSettingsFile(paths.baseDir, {

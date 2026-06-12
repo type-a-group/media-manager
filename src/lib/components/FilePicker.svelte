@@ -14,8 +14,9 @@
 		value = $bindable(),
 		onSelect
 	}: {
+		/** The selected blob's `file_id` (stable manifest identity), or empty. */
 		value?: string;
-		onSelect?: (filename: string) => void;
+		onSelect?: (fileId: string) => void;
 	} = $props();
 
 	let open = $state(false);
@@ -25,6 +26,9 @@
 	let blobStoreTypeId = $state<string | null>(null);
 	let noBlobStore = $state(false);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/** Resolve the selected file_id to a display name from the loaded blob list. */
+	const selectedName = $derived(value ? (records.find((r) => r.id === value)?.file_name ?? '') : '');
 
 	/**
 	 * Discover the blob_store type dynamically.
@@ -62,30 +66,35 @@
 		debounceTimer = setTimeout(() => fetchFiles(), 300);
 	}
 
-	$effect(() => {
-		if (open) {
-			// Discover blob store on open, then fetch files
-			(async () => {
-				if (!blobStoreTypeId) {
-					const id = await discoverBlobStore();
-					if (id) {
-						blobStoreTypeId = id;
-						noBlobStore = false;
-					} else {
-						noBlobStore = true;
-						return;
-					}
-				}
-				await fetchFiles();
-			})();
+	/** Discover the blob store and load files (shared by dialog-open and label-resolution paths). */
+	async function ensureFilesLoaded() {
+		if (!blobStoreTypeId) {
+			const id = await discoverBlobStore();
+			if (id) {
+				blobStoreTypeId = id;
+				noBlobStore = false;
+			} else {
+				noBlobStore = true;
+				return;
+			}
 		}
+		await fetchFiles();
+	}
+
+	$effect(() => {
+		if (open) ensureFilesLoaded();
+	});
+
+	// When a value is set but we haven't loaded the blob list yet, load it once so the trigger button
+	// can show the resolved filename instead of the raw file_id.
+	$effect(() => {
+		if (value && records.length === 0 && !loading && !noBlobStore) ensureFilesLoaded();
 	});
 
 	function handleSelect(rec: ImageListItem) {
-		const filename = rec.file_name;
-		value = filename;
+		value = rec.id;
 		open = false;
-		onSelect?.(filename);
+		onSelect?.(rec.id);
 	}
 
 	function handleClear() {
@@ -109,7 +118,7 @@
 		<Dialog.Trigger class="flex-1 min-w-0">
 			<Button variant="outline" class="w-full justify-start text-left font-normal truncate">
 				{#if value}
-					<span class="truncate">{value}</span>
+					<span class="truncate">{selectedName || 'Selected file'}</span>
 				{:else}
 					<span class="text-muted-foreground">Select file…</span>
 				{/if}
@@ -146,7 +155,7 @@
 					</div>
 				{:else}
 					{#each records as rec (rec.id)}
-						{@const isSelected = value === rec.file_name}
+						{@const isSelected = value === rec.id}
 						<button
 							class="flex flex-col items-center gap-2 p-2 border rounded-md hover:bg-accent hover:text-accent-foreground text-left focus:outline-none focus:ring-2 focus:ring-ring transition-colors {isSelected
 								? 'ring-2 ring-primary bg-accent/50'

@@ -96,12 +96,16 @@ export const SchemaDefinitionSchema = z.record(FieldDefinitionSchema);
 export type SchemaDefinition = z.infer<typeof SchemaDefinitionSchema>;
 
 /**
- * Image record as stored in `image-data.json`.
+ * File-backed catalog row as stored on disk (`image-data.json` / generic `data.json`).
  *
  * Notes:
- * - `id` is the stable identity used by UI and API endpoints.
- * - `file_name` is the current filename on disk (may change in the future).
- * - Presence in JSON means "linked"; files on disk with no record are "unlinked".
+ * - `id` is the row's primary key. For file-backed kinds its value is the blob's stable,
+ *   workspace-scoped identity from the global manifest (`<root>/files/manifest.json`) — i.e. the
+ *   manifest key. Unlike a `json` record's `id` (unique to one record), a file-backed `id` is the
+ *   **blob's** identity, so the *same* `id` appears in every catalog that references that blob. The
+ *   filename is **not** stored here — it is resolved from the manifest at read time (no denormalized
+ *   copy), so a rename touches only the manifest.
+ * - Presence of a row means "linked"; a manifest id with no row in this catalog is "unlinked".
  *
  * Concerns / future improvements:
  * - Consider splitting system fields from user fields explicitly instead of `catchall`.
@@ -110,7 +114,6 @@ export type SchemaDefinition = z.infer<typeof SchemaDefinitionSchema>;
 export const ImageRecordSchema = z
 	.object({
 		id: ImageIdSchema,
-		file_name: z.string().min(1),
 		image_name: z.string().default(''),
 		last_modified: z.string().optional(),
 		width: z.number().optional(),
@@ -210,7 +213,8 @@ export type JsonListResponse = z.infer<typeof JsonListResponseSchema>;
 /**
  * Minimal image info for list views.
  * When the list API is called with groupBy, each item includes group_by_value for that field.
- * Id may be a UUID (linked, in JSON) or "unlinked:" + filename (not in JSON).
+ * `id` is the blob's `file_id` (same whether the item is linked or unlinked). `file_name` is resolved
+ * from the manifest at list time for display.
  */
 export const ImageListItemSchema = z.object({
 	id: ImageIdSchema,
@@ -226,14 +230,29 @@ export const ImageListItemSchema = z.object({
 export type ImageListItem = z.infer<typeof ImageListItemSchema>;
 
 /**
+ * Lazy-heal summary returned by a list call: how many blobs the manifest gained (new files appeared on
+ * disk and were minted a `file_id`) or lost (a manifest entry's blob is gone) during reconciliation.
+ * The client surfaces a toast when present.
+ */
+export const HealSummarySchema = z.object({
+	added: z.number().default(0),
+	missing: z.number().default(0)
+});
+export type HealSummary = z.infer<typeof HealSummarySchema>;
+
+/**
  * API: image list response.
+ *
+ * `excluded_missing_files` holds **file_ids** (exclusion follows the blob's identity, not its name)
+ * whose blob is no longer on disk.
  */
 export const ImageListResponseSchema = z.object({
 	linked: z.array(ImageListItemSchema).default([]),
 	unlinked: z.array(ImageListItemSchema).default([]),
 	missing_files: z.array(ImageListItemSchema).default([]),
 	excluded: z.array(ImageListItemSchema).default([]),
-	excluded_missing_files: z.array(z.string()).default([])
+	excluded_missing_files: z.array(z.string()).default([]),
+	healed: HealSummarySchema.optional()
 });
 export type ImageListResponse = z.infer<typeof ImageListResponseSchema>;
 

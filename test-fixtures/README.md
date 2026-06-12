@@ -3,17 +3,18 @@
 A **pristine, committed sample data root** for manually testing the built app. It contains
 one media type of every kind so all storage/UI code paths can be exercised:
 
-| Folder       | Kind         | Notes                                                        |
-| ------------ | ------------ | ------------------------------------------------------------ |
-| `files/`     | `blob_store` | The shared global blob dir; holds all binaries (browse-only) |
-| `images/`    | `images`     | Links the three PNGs in `files/` with schema metadata        |
-| `documents/` | `generic`    | Links the sample `.txt` in `files/` (any extension allowed)  |
-| `notes/`     | `json`       | Two records, no file attachment                              |
-| `globals/`   | `json`       | The reserved singleton record                                |
+| Folder       | Kind         | Notes                                                                  |
+| ------------ | ------------ | ---------------------------------------------------------------------- |
+| `files/`     | `blob_store` | The shared global blob dir; holds all binaries + `manifest.json`       |
+| `images/`    | `images`     | Links the three PNGs (rows keyed by the blob's manifest `id`)          |
+| `documents/` | `generic`    | Links the sample `.txt` by its manifest `id` (any extension allowed)   |
+| `notes/`     | `json`       | Two records, no file attachment                                        |
+| `globals/`   | `json`       | The reserved singleton record                                          |
 
-All binaries live in `files/` (the single global blob store, `getGlobalFilesDir()`), and
-each catalog references them by `file_name` — see the "Shared global blob store" invariant
-in `CLAUDE.md`.
+All binaries live in `files/` (the single global blob store, `getGlobalFilesDir()`). Each
+blob is registered in `files/manifest.json` with a stable id, and a file-backed row's `id`
+**is** that manifest id (the filename lives only in the manifest) — see the "Shared global
+blob store + manifest" invariant in `CLAUDE.md` / `docs/FEATURES.md`.
 
 ## How to use it
 
@@ -32,4 +33,6 @@ the committed seed. `test:serve` always serves a throwaway copy at `test-data/`.
 When you change on-disk structure — `settings.json` / data-file layout, reserved-group
 behavior, or media-kind semantics — **update this seed in the same change** (the same
 discipline as `docs/FEATURES.md`). The reliable way to regenerate it: serve a scratch
-root, recreate the types via the UI/API, then copy the result back here.
+root, recreate the types via the UI/API, then copy the result back here. For a pure
+on-disk format migration, running `node scripts/upgrade-data.mjs test-fixtures --apply`
+against the seed is also valid (this is how the manifest + `id`-keyed layout was generated).

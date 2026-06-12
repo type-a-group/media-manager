@@ -15,6 +15,13 @@
  *                         preserved so existing catalog `file_name` references keep resolving; files
  *                         whose name already exists in the global store (with different content) are
  *                         reported as conflicts and skipped.
+ *   4. Stable file ids   → every blob in `<root>/files/` is registered in a global manifest
+ *                         (`<root>/files/manifest.json`) with a UUID. File-backed catalog rows are
+ *                         rekeyed to `{ id: <manifest id>, ... }` (the filename now lives only in the
+ *                         manifest); `file`-typed schema field values and `settings.excludedFiles` are
+ *                         migrated from filenames to ids. Handles both the original `{ id, file_name }`
+ *                         layout and the interim `{ file_id }` layout. Idempotent and re-runnable; runs
+ *                         after the blob relocation above so the manifest is built from the final store.
  *
  * Usage:
  *   node scripts/upgrade-data.mjs <root>           # dry run: report only (no writes)
@@ -32,6 +39,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 /** Canonical globals singleton record id (mirrors GLOBALS_RECORD_ID in src/lib/storage/mediaTypes.ts). */
 const GLOBALS_RECORD_ID = '00000000-0000-4000-8000-000000000001';
@@ -316,6 +324,193 @@ for (const id of typeDirs) {
 			if (NON_BLOB_NAMES.has(name)) continue;
 			planRelocate(id, path.join(baseDir, name), name);
 		}
+	}
+}
+
+// --- Check 4: stable file ids (manifest + file_id rekey) ---
+/** Matches a canonical UUID (so we can tell an already-migrated value from a filename). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (s) => typeof s === 'string' && UUID_RE.test(s);
+
+/** Default data filename for a media type (mirrors settingsFile.ts defaults). */
+function dataFileFor(s) {
+	if (s.dataFileName) return s.dataFileName;
+	return s.kind === 'images' || s.kind === 'blob_store' ? 'image-data.json' : 'data.json';
+}
+
+/** Schema field keys whose type is `file` (their values are blob references to migrate). */
+function fileFieldKeys(s) {
+	const schema = s.schema && typeof s.schema === 'object' ? s.schema : {};
+	return Object.entries(schema)
+		.filter(([, d]) => d && typeof d === 'object' && d.type === 'file')
+		.map(([k]) => k);
+}
+
+{
+	// Detect whether anything needs migrating (independent of where blobs currently sit on disk).
+	let rowsToRekey = 0;
+	let fileFieldsToMigrate = 0;
+	let excludedToMigrate = 0;
+	let fileBackedRowCount = 0;
+
+	for (const id of typeDirs) {
+		const baseDir = path.join(root, id);
+		const s = readSettings(baseDir);
+		if (!s) continue;
+		const fileBacked = s.kind === 'images' || s.kind === 'generic' || s.kind === 'blob_store';
+		const data = readJsonSafe(path.join(baseDir, dataFileFor(s)));
+		const rows = data && Array.isArray(data.images)
+			? data.images
+			: data && Array.isArray(data.records)
+				? data.records
+				: [];
+		const ffKeys = fileFieldKeys(s);
+		for (const rec of rows) {
+			if (!rec || typeof rec !== 'object') continue;
+			if (fileBacked) {
+				fileBackedRowCount++;
+				// Needs rekey if it carries a filename (legacy) or a `file_id` (interim layout).
+				if (typeof rec.file_name === 'string' || typeof rec.file_id === 'string') rowsToRekey++;
+			}
+			for (const k of ffKeys) {
+				if (typeof rec[k] === 'string' && rec[k] && !isUuid(rec[k])) fileFieldsToMigrate++;
+			}
+		}
+		if (Array.isArray(s.excludedFiles)) {
+			for (const e of s.excludedFiles) if (!isUuid(e)) excludedToMigrate++;
+		}
+	}
+
+	const manifestPath = path.join(globalFilesDir, 'manifest.json');
+	const manifestMissing = !fs.existsSync(manifestPath);
+	const blobsExist = listFiles(globalFilesDir).some((n) => n !== 'manifest.json' && !NON_BLOB_NAMES.has(n));
+
+	const needsMigration =
+		rowsToRekey > 0 ||
+		fileFieldsToMigrate > 0 ||
+		excludedToMigrate > 0 ||
+		(manifestMissing && (blobsExist || fileBackedRowCount > 0));
+
+	if (needsMigration) {
+		const detailParts = [];
+		if (manifestMissing) detailParts.push('build manifest.json');
+		if (rowsToRekey > 0) detailParts.push(`rekey ${rowsToRekey} row(s) → id`);
+		if (fileFieldsToMigrate > 0) detailParts.push(`migrate ${fileFieldsToMigrate} file-field value(s)`);
+		if (excludedToMigrate > 0) detailParts.push(`migrate ${excludedToMigrate} excluded entr(y/ies)`);
+		plan(`Stable file ids: ${detailParts.join(', ')}`, () => {
+			fs.mkdirSync(globalFilesDir, { recursive: true });
+
+			// 1. Build (or extend) the manifest from blobs currently in the global store.
+			const manifest =
+				readJsonSafe(manifestPath) && typeof readJsonSafe(manifestPath) === 'object'
+					? readJsonSafe(manifestPath)
+					: { version: 1, files: {} };
+			if (!manifest.files || typeof manifest.files !== 'object') manifest.files = {};
+			manifest.version = 1;
+			const nameToId = new Map();
+			for (const [fid, entry] of Object.entries(manifest.files)) {
+				if (entry && typeof entry.file_name === 'string') nameToId.set(entry.file_name, fid);
+			}
+			const mint = (name) => {
+				if (nameToId.has(name)) return nameToId.get(name);
+				const fid = randomUUID();
+				manifest.files[fid] = { file_name: name, created_at: new Date().toISOString() };
+				nameToId.set(name, fid);
+				return fid;
+			};
+			for (const name of listFiles(globalFilesDir)) {
+				if (name === 'manifest.json' || NON_BLOB_NAMES.has(name)) continue;
+				mint(name);
+			}
+
+			// 2-4. Rewrite each media type's rows / file-field values / excluded list.
+			for (const id of typeDirs) {
+				const baseDir = path.join(root, id);
+				const s = readSettings(baseDir);
+				if (!s) continue;
+				const fileBacked = s.kind === 'images' || s.kind === 'generic' || s.kind === 'blob_store';
+				const ffKeys = fileFieldKeys(s);
+				const dataPath = path.join(baseDir, dataFileFor(s));
+				const data = readJsonSafe(dataPath);
+
+				const rewriteFileFields = (rec) => {
+					let did = false;
+					for (const k of ffKeys) {
+						const v = rec[k];
+						if (typeof v === 'string' && v && !isUuid(v)) {
+							rec[k] = mint(v);
+							did = true;
+						}
+					}
+					return did;
+				};
+
+				if (data && fileBacked && Array.isArray(data.images)) {
+					let changed = false;
+					const kept = [];
+					for (const rec of data.images) {
+						if (!rec || typeof rec !== 'object') continue;
+						// Resolve the row's manifest `id` from whichever layout it is in:
+						//  - interim: a `file_id` value is already the manifest id → adopt it as `id`.
+						//  - legacy: a `file_name` → mint/look up the manifest id (overwriting any old
+						//    per-row random `id`, which was a workaround that predates the manifest).
+						if (typeof rec.file_id === 'string' && rec.file_id) {
+							rec.id = rec.file_id;
+							changed = true;
+						} else if (typeof rec.file_name === 'string' && rec.file_name) {
+							// Mint an entry even when the blob is missing, so the row keeps a stable id.
+							rec.id = mint(rec.file_name);
+							changed = true;
+						} else if (typeof rec.id !== 'string' || !rec.id) {
+							conflicts.push(`[${id}] dropped a row with no id, file_id, or file_name.`);
+							changed = true;
+							continue;
+						}
+						if ('file_id' in rec) {
+							delete rec.file_id;
+							changed = true;
+						}
+						if ('file_name' in rec) {
+							delete rec.file_name;
+							changed = true;
+						}
+						if (rewriteFileFields(rec)) changed = true;
+						kept.push(rec);
+					}
+					if (changed) writeJsonAtomic(dataPath, { ...data, images: kept });
+				} else if (data && s.kind === 'json' && Array.isArray(data.records)) {
+					let changed = false;
+					for (const rec of data.records) {
+						if (rec && typeof rec === 'object' && rewriteFileFields(rec)) changed = true;
+					}
+					if (changed) writeJsonAtomic(dataPath, data);
+				}
+
+				// Migrate settings.excludedFiles (filenames → file_ids; drop unresolved).
+				if (Array.isArray(s.excludedFiles) && s.excludedFiles.length > 0) {
+					const migrated = [];
+					let exChanged = false;
+					for (const e of s.excludedFiles) {
+						if (isUuid(e)) {
+							migrated.push(e);
+							continue;
+						}
+						exChanged = true;
+						const mapped = nameToId.get(e);
+						if (mapped) migrated.push(mapped);
+						else conflicts.push(`[${id}] dropped excluded entry "${e}" (no matching blob).`);
+					}
+					if (exChanged) {
+						writeJsonAtomic(path.join(baseDir, 'settings.json'), { ...s, excludedFiles: migrated });
+					}
+				}
+			}
+
+			// Persist the manifest last (it may have gained entries from file-field / row minting).
+			writeJsonAtomic(manifestPath, manifest);
+		});
+	} else if (manifestMissing && !blobsExist && fileBackedRowCount === 0) {
+		notes.push('No blobs yet — the manifest is created on first upload / app load.');
 	}
 }
 

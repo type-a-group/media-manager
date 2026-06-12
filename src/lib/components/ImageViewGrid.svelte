@@ -122,7 +122,7 @@
 			return;
 		}
 		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
-		const unique = [...new Set(items.map((i) => i.file_name).filter(Boolean))];
+		const unique = [...new Set(items.map((i) => i.id).filter(Boolean))];
 		if (unique.length === 0) {
 			deleteDiskImpactGroups = [];
 			return;
@@ -538,14 +538,15 @@
 		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
 		if (!typeId || items.length === 0) return;
 		deleteFromDiskOpen = false;
-		const filenames = items.map((i) => i.file_name);
+		const fileIds = items.map((i) => i.id);
 		try {
 			for (const item of items) {
-				if (!String(item.id).startsWith('unlinked:')) {
+				// Only linked items have a row to unlink; unlinked/excluded items do not.
+				if (selection.viewMode === 'linked') {
 					await apiUnlinkByIdForType(typeId, item.id);
 				}
 			}
-			await apiToggleExcludedFilesForType(typeId, filenames, 'exclude');
+			await apiToggleExcludedFilesForType(typeId, fileIds, 'exclude');
 			toast.success(
 				`Excluded ${items.length} file${items.length === 1 ? '' : 's'} from this group`
 			);
@@ -562,9 +563,9 @@
 			selection.multiselectedIds.includes(i.id)
 		);
 		if (items.length === 0) return;
-		const filenames = items.map((i) => i.file_name);
+		const fileIds = items.map((i) => i.id);
 		try {
-			await apiToggleExcludedFilesForType(typeId!, filenames, action);
+			await apiToggleExcludedFilesForType(typeId!, fileIds, action);
 			toast.success(
 				`${action === 'exclude' ? 'Excluded' : 'Unlinked'} ${items.length} image${items.length === 1 ? '' : 's'}`
 			);

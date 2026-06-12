@@ -72,13 +72,14 @@ When a change alters on-disk structure — `settings.json` / data-file layout, r
 
 ### Shared global blob store (critical design invariant)
 
-**All file-backed kinds read/write binaries from ONE directory: `<root>/files/` (`getGlobalFilesDir()`).** Per-type folders hold only catalog JSON that references blobs by `file_name`. Therefore the same physical file can be linked by many catalogs at once — **overlap is intentional, not a bug.** Consequences (all expected):
+**All file-backed kinds read/write binaries from ONE directory: `<root>/files/` (`getGlobalFilesDir()`).** Every blob is registered in a global **manifest** (`<root>/files/manifest.json`, `manifest.ts`) that gives it a stable, workspace-scoped **id** (UUID — the manifest key) and holds its current filename. A file-backed catalog row's primary key is `id` (same field json records use) and its value **is** that manifest id; the filename is **not** stored on the row — it's resolved from the manifest at read time. Unlike a json `id` (unique to one record), a file-backed `id` is the blob's identity, so the same `id` appears in every catalog referencing that blob — **overlap is intentional, not a bug.** Consequences (all expected):
 
-- Deleting a blob from disk strips references from _every_ catalog (`removeCatalogReferencesToFileGlobally`).
-- Renaming a file propagates the new name across all catalogs via `propagateFilenameRename` (covers linked UUID records, `unlinked:` entries, embedded url/file/array values, and `settings.excludedFiles`).
+- Deleting a blob from disk drops its manifest entry and strips rows keyed by that `file_id` from _every_ catalog (`removeCatalogReferencesToFileIdGlobally`).
+- Renaming a file is **O(1)**: rename the blob on disk + update the one manifest entry (`renameFileById` → `manifest.renameFileId`). No cross-catalog fan-out — every `file_id` reference is unaffected. (The old `propagateFilenameRename` was removed.)
+- Every list call **lazy-heals** the manifest against disk (`reconcile`): new files get a `file_id`, vanished blobs are flagged (not deleted); the response carries `healed: { added, missing }`.
 - A non-image blob existing in `files/` will not appear in an `images` catalog — filtering by extension per-kind is by design.
 
-For file-backed catalogs: a file is **linked** if it has a catalog row, **unlinked** if on disk but no row and not excluded, **excluded** if listed in `settings.excludedFiles`.
+For file-backed catalogs: a blob is **linked** if it has a row whose `id` is the blob's manifest id, **unlinked** if on disk (a manifest id) with no row and not excluded, **excluded** if its id is listed in `settings.excludedFiles`. Identity is the manifest id, so linking an unlinked file never changes its id. The legacy `unlinked:<name>` id scheme was removed. Migration is explicit-only (`npm run upgrade-data -- <root> --apply`); the app errors loudly on a file-backed row not in the current `id`-keyed shape.
 
 ### Reserved types
 
@@ -87,7 +88,8 @@ For file-backed catalogs: a file is **linked** if it has a catalog row, **unlink
 ### Storage layer (`src/lib/storage/`)
 
 - `paths.ts` — root + per-type path resolution, `usesImageRepoKind`, legacy `getAssetPaths()`.
-- `repo.ts` — file-backed persistence: list/CRUD/schema/filters, rename propagation. `listImages` branches on `isDiskOnlyList` (blob_store) vs catalog kinds and `allowAnyExtension` (generic).
+- `repo.ts` — file-backed persistence: list/CRUD/schema/filters, `id`-keyed rows whose id is the blob's manifest id (names resolved via the manifest). `listImages` reconciles the manifest then branches on `isDiskOnlyList` (blob_store) vs catalog kinds and `allowAnyExtension` (generic).
+- `manifest.ts` — global blob manifest (`files/manifest.json`): `file_id` registry with `mintFileId` / `renameFileId` / `removeFileId` / `reconcile` (lazy heal), atomic under a manifest lock taken before any catalog lock.
 - `jsonRepo.ts` — `json`-kind record persistence.
 - `settingsFile.ts` — read/write `settings.json` (both new and legacy layouts).
 - `mediaTypes.ts` — type CRUD + ensured default groups.
@@ -109,5 +111,5 @@ For file-backed catalogs: a file is **linked** if it has a catalog row, **unlink
 
 - **Svelte 5 only** (`.cursor/rules/svelte5.mdc`): use runes (`$state`, `$derived`, `$effect`, `$props`) — not legacy `export let` / reactive `$:`.
 - **Document new functions** (`.cursor/rules/document.mdc`): the codebase uses rich JSDoc with `@param`, use-case, and a "Concerns / future improvements" section. Match that density.
-- Field values: `url`-type fields are `{ display_name, url }` (`UrlValue`); legacy plain strings are normalized via `normalizeUrlValue`. Records use snake_case keys on disk (`file_name`, `last_modified`).
+- Field values: `url`-type fields are `{ display_name, url }` (`UrlValue`); legacy plain strings are normalized via `normalizeUrlValue`. Records use snake_case keys on disk; every record is keyed by `id` (for file-backed rows that id is the blob's manifest id, with the filename resolved from the manifest, not stored), `last_modified` is an ISO string. A `file`-type field value is a manifest id reference.
 - Schema field types: `string | number | boolean | dropdown | list | url | file` (`FieldTypeSchema`).

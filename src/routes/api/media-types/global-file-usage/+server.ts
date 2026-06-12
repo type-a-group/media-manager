@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listCatalogTypesReferencingFileSync } from '$lib/storage/repo.js';
+import { listCatalogTypesReferencingFileIdSync } from '$lib/storage/repo.js';
 
 /**
- * GET: List media groups whose image catalogs reference one or more filenames on the global blob store.
- * Query: repeated `filename` params (basenames under `root/files/`).
+ * GET: List media groups whose catalogs reference one or more blobs (by `file_id`) on the global store.
+ * Query: repeated `file_id` params (the blobs' manifest ids).
  *
- * Returns `{ groups: { typeId, displayName }[] }` as the union of referencing groups across all filenames.
+ * Returns `{ groups: { typeId, displayName }[] }` as the union of referencing groups across all ids.
  *
  * Use case: confirm "delete from disk" may remove catalog rows in other groups; offer "exclude" instead.
  *
@@ -14,14 +14,14 @@ import { listCatalogTypesReferencingFileSync } from '$lib/storage/repo.js';
  * - Large batches could use POST with a JSON body instead of long query strings.
  */
 export const GET: RequestHandler = async ({ url }) => {
-	const filenames = url.searchParams.getAll('filename').map((s) => s.trim()).filter(Boolean);
-	if (filenames.length === 0) {
-		throw error(400, 'At least one filename query parameter is required');
+	const fileIds = url.searchParams.getAll('file_id').map((s) => s.trim()).filter(Boolean);
+	if (fileIds.length === 0) {
+		throw error(400, 'At least one file_id query parameter is required');
 	}
 	try {
 		const byType = new Map<string, { typeId: string; displayName: string }>();
-		for (const fn of filenames) {
-			for (const g of listCatalogTypesReferencingFileSync(fn)) {
+		for (const fid of fileIds) {
+			for (const g of listCatalogTypesReferencingFileIdSync(fid)) {
 				byType.set(g.typeId, g);
 			}
 		}

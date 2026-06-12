@@ -4,8 +4,9 @@ import { getMediaTypePaths } from '$lib/storage/paths.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from '$lib/storage/settingsFile.js';
 import { z } from 'zod';
 
+// Exclusion follows the blob's identity, not its name: excludedFiles stores file_ids.
 const RequestSchema = z.object({
-    filenames: z.array(z.string()).min(1),
+    file_ids: z.array(z.string()).min(1),
     action: z.enum(['exclude', 'unexclude'])
 });
 
@@ -14,7 +15,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
     const parsed = RequestSchema.safeParse(body);
 
     if (!parsed.success) {
-        throw error(400, 'Invalid request body. Expected { filenames: string[], action: "exclude" | "unexclude" }');
+        throw error(400, 'Invalid request body. Expected { file_ids: string[], action: "exclude" | "unexclude" }');
     }
 
     try {
@@ -24,13 +25,13 @@ export const POST: RequestHandler = async ({ params, request }) => {
         if (!settings) throw error(404, 'Media type settings not found');
 
         let currentExcluded = settings.excludedFiles ?? [];
-        const { filenames, action } = parsed.data;
+        const { file_ids, action } = parsed.data;
 
         if (action === 'exclude') {
-            const toAdd = filenames.filter(f => !currentExcluded.includes(f));
+            const toAdd = file_ids.filter(f => !currentExcluded.includes(f));
             currentExcluded = [...currentExcluded, ...toAdd];
         } else {
-            const toRemove = new Set(filenames);
+            const toRemove = new Set(file_ids);
             currentExcluded = currentExcluded.filter(f => !toRemove.has(f));
         }
 

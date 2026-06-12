@@ -312,18 +312,18 @@ export const GlobalFileUsageResponseSchema = z.object({
 export type GlobalFileUsageResponse = z.infer<typeof GlobalFileUsageResponseSchema>;
 
 /**
- * List media groups whose catalogs reference the given filename(s) under the global `files/` directory.
+ * List media groups whose catalogs reference the given blob(s) by `file_id` on the global store.
  *
- * @param filenames - One or more basenames (e.g. from `file_name` or unlinked id)
+ * @param fileIds - One or more blob `file_id`s (e.g. a list item's `id`)
  * @param fetchFn - Optional fetch (SvelteKit load)
  */
 export async function apiGetGlobalFileUsage(
-	filenames: string | string[],
+	fileIds: string | string[],
 	fetchFn: typeof fetch = fetch
 ): Promise<GlobalFileUsageResponse> {
-	const list = (Array.isArray(filenames) ? filenames : [filenames]).filter(Boolean);
+	const list = (Array.isArray(fileIds) ? fileIds : [fileIds]).filter(Boolean);
 	const sp = new URLSearchParams();
-	for (const f of list) sp.append('filename', f);
+	for (const f of list) sp.append('file_id', f);
 	const res = await fetchFn(`/api/media-types/global-file-usage?${sp.toString()}`);
 	await assertOk(res, 'Failed to load global file usage');
 	return GlobalFileUsageResponseSchema.parse(await res.json());
@@ -743,18 +743,18 @@ export async function apiCreateRecordForType(typeId: string, fetchFn: typeof fet
 }
 
 /**
- * Add an existing file on disk to the catalog (images kind only).
- * Creates a record in image-data.json and returns it.
+ * Add an existing blob to the catalog by its `file_id` (file-backed kinds).
+ * Creates a row under the same file_id and returns it; the row's id equals the file_id.
  */
-export async function apiLinkByFilenameForType(
+export async function apiLinkByFileIdForType(
 	typeId: string,
-	file_name: string,
+	file_id: string,
 	fetchFn: typeof fetch = fetch
 ) {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/link`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ file_name })
+		body: JSON.stringify({ file_id })
 	});
 	await assertOk(res, 'Failed to link image');
 	return await res.json();
@@ -844,14 +844,14 @@ export async function apiUploadImageForTypeWithResolution(
 
 export async function apiToggleExcludedFilesForType(
 	typeId: string,
-	filenames: string[],
+	fileIds: string[],
 	action: 'exclude' | 'unexclude',
 	fetchFn: typeof fetch = fetch
 ) {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/excluded`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ filenames, action })
+		body: JSON.stringify({ file_ids: fileIds, action })
 	});
 	await assertOk(res, 'Failed to toggle excluded files');
 	return await res.json();
@@ -859,13 +859,13 @@ export async function apiToggleExcludedFilesForType(
 
 export async function apiCleanExcludedFilesForType(
 	typeId: string,
-	filenames: string[],
+	fileIds: string[],
 	fetchFn: typeof fetch = fetch
 ) {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/excluded/clean`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ filenames })
+		body: JSON.stringify({ file_ids: fileIds })
 	});
 	await assertOk(res, 'Failed to clean excluded files');
 	return await res.json();

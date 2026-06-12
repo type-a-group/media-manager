@@ -32,7 +32,7 @@
 		apiGetFieldValuesForType,
 		apiGetSettingsForType,
 		apiImageUrlByIdForType,
-		apiLinkByFilenameForType,
+		apiLinkByFileIdForType,
 		apiUpdatePropertiesByIdForType,
 		apiUnlinkByIdForType,
 		apiDeleteFromDiskByIdForType,
@@ -81,16 +81,21 @@
 	// Snapshot of last saved patch (from record) for dirty check.
 	let lastSavedPatch = $state<Record<string, any>>({});
 
-	/** True when selected item is an unlinked file (on disk, not in JSON). */
+	/** The visible list item for the current selection (carries the manifest-resolved file_name). */
+	const selectedItem = $derived(
+		selection.selectedImageId
+			? (selection.visibleImageItems.find((i) => i.id === selection.selectedImageId) ?? null)
+			: null
+	);
+	/**
+	 * True when the selected blob has no catalog row (on disk, not linked). The id (a `file_id`) is the
+	 * same whether linked or unlinked; we tell them apart by whether a record loaded.
+	 */
 	const isUnlinkedSelection = $derived(
-		!!(selection.selectedImageId && String(selection.selectedImageId).startsWith('unlinked:'))
+		schema !== null && record === null && !!selection.selectedImageId
 	);
-	/** Filename for unlinked selection (decoded from id). */
-	const unlinkedFilename = $derived(
-		isUnlinkedSelection && selection.selectedImageId
-			? decodeURIComponent(String(selection.selectedImageId).slice(9))
-			: ''
-	);
+	/** Filename for the current selection (record when linked, list item when unlinked). */
+	const unlinkedFilename = $derived(record?.file_name ?? selectedItem?.file_name ?? '');
 	/** True when current form values differ from the last saved record (or last init for unlinked). */
 	const isDirty = $derived(
 		schema !== null &&
@@ -272,13 +277,13 @@
 			lastSavedPatch = buildPatch();
 		} catch (e) {
 			const msg = (e as Error)?.message ?? '';
-			const id = selection.selectedImageId;
-			if (msg.includes('404') && id && String(id).startsWith('unlinked:')) {
+			if (msg.includes('404')) {
+				// Unlinked blob: it has a file_id but no catalog row. Load schema and start an empty form.
 				record = null;
 				try {
 					const s = await apiGetSchemaForType(typeId!);
 					schema = s;
-					const file_name = decodeURIComponent(String(id).slice(9));
+					const file_name = selectedItem?.file_name ?? '';
 					initFormValues(s, { file_name, image_name: '' });
 					lastSavedPatch = buildPatch();
 				} catch {
@@ -318,14 +323,14 @@
 			deleteDiskImpactLoading = false;
 			return;
 		}
-		const fn = record?.file_name ?? unlinkedFilename;
-		if (!fn) {
+		const fileId = selection.selectedImageId;
+		if (!fileId) {
 			deleteDiskImpactGroups = [];
 			return;
 		}
 		deleteDiskImpactLoading = true;
 		let cancelled = false;
-		apiGetGlobalFileUsage(fn)
+		apiGetGlobalFileUsage(fileId)
 			.then((r) => {
 				if (!cancelled) deleteDiskImpactGroups = r.groups;
 			})
@@ -447,8 +452,7 @@
 	 */
 	async function linkToCatalog() {
 		const id = selection.selectedImageId;
-		if (!typeId || !id || !String(id).startsWith('unlinked:')) return;
-		const file_name = decodeURIComponent(String(id).slice(9));
+		if (!typeId || !id || !isUnlinkedSelection) return;
 		const visibleIds = selection.visibleImageIds;
 		const currentIdx = visibleIds.indexOf(id);
 		// Use current media type's settings (project-specific), not global settings.
@@ -462,7 +466,8 @@
 
 		saving = true;
 		try {
-			const newRecord = await apiLinkByFilenameForType(typeId, file_name);
+			// Linking creates a row under the same file_id, so the selection id never changes.
+			const newRecord = await apiLinkByFileIdForType(typeId, id);
 			await apiUpdatePropertiesByIdForType(typeId, newRecord.id, buildPatch());
 			triggerImageListRefresh();
 
@@ -528,13 +533,13 @@
 	}
 
 	async function handleExclude() {
-		const filename = record?.file_name ?? unlinkedFilename;
-		if (!typeId || !filename) return;
+		const fileId = selection.selectedImageId;
+		if (!typeId || !fileId) return;
 		try {
-			if (record && selection.selectedImageId) {
-				await apiUnlinkByIdForType(typeId, selection.selectedImageId);
+			if (record) {
+				await apiUnlinkByIdForType(typeId, fileId);
 			}
-			await apiToggleExcludedFilesForType(typeId, [filename], 'exclude');
+			await apiToggleExcludedFilesForType(typeId, [fileId], 'exclude');
 			toast.success('Excluded image');
 			triggerImageListRefresh();
 			const selectedId = selection.selectedImageId;
@@ -554,10 +559,10 @@
 	}
 
 	async function handleUnexclude() {
-		const filename = record?.file_name ?? unlinkedFilename;
-		if (!typeId || !filename) return;
+		const fileId = selection.selectedImageId;
+		if (!typeId || !fileId) return;
 		try {
-			await apiToggleExcludedFilesForType(typeId, [filename], 'unexclude');
+			await apiToggleExcludedFilesForType(typeId, [fileId], 'unexclude');
 			toast.success('Unlinked image');
 			triggerImageListRefresh();
 			const selectedId = selection.selectedImageId;

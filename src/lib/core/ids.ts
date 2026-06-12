@@ -1,29 +1,42 @@
 import { z } from 'zod';
 
 /**
- * Runtime schema for an `imageId`.
+ * Runtime schema for an `imageId` — the stable identity used by API endpoints and UI selection.
  *
  * Use case:
- * - IDs are stored in `image-data.json` and used by API endpoints/UI selection.
- * - Linked records use a UUID. Unlinked list items (file on disk, not in JSON) use "unlinked:" + encoded filename.
+ * - For **file-backed** kinds (`images` / `generic` / `blob_store`) the id is the blob's workspace-wide
+ *   identity (a UUID minted in the global manifest). A catalog row's primary key `id` *is* this value,
+ *   so the same id can appear in multiple catalogs that reference the same blob.
+ * - For **json** kinds the id is the record's own minted UUID.
  *
  * Concerns / future improvements:
- * - Using UUIDs is simple and portable, but a shorter ID (nanoid/base62) may be nicer for logs and CLI output.
+ * - Using UUIDs is simple and portable, but a shorter id (nanoid/base62) may be nicer for logs/CLI.
+ * - The legacy `unlinked:<name>` id scheme was removed when blobs gained a stable `file_id`: an
+ *   unlinked file is now simply a manifest `file_id` that has no row in this catalog, so it keeps the
+ *   same id whether linked or not.
  */
-export const ImageIdSchema = z.union([
-	z.string().uuid(),
-	z.string().min(10).startsWith('unlinked:')
-]);
+export const ImageIdSchema = z.string().uuid();
 export type ImageId = z.infer<typeof ImageIdSchema>;
 
 /**
- * Generate a new `imageId`.
+ * Runtime schema for a `file_id` — a blob's stable, workspace-scoped identity in the global manifest
+ * (`<root>/files/manifest.json`). Independent of the (mutable) filename on disk.
  *
- * @returns A UUID string suitable for `image-data.json`.
+ * Use case:
+ * - Cross-catalog primary key for blobs in the shared global `files/` store. The same physical blob
+ *   referenced by many media types shares one `file_id`.
+ */
+export const FileIdSchema = z.string().uuid();
+export type FileId = z.infer<typeof FileIdSchema>;
+
+/**
+ * Generate a new UUID id (used for both json record ids and freshly minted `file_id`s).
+ *
+ * @returns A UUID string.
  *
  * Concerns / future improvements:
- * - If we ever need deterministic IDs (e.g. for reproducible sync), switch generation strategy and keep the
- *   validator compatible.
+ * - If we ever need deterministic ids (e.g. reproducible sync), switch generation strategy and keep
+ *   the validator compatible.
  */
 export function newImageId(): ImageId {
 	// Prefer native crypto.randomUUID when available (Node 19+, modern browsers).
@@ -41,3 +54,10 @@ export function newImageId(): ImageId {
 	return uuid as ImageId;
 }
 
+/**
+ * Mint a new `file_id`. Alias of {@link newImageId}; named separately so blob-registry call sites read
+ * clearly and so the two concepts can diverge later without churn.
+ */
+export function newFileId(): FileId {
+	return newImageId() as FileId;
+}

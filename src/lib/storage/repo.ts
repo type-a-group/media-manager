@@ -16,6 +16,14 @@ import {
 } from './settingsFile.js';
 import { createJsonRepoForType, type JsonRepo } from './jsonRepo.js';
 import { readImageDimensions } from '$lib/server/fileMetadata.js';
+import {
+	readManifest,
+	reconcile,
+	mintFileId,
+	renameFileId as manifestRenameFileId,
+	removeFileId,
+	type Manifest
+} from './manifest.js';
 
 import {
 	SchemaFileSchema,
@@ -28,7 +36,7 @@ import {
 	type ImageListResponse,
 	normalizeUrlValue
 } from '$lib/core/types.js';
-import { newImageId, type ImageId } from '$lib/core/ids.js';
+import { type ImageId } from '$lib/core/ids.js';
 import { hasAllowedImageExtension } from '$lib/core/images.js';
 import {
 	type FilterClause,
@@ -38,15 +46,19 @@ import {
 import type { FieldType } from '$lib/core/types.js';
 
 /**
- * Storage repository for images, properties, and schema backed by filesystem JSON files.
+ * Storage repository for file-backed media kinds (`images`, `generic`, `blob_store`), backed by
+ * filesystem JSON catalogs plus the shared global blob store (`<root>/files/`) and its manifest.
  *
- * Use case:
- * - Centralizes reading/writing `schema.json`, `image-data.json`, and the images directory.
- * - Performs migrations (adds `imageId`, normalizes legacy keys) and returns typed results.
+ * Identity model (post stable-file-ids):
+ * - A blob's identity is its `id` in the global manifest (`<root>/files/manifest.json`), not its
+ *   filename. A catalog row's primary key **is** that `id`; the filename is resolved from the
+ *   manifest at read time (no denormalized copy). The same physical blob shared by many catalogs has
+ *   one id, so rename is an O(1) manifest update with no cross-catalog fan-out, and an "unlinked" file
+ *   is simply a manifest id that has no row in this catalog (its id never changes on link).
  *
  * Concerns / future improvements:
- * - This is still a single-node filesystem implementation. For a future CLI+UI package, this should accept
- *   a configurable root and potentially alternative storage backends (sqlite, cloud, etc.).
+ * - Still a single-node filesystem implementation. A future package could accept a configurable root
+ *   and alternative backends (sqlite, cloud, etc.).
  */
 
 export type ImageRepo = ReturnType<typeof createImageRepo>;
@@ -75,6 +87,9 @@ function getPathsForType(typeId: string): ImageRepoPaths {
 	};
 }
 
+/** Non-blob files that live in the global store dir but must never be treated as blobs. */
+const NON_BLOB_NAMES = new Set(['manifest.json', 'settings.json', 'data.json', 'image-data.json']);
+
 export function createImageRepo(typeId?: string) {
 	/** Get current paths (re-reads settings so filename changes take effect). */
 	function p(): ImageRepoPaths {
@@ -88,7 +103,7 @@ export function createImageRepo(typeId?: string) {
 		};
 	}
 
-	/** Safe filename for disk paths: image extensions unless `generic` kind (any basename). */
+	/** Safe filename for disk paths: image extensions unless `generic`/`blob_store` kind (any basename). */
 	function assertRecordFilename(name: string): string {
 		if (typeId) {
 			const paths = p();
@@ -123,9 +138,6 @@ export function createImageRepo(typeId?: string) {
 	 * @param fallbackPath - Optional bundled/default JSON file to seed from
 	 * @param defaultValue - Fallback seed value if no bundled file exists
 	 * @returns Parsed JSON value
-	 *
-	 * Concerns / future improvements:
-	 * - For a real CLI, formalize a config file and versioned migrations for the metadata directory.
 	 */
 	async function readJsonFileOrInit(
 		targetPath: string,
@@ -182,22 +194,28 @@ export function createImageRepo(typeId?: string) {
 		return await withFileLock(`${paths.imageDataPath}.lock`, loadAndMigrateImageDataUnlocked);
 	}
 
-	async function ensureImagesSyncedToFilesystem(schema: SchemaDefinition, imageData: ImageDataFile): Promise<{
-		imageData: ImageDataFile;
-		changed: boolean;
-	}> {
+	/**
+	 * Backfill width/height for rows missing dimensions, resolving each row's blob path from the
+	 * manifest (filename is no longer stored on the row).
+	 */
+	async function ensureImagesSyncedToFilesystem(
+		schema: SchemaDefinition,
+		imageData: ImageDataFile,
+		manifest: Manifest
+	): Promise<{ imageData: ImageDataFile; changed: boolean }> {
+		void schema;
 		const paths = p();
 		if (!fssync.existsSync(paths.imagesDir)) {
 			await fs.mkdir(paths.imagesDir, { recursive: true });
 		}
 
-		// Backfill width/height for records missing dimensions.
 		let changed = false;
 		const images = await Promise.all(
 			imageData.images.map(async (img) => {
 				if (img.width != null && img.height != null) return img;
-				if ((img as any).is_template) return img;
-				const filePath = path.join(paths.imagesDir, img.file_name);
+				const fileName = manifest.files[img.id]?.file_name;
+				if (!fileName) return img;
+				const filePath = path.join(paths.imagesDir, fileName);
 				if (!fssync.existsSync(filePath)) return img;
 				try {
 					const dims = await readImageDimensions(filePath);
@@ -224,25 +242,54 @@ export function createImageRepo(typeId?: string) {
 		await writeJsonFileAtomic(paths.imageDataPath, imageData);
 	}
 
-	function toListItem(rec: ImageRecord): ImageListItem {
+	/** Enrich an on-disk row with its resolved `file_name` (from the manifest) for the API. */
+	function enrichRecord(rec: ImageRecord, manifest: Manifest): ImageRecord {
+		return {
+			...rec,
+			file_name: manifest.files[rec.id]?.file_name ?? ''
+		} as unknown as ImageRecord;
+	}
+
+	/** List item for a catalog row (id is the blob's manifest id; name resolved from manifest). */
+	function toListItem(rec: ImageRecord, manifest: Manifest): ImageListItem {
 		return {
 			id: rec.id,
-			file_name: rec.file_name,
+			file_name: manifest.files[rec.id]?.file_name ?? '',
 			image_name: rec.image_name || undefined,
 			width: rec.width,
 			height: rec.height
 		};
 	}
 
-	/** Build list item for an unlinked file (on disk but not in JSON). Id is "unlinked:" + encoded filename. */
-	function toUnlinkedListItem(filename: string): ImageListItem {
+	/** List item for a manifest id with no row in this catalog (unlinked / excluded / blob-store entry). */
+	function toListItemFromManifest(fileId: string, manifest: Manifest): ImageListItem {
 		return {
-			id: (`unlinked:${encodeURIComponent(filename)}`) as ImageId,
-			file_name: filename,
+			id: fileId,
+			file_name: manifest.files[fileId]?.file_name ?? '',
 			image_name: undefined,
 			width: undefined,
 			height: undefined
 		};
+	}
+
+	/**
+	 * Read the basenames of real blobs currently in the global store (excludes manifest/settings/data
+	 * files, lock files, and dotfiles).
+	 */
+	async function readDiskBlobNames(): Promise<string[]> {
+		const paths = p();
+		const dirents = await fs
+			.readdir(paths.imagesDir, { withFileTypes: true })
+			.catch(() => [] as fssync.Dirent[]);
+		return dirents
+			.filter(
+				(d) =>
+					d.isFile() &&
+					!d.name.startsWith('.') &&
+					!d.name.endsWith('.lock') &&
+					!NON_BLOB_NAMES.has(d.name)
+			)
+			.map((d) => d.name);
 	}
 
 	/**
@@ -256,12 +303,6 @@ export function createImageRepo(typeId?: string) {
 
 	/**
 	 * Evaluates a single record against one filter clause.
-	 * Uses schema to determine field type and applies the appropriate operator.
-	 *
-	 * @param rec - Image record
-	 * @param clause - Filter clause (field, operator, optional value)
-	 * @param schema - Schema definition for field types
-	 * @returns true if the record matches the clause
 	 */
 	function evaluateClause(rec: ImageRecord, clause: FilterClause, schema: SchemaDefinition): boolean {
 		const { field, operator, value } = clause;
@@ -373,7 +414,6 @@ export function createImageRepo(typeId?: string) {
 		// string, dropdown (single): treat as string
 		const str = raw != null ? String(raw).toLowerCase() : '';
 		const filterStr = value != null ? String(value).toLowerCase() : '';
-		// contains with empty filterStr matches all (str.includes('') is true for any string)
 		switch (operator) {
 			case OPERATORS.equals:
 				return str === filterStr;
@@ -411,79 +451,55 @@ export function createImageRepo(typeId?: string) {
 		const isDiskOnlyList = settings?.kind === 'blob_store';
 		const allowAnyExtension = settings?.kind === 'generic';
 
+		// 1. Read disk + reconcile the manifest (lazy heal) — done before any catalog lock.
+		const diskNames = await readDiskBlobNames();
+		const { added, missing, manifest } = await reconcile(diskNames);
+		const healed = { added: added.length, missing: missing.length };
+		const diskNameSet = new Set(diskNames);
+
 		if (isDiskOnlyList) {
-			const diskFiles = await fs.readdir(paths.imagesDir).catch(() => [] as string[]);
-			const unlinked = [];
 			const q = params?.query ? params.query.toLowerCase() : null;
-			const skip = new Set<string>(['settings.json']);
-			if (settings?.kind === 'blob_store') {
-				skip.add(path.basename(paths.imageDataPath));
-				skip.add('data.json');
-			}
-			for (const f of diskFiles) {
-				if (skip.has(f) || f.startsWith('.')) continue;
-				if (q && !f.toLowerCase().includes(q)) continue;
-				try {
-					const st = await fs.stat(path.join(paths.imagesDir, f));
-					if (st.isFile()) {
-						unlinked.push(toUnlinkedListItem(f));
-					}
-				} catch {
-					// ignore stat errors
-				}
+			const unlinked: ImageListItem[] = [];
+			for (const [id, entry] of Object.entries(manifest.files)) {
+				if (!diskNameSet.has(entry.file_name)) continue;
+				if (q && !entry.file_name.toLowerCase().includes(q)) continue;
+				unlinked.push(toListItemFromManifest(id, manifest));
 			}
 			return {
 				linked: [],
 				unlinked,
 				excluded: [],
 				missing_files: [],
-				excluded_missing_files: []
+				excluded_missing_files: [],
+				healed
 			};
 		}
 
 		const schemaFile = await loadAndMigrateSchema();
-
-		let excludedPaths: string[] = [];
-		if (settings) {
-			excludedPaths = settings.excludedFiles ?? [];
-		}
-		const excludedFilenames = new Set(excludedPaths);
+		const excludedIds = new Set<string>(settings?.excludedFiles ?? []);
 
 		const imageData = await withFileLock(`${paths.imageDataPath}.lock`, async () => {
 			const base = await loadAndMigrateImageDataUnlocked();
-			const synced = await ensureImagesSyncedToFilesystem(schemaFile.schema, base);
+			const synced = await ensureImagesSyncedToFilesystem(schemaFile.schema, base, manifest);
 			if (synced.changed) await writeImageData(synced.imageData);
 			return synced.imageData;
 		});
 
-		// For `generic` catalogs, any non-hidden file counts; `images` (and legacy) only consider
-		// allowed image extensions. Directories are excluded via dirent type.
-		const dirents = await fs
-			.readdir(paths.imagesDir, { withFileTypes: true })
-			.catch(() => [] as fssync.Dirent[]);
-		const diskFiles = new Set(
-			dirents
-				.filter((d) => d.isFile() && !d.name.startsWith('.'))
-				.map((d) => d.name)
-				.filter((f) => (allowAnyExtension ? true : hasAllowedImageExtension(f)))
-		);
+		// Which manifest ids are real blobs on disk (images filters by extension; generic allows any).
+		const onDiskFileIds = new Set<string>();
+		for (const [id, entry] of Object.entries(manifest.files)) {
+			if (!diskNameSet.has(entry.file_name)) continue;
+			if (!allowAnyExtension && !hasAllowedImageExtension(entry.file_name)) continue;
+			onDiskFileIds.add(id);
+		}
 
-		// Linked = records in JSON that exist on disk. Unlinked = files on disk that are not in JSON.
-		const jsonFilenames = new Set(
-			imageData.images
-				.filter((r) => !(r as any).is_template)
-				.map((r) => r.file_name)
-		);
-		let linked = imageData.images.filter(
-			(r) => !(r as any).is_template && diskFiles.has(r.file_name)
-		);
-		const unlinkedFilenames = [...diskFiles].filter((f) => !jsonFilenames.has(f) && !excludedFilenames.has(f));
-		const unlinked = unlinkedFilenames.map(toUnlinkedListItem);
+		const rowsByFileId = new Map(imageData.images.map((r) => [r.id, r]));
 
-		const excludedFilenamesOnDisk = [...diskFiles].filter((f) => !jsonFilenames.has(f) && excludedFilenames.has(f));
-		const excluded = excludedFilenamesOnDisk.map(toUnlinkedListItem);
-
-		const excluded_missing_files = [...excludedFilenames].filter((f) => !diskFiles.has(f));
+		// Linked = rows whose blob is on disk. Unlinked = on-disk ids with no row, not excluded.
+		let linked = imageData.images.filter((r) => onDiskFileIds.has(r.id));
+		const unlinkedIds = [...onDiskFileIds].filter((id) => !rowsByFileId.has(id) && !excludedIds.has(id));
+		const excludedIdsOnDisk = [...onDiskFileIds].filter((id) => !rowsByFileId.has(id) && excludedIds.has(id));
+		const excluded_missing_files = [...excludedIds].filter((id) => !onDiskFileIds.has(id));
 
 		const filters = params?.filters ?? null;
 		if (filters != null && filters.length > 0) {
@@ -496,7 +512,7 @@ export function createImageRepo(typeId?: string) {
 			if (query || empty) {
 				linked = linked.filter((r) => {
 					if (!field) return false;
-					const value = (r as any)[field];
+					const value = (r as Record<string, unknown>)[field];
 					if (empty) return value === '' || value === undefined || value === null;
 					if (query && value !== undefined)
 						return String(value).toLowerCase().includes(String(query).toLowerCase());
@@ -506,13 +522,12 @@ export function createImageRepo(typeId?: string) {
 		}
 
 		const missing_files = imageData.images
-			.filter((r) => !(r as any).is_template)
-			.filter((r) => !diskFiles.has(r.file_name))
-			.map(toListItem);
+			.filter((r) => !onDiskFileIds.has(r.id))
+			.map((r) => toListItem(r, manifest));
 
 		const groupBy = params?.groupBy ?? null;
 		const withGroupBy = (rec: ImageRecord): ImageListItem => {
-			const item = toListItem(rec);
+			const item = toListItem(rec, manifest);
 			if (!groupBy) return item;
 			const val = (rec as Record<string, unknown>)[groupBy];
 			const def = schemaFile.schema[groupBy];
@@ -537,36 +552,40 @@ export function createImageRepo(typeId?: string) {
 			return { ...item, group_by_value: groupVal };
 		};
 
-		const unlinkedItems =
-			groupBy != null
-				? unlinked.map((item) => ({ ...item, group_by_value: null as string | number | boolean | string[] | null }))
-				: unlinked;
-
-		const excludedItems =
-			groupBy != null
-				? excluded.map((item) => ({ ...item, group_by_value: null as string | number | boolean | string[] | null }))
-				: excluded;
+		const unlinked = unlinkedIds.map((id) => {
+			const item = toListItemFromManifest(id, manifest);
+			return groupBy != null
+				? { ...item, group_by_value: null as string | number | boolean | string[] | null }
+				: item;
+		});
+		const excluded = excludedIdsOnDisk.map((id) => {
+			const item = toListItemFromManifest(id, manifest);
+			return groupBy != null
+				? { ...item, group_by_value: null as string | number | boolean | string[] | null }
+				: item;
+		});
 
 		return {
 			linked: linked.map(withGroupBy),
-			unlinked: unlinkedItems,
+			unlinked,
 			missing_files,
-			excluded: excludedItems,
-			excluded_missing_files
+			excluded,
+			excluded_missing_files,
+			healed
 		};
 	}
 
 	/**
-	 * Returns a record by id. URL fields are normalized to { display_name, url } so legacy string values appear as objects.
-	 * Unlinked list items use id "unlinked:filename"; they have no record in JSON, so return null.
+	 * Returns a record by id (the blob's manifest id). URL fields are normalized and the manifest-resolved
+	 * `file_name` is attached for the API. Returns null for an unlinked id (no row in this catalog).
 	 */
 	async function getRecordById(id: ImageId): Promise<ImageRecord | null> {
-		if (typeof id === 'string' && id.startsWith('unlinked:')) return null;
 		const data = await loadAndMigrateImageData();
 		const rec = data.images.find((r) => r.id === id) ?? null;
 		if (!rec) return null;
+		const manifest = await readManifest();
 		const schemaFile = await loadAndMigrateSchema();
-		const out = { ...rec } as Record<string, unknown>;
+		const out = { ...enrichRecord(rec, manifest) } as Record<string, unknown>;
 		for (const [key, def] of Object.entries(schemaFile.schema)) {
 			if (def?.type === 'url' && key in out && out[key] != null) {
 				out[key] = normalizeUrlValue(out[key]);
@@ -575,31 +594,49 @@ export function createImageRepo(typeId?: string) {
 		return out as ImageRecord;
 	}
 
+	/** Find the catalog row for a filename (resolved via manifest), or null. */
 	async function getRecordByFilename(filename: string): Promise<ImageRecord | null> {
 		const safe = assertRecordFilename(filename);
+		const manifest = await readManifest();
+		let fileId: string | null = null;
+		for (const [id, entry] of Object.entries(manifest.files)) {
+			if (entry.file_name === safe) {
+				fileId = id;
+				break;
+			}
+		}
+		if (!fileId) return null;
 		const data = await loadAndMigrateImageData();
-		return data.images.find((r) => r.file_name === safe) ?? null;
+		const rec = data.images.find((r) => r.id === fileId) ?? null;
+		return rec ? enrichRecord(rec, manifest) : null;
 	}
 
-	async function ensureRecordForFilename(filename: string): Promise<ImageRecord> {
-		const safe = assertRecordFilename(filename);
+	/**
+	 * Ensure a catalog row exists for a `id` (the link operation). The row is created under the
+	 * **same** id, so linking never changes a blob's identity.
+	 *
+	 * @param fileId - Manifest id of an existing blob.
+	 * @returns The (existing or newly created) row, enriched with `id` + resolved `file_name`.
+	 */
+	async function ensureRecordForFileId(fileId: string): Promise<ImageRecord> {
 		const schemaFile = await loadAndMigrateSchema();
-
 		const paths = p();
+		const manifest = await readManifest();
+		const fileName = manifest.files[fileId]?.file_name;
+		if (!fileName) throw new Error('Unknown id');
+
 		return await withFileLock(`${paths.imageDataPath}.lock`, async () => {
 			const base = await loadAndMigrateImageDataUnlocked();
-			const existing = base.images.find((r) => r.file_name === safe);
-			if (existing) return existing;
+			const existing = base.images.find((r) => r.id === fileId);
+			if (existing) return enrichRecord(existing, manifest);
 
-			const defaults: Record<string, any> = {};
+			const defaults: Record<string, unknown> = {};
 			for (const [key, def] of Object.entries(schemaFile.schema)) {
-				if (key === 'file_name' || key === 'last_modified' || key === 'default') continue;
-				// generic kind doesn't get image_name
-				if (key === 'image_name') {
-					if (typeId) {
-						const settings = readMediaTypeSettingsFileSync(paths.baseDir);
-						if (settings?.kind === 'generic' || settings?.kind === 'blob_store') continue;
-					}
+				if (key === 'id' || key === 'last_modified' || key === 'default') continue;
+				// generic / blob_store kinds don't get image_name
+				if (key === 'image_name' && typeId) {
+					const settings = readMediaTypeSettingsFileSync(paths.baseDir);
+					if (settings?.kind === 'generic' || settings?.kind === 'blob_store') continue;
 				}
 
 				defaults[key] =
@@ -619,13 +656,12 @@ export function createImageRepo(typeId?: string) {
 										: '');
 			}
 
-			const filePath = path.join(paths.imagesDir, safe);
+			const filePath = path.join(paths.imagesDir, fileName);
 			const stats = await fs.stat(filePath).catch(() => null);
 			const dimensions = await readImageDimensions(filePath);
 
 			const created = ImageRecordSchema.parse({
-				id: newImageId(),
-				file_name: safe,
+				id: fileId,
 				image_name: '',
 				last_modified: stats ? stats.mtime.toISOString() : undefined,
 				...defaults,
@@ -634,8 +670,18 @@ export function createImageRepo(typeId?: string) {
 			});
 
 			await writeImageData({ images: [...base.images, created] });
-			return created;
+			return enrichRecord(created, manifest);
 		});
+	}
+
+	/**
+	 * Ensure a catalog row exists for a filename (mints/looks up the manifest id, then links it).
+	 * Thin back-compat wrapper over {@link ensureRecordForFileId}.
+	 */
+	async function ensureRecordForFilename(filename: string): Promise<ImageRecord> {
+		const safe = assertRecordFilename(filename);
+		const fileId = await mintFileId(safe);
+		return ensureRecordForFileId(fileId);
 	}
 
 	async function updatePropertiesById(id: ImageId, patch: Record<string, unknown>): Promise<ImageRecord> {
@@ -646,31 +692,22 @@ export function createImageRepo(typeId?: string) {
 			const idx = base.images.findIndex((r) => r.id === id);
 			if (idx === -1) throw new Error('Image record not found');
 
-			const record = base.images[idx] as any;
+			const record = base.images[idx] as Record<string, unknown>;
 
 			const stKind = typeId ? readMediaTypeSettingsFileSync(paths.baseDir)?.kind : null;
 			const isGenericLike = stKind === 'generic' || stKind === 'blob_store';
 
 			// Only allow schema-defined keys (plus image_name for images) to be updated here.
+			const protectedKeys = ['id', 'last_modified', 'default', 'width', 'height'];
 			const allowedKeys = new Set(Object.keys(schemaFile.schema));
-			allowedKeys.delete('file_name');
-			allowedKeys.delete('last_modified');
-			allowedKeys.delete('default');
-			allowedKeys.delete('id');
-			allowedKeys.delete('is_template');
-			allowedKeys.delete('width');
-			allowedKeys.delete('height');
+			for (const k of protectedKeys) allowedKeys.delete(k);
 			if (!isGenericLike) allowedKeys.add('image_name');
 
-			const next: any = { ...record };
+			const next: Record<string, unknown> = { ...record };
 			for (const [k, v] of Object.entries(patch)) {
 				if (allowedKeys.has(k)) {
 					next[k] = v;
-				} else if (
-					k in record &&
-					!['id', 'file_name', 'last_modified', 'is_template', 'width', 'height'].includes(k) &&
-					v === null
-				) {
+				} else if (k in record && !protectedKeys.includes(k) && v === null) {
 					// Allow removing custom/orphaned keys by setting to null.
 					delete next[k];
 				}
@@ -682,13 +719,14 @@ export function createImageRepo(typeId?: string) {
 			images[idx] = parsed;
 
 			await writeImageData({ images });
-			return parsed;
+			const manifest = await readManifest();
+			return enrichRecord(parsed, manifest);
 		});
 	}
 
 	/**
-	 * Remove the image record from image-data.json entirely.
-	 * The file stays on disk; it will reappear in the unlinked list on next sync (with a new id).
+	 * Remove the catalog row entirely (the file + manifest entry stay; the blob returns to the unlinked
+	 * list under the **same** id on next list).
 	 */
 	async function unlinkById(id: ImageId): Promise<void> {
 		const paths = p();
@@ -704,9 +742,6 @@ export function createImageRepo(typeId?: string) {
 
 	/**
 	 * Compute the default value for a schema field definition (mirrors addSchemaField defaults).
-	 *
-	 * @param def - Field definition from the schema
-	 * @returns A sensible empty/default value for the field's type
 	 */
 	function defaultForFieldDef(def: {
 		type?: string;
@@ -735,13 +770,6 @@ export function createImageRepo(typeId?: string) {
 
 	/**
 	 * Update the same properties on many records in one call.
-	 *
-	 * @param ids - Record ids to update
-	 * @param patch - Property patch applied to each (schema-validated per record)
-	 * @returns The updated records
-	 *
-	 * Concerns / future improvements:
-	 * - Takes the data-file lock once per record; acceptable for typical selection sizes.
 	 */
 	async function bulkUpdatePropertiesByIds(
 		ids: ImageId[],
@@ -756,8 +784,6 @@ export function createImageRepo(typeId?: string) {
 
 	/**
 	 * Unlink many records (remove their catalog rows; files stay on disk).
-	 *
-	 * @param ids - Record ids to unlink
 	 */
 	async function bulkUnlinkByIds(ids: ImageId[]): Promise<void> {
 		for (const id of ids) {
@@ -768,8 +794,6 @@ export function createImageRepo(typeId?: string) {
 	/**
 	 * Delete many files from disk (global blob store) in one call. Each delete also strips the file's
 	 * references from every catalog (see {@link deleteFromDiskById}).
-	 *
-	 * @param ids - Record ids whose backing files should be deleted
 	 */
 	async function bulkDeleteFromDiskByIds(ids: ImageId[]): Promise<void> {
 		for (const id of ids) {
@@ -778,15 +802,7 @@ export function createImageRepo(typeId?: string) {
 	}
 
 	/**
-	 * Scan all (non-template) records against the current schema and report records that are missing
-	 * schema-defined fields. Missing fields are filled with the field's default value.
-	 *
-	 * @param dryRun - When true, only report issues; when false, persist fixes
-	 * @returns Issues found and number of records modified (0 on dry run)
-	 *
-	 * Concerns / future improvements:
-	 * - Currently only detects/fills missing fields; does not coerce type mismatches (kept conservative
-	 *   to avoid destructive changes).
+	 * Scan all records against the current schema and report records missing schema-defined fields.
 	 */
 	async function repairRecords(
 		dryRun = true
@@ -799,12 +815,11 @@ export function createImageRepo(typeId?: string) {
 			const issues: { id: string; field: string; issue: string; fix?: unknown }[] = [];
 			let fixed = 0;
 			const images = base.images.map((rec) => {
-				if ((rec as { is_template?: boolean }).is_template) return rec;
 				const recAny = rec as Record<string, unknown>;
 				const next: Record<string, unknown> = { ...recAny };
 				let recChanged = false;
 				for (const [key, def] of Object.entries(schema)) {
-					if (key === 'file_name') continue;
+					if (key === 'id') continue;
 					if (recAny[key] === undefined) {
 						const fix = defaultForFieldDef(def as never);
 						issues.push({ id: rec.id as string, field: key, issue: 'Missing value', fix });
@@ -825,11 +840,6 @@ export function createImageRepo(typeId?: string) {
 
 	/**
 	 * Replace this media type's entire schema (used by schema import and clone-from-type).
-	 * Validates the incoming definition, persists it, then backfills defaults for any newly added
-	 * fields onto existing records.
-	 *
-	 * @param schema - Full schema definition to apply
-	 * @returns The validated schema that was written
 	 */
 	async function importSchema(schema: SchemaDefinition): Promise<{ schema: SchemaDefinition }> {
 		const paths = p();
@@ -853,7 +863,7 @@ export function createImageRepo(typeId?: string) {
 				const images = imageData.images.map((img) => {
 					const next = { ...(img as Record<string, unknown>) };
 					for (const [key, def] of Object.entries(validated)) {
-						if (key === 'file_name') continue;
+						if (key === 'id') continue;
 						if (next[key] === undefined) {
 							next[key] = defaultForFieldDef(def as never);
 							didChange = true;
@@ -884,7 +894,7 @@ export function createImageRepo(typeId?: string) {
 			const st0 = readMediaTypeSettingsFileSync(paths.baseDir);
 			if (st0?.kind === 'blob_store') throw new Error('Schema is not editable for blob store media types');
 		}
-		const lockPath = typeId ? `${paths.schemaPath}.lock` : `${paths.schemaPath}.lock`;
+		const lockPath = `${paths.schemaPath}.lock`;
 		return await withFileLock(lockPath, async () => {
 			let schemaFile: SchemaFile;
 			if (typeId) {
@@ -896,16 +906,16 @@ export function createImageRepo(typeId?: string) {
 				schemaFile = migrateSchemaFile(raw).file;
 			}
 
-			const def: any = {
+			const def: SchemaDefinition[string] = {
 				type: parsedType,
 				removable: true,
-				defaultValue: defaultValue as any
+				defaultValue: defaultValue as never
 			};
 			if (parsedType === 'dropdown' && options?.length) {
 				def.options = options;
 				if (multiselect) def.multiselect = true;
 			}
-			if (parsedType === 'list' && itemTypes?.length) def.itemTypes = itemTypes;
+			if (parsedType === 'list' && itemTypes?.length) def.itemTypes = itemTypes as never;
 			schemaFile.schema[key] = def;
 
 			if (typeId) {
@@ -916,7 +926,7 @@ export function createImageRepo(typeId?: string) {
 				await writeJsonFileAtomic(paths.schemaPath, schemaFile);
 			}
 
-			// Apply to all image records as well (so forms stay consistent).
+			// Apply to all records as well (so forms stay consistent).
 			await withFileLock(`${paths.imageDataPath}.lock`, async () => {
 				const dataRaw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
 				const { file: imageData, changed: imgChanged } = migrateImageDataFile(dataRaw);
@@ -942,8 +952,8 @@ export function createImageRepo(typeId?: string) {
 											: '';
 				}
 				const images = imageData.images.map((img) => {
-					const next: any = { ...img };
-					if ((next as any)[key] === undefined) {
+					const next = { ...(img as Record<string, unknown>) };
+					if (next[key] === undefined) {
 						next[key] = defaultVal;
 						didChange = true;
 					}
@@ -995,8 +1005,8 @@ export function createImageRepo(typeId?: string) {
 			if (newKey !== key && isProtectedSchemaKey(newKey)) throw new Error('Field not modifiable');
 
 			const type = updates.type ? FieldTypeSchema.parse(updates.type) : def.type;
-			const wasMultiselect = (def as any).multiselect === true;
-			const multiselect = type === 'dropdown' ? (updates.multiselect ?? (def as any).multiselect ?? false) : false;
+			const wasMultiselect = (def as { multiselect?: boolean }).multiselect === true;
+			const multiselect = type === 'dropdown' ? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false) : false;
 
 			let defaultValue = updates.defaultValue ?? def.defaultValue;
 			if (type === 'url' && typeof defaultValue === 'string') {
@@ -1007,7 +1017,7 @@ export function createImageRepo(typeId?: string) {
 				defaultValue = defaultValue[0] ?? '';
 			}
 			const options = updates.options ?? def.options;
-			const itemTypes = updates.itemTypes ?? (def as any).itemTypes;
+			const itemTypes = updates.itemTypes ?? (def as { itemTypes?: string[] }).itemTypes;
 
 			if (type === 'dropdown' && options?.length && defaultValue !== undefined) {
 				if (multiselect) {
@@ -1029,9 +1039,9 @@ export function createImageRepo(typeId?: string) {
 			schemaFile.schema[newKey] = {
 				type,
 				removable: def.removable,
-				defaultValue: defaultValue as any,
+				defaultValue: defaultValue as never,
 				...(options?.length ? { options } : {}),
-				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
+				...(type === 'list' && itemTypes?.length ? { itemTypes: itemTypes as never } : {}),
 				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
 			};
 
@@ -1048,7 +1058,7 @@ export function createImageRepo(typeId?: string) {
 					const dataRaw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
 					const { file: imageData } = migrateImageDataFile(dataRaw);
 					const images = imageData.images.map((img) => {
-						const next: any = { ...img };
+						const next = { ...(img as Record<string, unknown>) };
 						if (key in next) {
 							next[newKey] = next[key];
 							delete next[key];
@@ -1063,7 +1073,7 @@ export function createImageRepo(typeId?: string) {
 					const dataRaw = await readJsonFileOrInit(paths.imageDataPath, null, { images: [] });
 					const { file: imageData } = migrateImageDataFile(dataRaw);
 					const images = imageData.images.map((img) => {
-						const next: any = { ...img };
+						const next = { ...(img as Record<string, unknown>) };
 						const val = next[newKey];
 						if (Array.isArray(val)) next[newKey] = val[0] ?? '';
 						return ImageRecordSchema.parse(next);
@@ -1115,7 +1125,7 @@ export function createImageRepo(typeId?: string) {
 					const { file: imageData } = migrateImageDataFile(dataRaw);
 
 					const images = imageData.images.map((img) => {
-						const next: any = { ...img };
+						const next = { ...(img as Record<string, unknown>) };
 						delete next[key];
 						return ImageRecordSchema.parse(next);
 					});
@@ -1134,11 +1144,7 @@ export function createImageRepo(typeId?: string) {
 	}
 
 	/**
-	 * Returns unique values for a field across all image records.
-	 * For list fields: flattens arrays and dedupes. For string fields: collects unique strings.
-	 *
-	 * @param fieldName - Schema field key (e.g. tags, category)
-	 * @returns Sorted array of unique string values
+	 * Returns unique values for a field across all records.
 	 */
 	async function getUniqueFieldValues(fieldName: string): Promise<string[]> {
 		const data = await loadAndMigrateImageData();
@@ -1151,7 +1157,7 @@ export function createImageRepo(typeId?: string) {
 			return String(item).trim();
 		};
 		for (const rec of data.images) {
-			const v = (rec as any)[fieldName];
+			const v = (rec as Record<string, unknown>)[fieldName];
 			if (v === undefined || v === null) continue;
 			if (Array.isArray(v)) {
 				for (const item of v) {
@@ -1170,257 +1176,86 @@ export function createImageRepo(typeId?: string) {
 		return [...seen].sort();
 	}
 
+	/**
+	 * Resolve a manifest id to its filename, verifying the blob is present on disk.
+	 * Returns null if the id is unknown or its blob is missing.
+	 */
 	async function getFilenameForId(id: ImageId): Promise<string | null> {
-		if (typeof id === 'string' && id.startsWith('unlinked:')) {
-			const decoded = decodeURIComponent(id.slice(9));
-			const safe = assertRecordFilename(decoded);
-			const paths = p();
-			const filePath = path.join(paths.imagesDir, safe);
-			try {
-				await fs.access(filePath);
-				return safe;
-			} catch {
-				return null;
-			}
+		const manifest = await readManifest();
+		const name = manifest.files[id]?.file_name;
+		if (!name) return null;
+		const safe = assertRecordFilename(name);
+		const paths = p();
+		try {
+			await fs.access(path.join(paths.imagesDir, safe));
+			return safe;
+		} catch {
+			return null;
 		}
-		const rec = await getRecordById(id);
-		return rec?.file_name ? assertRecordFilename(rec.file_name) : null;
 	}
 
 	/**
-	 * Delete the image file from disk and, if it was in JSON, remove its record.
+	 * Delete the blob from disk, drop its manifest entry, and strip its references from every catalog.
 	 *
-	 * @param id - ImageId (UUID for linked, or "unlinked:filename" for unlinked)
-	 * @throws Error if file not found or deletion fails
+	 * @param id - id of the blob to delete.
 	 */
 	async function deleteFromDiskById(id: ImageId): Promise<void> {
-		const filename = await getFilenameForId(id);
-		if (!filename) throw new Error('Image record not found');
+		const manifest = await readManifest();
+		const entry = manifest.files[id];
+		if (!entry) throw new Error('Image record not found');
 
 		const paths = p();
-		const filePath = path.join(paths.imagesDir, filename);
+		const filePath = path.join(paths.imagesDir, entry.file_name);
 		await fs.unlink(filePath).catch((err) => {
 			const e = err as NodeJS.ErrnoException;
 			if (e.code !== 'ENOENT') throw err;
 		});
 
-		await removeCatalogReferencesToFileGlobally(filename);
+		await removeFileId(id);
+		await removeCatalogReferencesToFileIdGlobally(id);
 	}
 
 	/**
-	 * Propagate a filename change to every media type in the workspace that references the old basename.
+	 * Rename a blob: rename the file on disk, then update the single manifest entry. No catalog rows are
+	 * touched and there is no cross-catalog fan-out — every reference (by `id`) is unaffected.
 	 *
-	 * Because the blob lives in the single shared global `files/` store, the same basename can be
-	 * referenced by many catalogs at once. After renaming the physical file, this rewrites, across
-	 * all types:
-	 * - `settings.excludedFiles` entries (`oldFilename` -> `safe`)
-	 * - `images`/`generic`/`blob_store` record `file_name` fields
-	 * - embedded filename values in any field (plain string, `{ url }`, or arrays thereof) for both
-	 *   file-backed records and `json` records
-	 *
-	 * @param oldFilename - Current basename being renamed away from.
-	 * @param safe - Validated new basename.
-	 * @param currentTypeId - The renaming type's id (or `null` for the legacy single-folder layout).
-	 *   Its own record `file_name` is skipped here because the caller already updated it; passing it
-	 *   avoids a redundant double-write. Embedded field values in the current type are still updated.
-	 *
-	 * Concerns / future improvements:
-	 * - This is O(number of media types) per rename and matches on string equality; a stable file id
-	 *   (see `docs/STABLE_FILE_IDS.md`) would make this a single manifest update instead.
-	 */
-	async function propagateFilenameRename(
-		oldFilename: string,
-		safe: string,
-		currentTypeId: string | null | undefined
-	): Promise<void> {
-		const allTypes = listMediaTypeIds();
-		for (const tId of allTypes) {
-			const mPaths = getMediaTypePaths(tId);
-			const settings = readMediaTypeSettingsFileSync(mPaths.baseDir);
-			if (!settings) continue;
-
-			if (settings.excludedFiles?.includes(oldFilename)) {
-				const newExcluded = settings.excludedFiles.map((f) => (f === oldFilename ? safe : f));
-				await writeMediaTypeSettingsFile(mPaths.baseDir, {
-					kind: settings.kind,
-					schema: settings.schema,
-					excludedFiles: newExcluded
-				});
-			}
-
-			const dataPath = mPaths.dataPath;
-			const lockPath = `${dataPath}.lock`;
-			await withFileLock(lockPath, async () => {
-				try {
-					const raw = (await readJsonFile(dataPath)) as any;
-					let changed = false;
-
-					const updateVal = (v: any): any => {
-						if (typeof v === 'string' && v === oldFilename) {
-							changed = true;
-							return safe;
-						}
-						if (v && typeof v === 'object' && 'url' in v && (v as any).url === oldFilename) {
-							changed = true;
-							return { ...(v as any), url: safe };
-						}
-						if (Array.isArray(v)) {
-							const updatedArr = [];
-							let arrChanged = false;
-							for (const item of v) {
-								if (typeof item === 'string' && item === oldFilename) {
-									updatedArr.push(safe);
-									arrChanged = true;
-								} else if (item && typeof item === 'object' && 'url' in item && (item as any).url === oldFilename) {
-									updatedArr.push({ ...(item as any), url: safe });
-									arrChanged = true;
-								} else {
-									updatedArr.push(item);
-								}
-							}
-							if (arrChanged) {
-								changed = true;
-								return updatedArr;
-							}
-						}
-						return v;
-					};
-
-					if (
-						(settings.kind === 'images' ||
-							settings.kind === 'generic' ||
-							settings.kind === 'blob_store') &&
-						Array.isArray(raw.images)
-					) {
-						for (const rec of raw.images) {
-							if (rec.file_name === oldFilename && tId !== currentTypeId) {
-								rec.file_name = safe;
-								changed = true;
-							}
-							for (const [k, v] of Object.entries(rec)) {
-								if (k === 'file_name' || k === 'id') continue;
-								const nextV = updateVal(v);
-								if (nextV !== v) rec[k] = nextV;
-							}
-						}
-					} else if (settings.kind === 'json' && Array.isArray(raw.records)) {
-						for (const rec of raw.records) {
-							for (const [k, v] of Object.entries(rec)) {
-								if (k === 'id') continue;
-								const nextV = updateVal(v);
-								if (nextV !== v) rec[k] = nextV;
-							}
-						}
-					}
-
-					if (changed) {
-						await writeJsonFileAtomic(dataPath, raw);
-					}
-				} catch (e) {
-					const err = e as NodeJS.ErrnoException;
-					if (err.code !== 'ENOENT') {
-						console.error(`Error updating refs in ${tId}:`, e);
-					}
-				}
-			});
-		}
-	}
-
-	/**
-	 * Rename an image file on disk and update its record in image-data.json.
-	 *
-	 * @param id - Image record id (UUID)
-	 * @param newFilename - New filename (validated via assertSafeImageFilename, or assertSafeBasename for generic)
-	 * @returns Updated ImageRecord
-	 * @throws Error if record not found, target exists, or rename fails
+	 * @param id - id of the blob.
+	 * @param newFilename - New basename (validated per kind).
+	 * @returns The record (enriched with the new `file_name`) for linked blobs, or a minimal stub for
+	 *   unlinked ones.
 	 */
 	async function renameFileById(id: ImageId, newFilename: string): Promise<ImageRecord> {
 		const safe = assertRecordFilename(newFilename);
 		const paths = p();
 
-		const settings = typeId ? readMediaTypeSettingsFileSync(paths.baseDir) : null;
-		const isGeneric = settings?.kind === 'generic' || settings?.kind === 'blob_store';
+		const manifest = await readManifest();
+		const entry = manifest.files[id];
+		if (!entry) throw new Error('Image record not found');
 
-		if (isGeneric && typeof id === 'string' && id.startsWith('unlinked:')) {
-			const oldFilename = assertRecordFilename(decodeURIComponent(id.slice(9)));
-			const oldPath = path.join(paths.imagesDir, oldFilename);
-			const newPath = path.join(paths.imagesDir, safe);
-			if (safe === oldFilename) {
-				return {
-					id,
-					file_name: safe,
-					image_name: '',
-					last_modified: new Date().toISOString()
-				} as ImageRecord;
-			}
-			if (fssync.existsSync(newPath)) throw new Error('Target filename already exists');
-			await fs.rename(oldPath, newPath);
-			// The blob is shared across the workspace; keep every catalog reference in sync. This
-			// path (blob_store / unlinked items) previously skipped propagation, leaving dangling
-			// references after a rename.
-			try {
-				await propagateFilenameRename(oldFilename, safe, typeId);
-			} catch (err) {
-				// Best-effort rollback so disk and catalogs do not drift on partial failure.
-				await fs.rename(newPath, oldPath).catch(() => {});
-				throw err;
-			}
-			const newId = (`unlinked:${encodeURIComponent(safe)}`) as ImageId;
-			return {
-				id: newId,
-				file_name: safe,
-				image_name: '',
-				last_modified: new Date().toISOString()
-			} as ImageRecord;
+		const oldFilename = entry.file_name;
+		if (safe === oldFilename) {
+			return (await getRecordById(id)) ?? ({ id, file_name: safe, image_name: '' } as unknown as ImageRecord);
 		}
-
-		// Get current record
-		const data = await loadAndMigrateImageData();
-		const rec = data.images.find((r) => r.id === id);
-		if (!rec) throw new Error('Image record not found');
-
-		const oldFilename = rec.file_name;
-		if (safe === oldFilename) return rec;
 
 		const oldPath = path.join(paths.imagesDir, oldFilename);
 		const newPath = path.join(paths.imagesDir, safe);
 
-		// Check target doesn't already exist
 		if (fssync.existsSync(newPath)) {
 			const err = new Error('Target filename already exists');
-			(err as any).status = 409;
+			(err as { status?: number }).status = 409;
 			throw err;
 		}
 
-		// Rename physical file first
 		await fs.rename(oldPath, newPath);
-
-		// Update record in JSON
 		try {
-			const updatedRecord = await withFileLock(`${paths.imageDataPath}.lock`, async () => {
-				const base = await loadAndMigrateImageDataUnlocked();
-				const idx = base.images.findIndex((r) => r.id === id);
-				if (idx === -1) throw new Error('Image record not found');
-
-				const next = { ...base.images[idx] as any };
-				next.file_name = safe;
-				next.last_modified = new Date().toISOString();
-				const parsed = ImageRecordSchema.parse(next);
-				const images = [...base.images];
-				images[idx] = parsed;
-				await writeImageData({ images });
-				return parsed;
-			});
-
-			// Propagate the new filename to every other catalog that references the old basename.
-			await propagateFilenameRename(oldFilename, safe, typeId);
-
-			return updatedRecord;
+			await manifestRenameFileId(id, safe);
 		} catch (err) {
-			// Best-effort rollback: rename file back
-			await fs.rename(newPath, oldPath).catch(() => { });
+			// Best-effort rollback so disk and manifest do not drift on partial failure.
+			await fs.rename(newPath, oldPath).catch(() => {});
 			throw err;
 		}
+
+		return (await getRecordById(id)) ?? ({ id, file_name: safe, image_name: '' } as unknown as ImageRecord);
 	}
 
 	return {
@@ -1437,6 +1272,7 @@ export function createImageRepo(typeId?: string) {
 		getRecordById,
 		getRecordByFilename,
 		ensureRecordForFilename,
+		ensureRecordForFileId,
 		getFilenameForId,
 		updatePropertiesById,
 		bulkUpdatePropertiesByIds,
@@ -1451,9 +1287,7 @@ export function createImageRepo(typeId?: string) {
 
 /**
  * Create a repo for a media type by typeId (folder name under root).
- * Returns an image repo or JSON repo depending on the type's kind.
  *
- * @param typeId - Folder name under root (e.g. 'images', 'projects')
  * @returns ImageRepo for file-backed kinds (`images`, `generic`, `blob_store`), JsonRepo for `json`
  */
 export function createMediaTypeRepo(typeId: string): ImageRepo | JsonRepo {
@@ -1464,10 +1298,6 @@ export function createMediaTypeRepo(typeId: string): ImageRepo | JsonRepo {
 
 /**
  * Generate a unique filename by appending (1), (2), etc. if the name already exists.
- *
- * @param baseFilename - The desired filename (e.g. "photo.jpg")
- * @param dir - Directory to check for existing files
- * @returns A filename guaranteed to not exist in dir
  */
 export function generateUniqueFilename(baseFilename: string, dir: string): string {
 	if (!fssync.existsSync(path.join(dir, baseFilename))) return baseFilename;
@@ -1482,33 +1312,53 @@ export function generateUniqueFilename(baseFilename: string, dir: string): strin
 	throw new Error('Too many filename conflicts');
 }
 
+/** Whether a record references a blob by its `id` (as the row key or any embedded file-field value). */
+function recordReferencesFileId(rec: unknown, fileId: string): boolean {
+	if (rec == null || typeof rec !== 'object') return false;
+	const r = rec as Record<string, unknown>;
+	if (r.id === fileId) return true;
+	const valueRefs = (v: unknown): boolean => {
+		if (typeof v === 'string') return v === fileId;
+		if (Array.isArray(v)) return v.some(valueRefs);
+		return false;
+	};
+	for (const [k, v] of Object.entries(r)) {
+		if (k === 'id') continue;
+		if (valueRefs(v)) return true;
+	}
+	return false;
+}
+
 /**
- * Remove every catalog row (images + generic types) that references `file_name` on the global blob store.
- * Does not delete the file on disk.
+ * Remove every file-backed catalog row keyed by `fileId` across the workspace (does not delete the
+ * blob on disk — the caller does that). Operates on the raw data file so it never throws on a
+ * not-yet-migrated catalog.
  *
- * @param file_name - Basename in `root/files/`
- * @returns typeIds whose catalog JSON was modified
+ * @param fileId - The blob's manifest id.
+ * @returns typeIds whose catalog JSON was modified.
+ *
+ * Concerns / future improvements:
+ * - This removes whole rows whose primary key is the deleted blob; it does **not** clear embedded
+ *   `file`-field references in other rows/json records. A future pass could null those out.
  */
-export async function removeCatalogReferencesToFileGlobally(file_name: string): Promise<string[]> {
-	const safe = assertSafeBasename(file_name);
+export async function removeCatalogReferencesToFileIdGlobally(fileId: string): Promise<string[]> {
 	const affected: string[] = [];
 	for (const tId of listMediaTypeIds()) {
 		const mp = getMediaTypePaths(tId);
 		if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') continue;
 		const didRemove = await withFileLock(`${mp.dataPath}.lock`, async () => {
 			if (!fssync.existsSync(mp.dataPath)) return false;
-			let raw: unknown;
+			let raw: { images?: unknown[] };
 			try {
-				raw = await readJsonFile(mp.dataPath);
+				raw = (await readJsonFile(mp.dataPath)) as { images?: unknown[] };
 			} catch {
 				return false;
 			}
-			const { file, changed: migChanged } = migrateImageDataFile(raw);
-			const beforeLen = file.images.length;
-			const images = file.images.filter((r) => r.file_name !== safe);
-			if (images.length === beforeLen && !migChanged) return false;
-			await writeJsonFileAtomic(mp.dataPath, { images });
-			return images.length !== beforeLen;
+			const rows = Array.isArray(raw.images) ? raw.images : [];
+			const kept = rows.filter((r) => (r as Record<string, unknown>)?.id !== fileId);
+			if (kept.length === rows.length) return false;
+			await writeJsonFileAtomic(mp.dataPath, { ...raw, images: kept });
+			return true;
 		});
 		if (didRemove) affected.push(tId);
 	}
@@ -1516,22 +1366,30 @@ export async function removeCatalogReferencesToFileGlobally(file_name: string): 
 }
 
 /**
- * Which image-catalog media types currently reference this filename (sync read for delete confirmations).
+ * Which media types currently reference this blob (by `id` row key or embedded file-field value).
+ * Sync read used for delete confirmations / global-file-usage.
  *
- * @param file_name - Basename under global `files/`
+ * @param fileId - The blob's manifest id.
  */
-export function listCatalogTypesReferencingFileSync(file_name: string): { typeId: string; displayName: string }[] {
-	const safe = assertSafeBasename(file_name);
+export function listCatalogTypesReferencingFileIdSync(
+	fileId: string
+): { typeId: string; displayName: string }[] {
 	const out: { typeId: string; displayName: string }[] = [];
 	for (const tId of listMediaTypeIds()) {
 		const mp = getMediaTypePaths(tId);
-		if (mp.kind !== 'images' && mp.kind !== 'generic' && mp.kind !== 'blob_store') continue;
-		const settings = readMediaTypeSettingsFileSync(mp.baseDir);
 		if (!fssync.existsSync(mp.dataPath)) continue;
+		const settings = readMediaTypeSettingsFileSync(mp.baseDir);
 		try {
-			const raw = JSON.parse(fssync.readFileSync(mp.dataPath, 'utf-8')) as unknown;
-			const { file } = migrateImageDataFile(raw);
-			if (file.images.some((r) => r.file_name === safe)) {
+			const raw = JSON.parse(fssync.readFileSync(mp.dataPath, 'utf-8')) as {
+				images?: unknown[];
+				records?: unknown[];
+			};
+			const rows = Array.isArray(raw.images)
+				? raw.images
+				: Array.isArray(raw.records)
+					? raw.records
+					: [];
+			if (rows.some((r) => recordReferencesFileId(r, fileId))) {
 				out.push({ typeId: tId, displayName: settings?.displayName ?? tId });
 			}
 		} catch {

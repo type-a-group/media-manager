@@ -211,6 +211,14 @@
 					excluded: data.excluded ?? [],
 					excluded_missing_files: data.excluded_missing_files ?? []
 				};
+				// Lazy heal: the list call reconciled the manifest against disk. Surface any drift.
+				const healed = data.healed;
+				if (healed && (healed.added > 0 || healed.missing > 0)) {
+					const parts: string[] = [];
+					if (healed.added > 0) parts.push(`${healed.added} new file(s) detected`);
+					if (healed.missing > 0) parts.push(`${healed.missing} file(s) missing from disk`);
+					toast.info(parts.join('; '));
+				}
 				if (imageLists.excluded_missing_files.length > 0) {
 					toast.warning(
 						`${imageLists.excluded_missing_files.length} missing excluded file(s) found.`,

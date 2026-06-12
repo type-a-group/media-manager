@@ -7,7 +7,6 @@
  */
 export const RESERVED_FIELD_KEYS = new Set([
 	'id',
-	'file_name',
 	'last_modified',
 	'width',
 	'height'
@@ -15,12 +14,13 @@ export const RESERVED_FIELD_KEYS = new Set([
 
 /**
  * Keys that cannot be removed or renamed in the schema editor.
- * file_name is system-only (never in schema). image_name (images) and name (JSON) may be in schema.
+ * `id` is the system primary key (a file-backed row's blob identity; never a schema field). image_name
+ * (images) and name (JSON) may be in schema.
  *
  * Use case:
  * - Prevent accidental removal/rename of fields required by the app.
  */
-export const PROTECTED_SCHEMA_KEYS = new Set(['file_name', 'image_name', 'name']);
+export const PROTECTED_SCHEMA_KEYS = new Set(['id', 'image_name', 'name']);
 
 /**
  * Returns whether a key is protected from removal/rename in the schema editor.

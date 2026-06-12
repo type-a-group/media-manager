@@ -4,16 +4,17 @@ import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { z } from 'zod';
 
-const LinkBodySchema = z.object({ file_name: z.string().min(1) });
+const LinkBodySchema = z.object({ file_id: z.string().uuid() });
 
 /**
- * POST: Add an existing file on disk to the catalog (images kind only).
- * Creates a record in image-data.json for the given file_name and returns it.
+ * POST: Add an existing blob to the catalog (file-backed kinds, not blob_store).
+ * Creates a row keyed by the blob's `file_id` (linking never changes the blob's identity) and returns
+ * it; the id in the response equals the file_id that was already selected.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const body = await request.json();
 	const parsed = LinkBodySchema.safeParse(body);
-	if (!parsed.success) throw error(400, 'file_name is required');
+	if (!parsed.success) throw error(400, 'file_id is required');
 
 	try {
 		const typeId = params.typeId;
@@ -21,7 +22,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (!usesImageRepoKind(paths.kind)) throw error(400, 'Link only supported for file-backed media types');
 		if (paths.kind === 'blob_store') throw error(400, 'Link to catalog is not supported for the global Files group');
 		const repo = getMediaTypeRepo(typeId) as import('$lib/storage/repo.js').ImageRepo;
-		const record = await repo.ensureRecordForFilename(parsed.data.file_name);
+		const record = await repo.ensureRecordForFileId(parsed.data.file_id);
 		return json(JSON.parse(JSON.stringify(record)));
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

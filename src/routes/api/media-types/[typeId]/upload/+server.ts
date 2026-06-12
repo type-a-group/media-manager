@@ -6,6 +6,7 @@ import { getMediaTypePaths, usesImageRepoKind } from '$lib/storage/paths.js';
 import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
 import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 import { generateUniqueFilename } from '$lib/storage/repo.js';
+import { mintFileId } from '$lib/storage/manifest.js';
 import convert from 'heic-convert';
 
 /** HEIC/HEIF MIME types that require conversion. */
@@ -90,11 +91,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const finalPath = path.join(imagesDirPath, safeFileName);
 		fs.writeFileSync(finalPath, buffer);
 
-		// Do not add to catalog; file appears in unlinked list. User can "Link to catalog" to add.
-		const unlinkedId = `unlinked:${encodeURIComponent(safeFileName)}`;
+		// Register the blob in the global manifest so it has a stable file_id, then return that id.
+		// The file is not added to any catalog (it appears in the unlinked list); "Link to catalog"
+		// creates a row under this same file_id.
+		const fileId = await mintFileId(safeFileName, buffer.length);
 		return json({
 			success: true,
-			id: unlinkedId,
+			id: fileId,
+			file_id: fileId,
 			filename: safeFileName,
 			message: 'Image uploaded successfully'
 		});
