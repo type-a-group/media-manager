@@ -7,13 +7,13 @@
 		apiAddMembers,
 		apiRemoveMembers
 	} from '$lib/api/files.js';
-	import { hasAllowedImageExtension } from '$lib/core/images.js';
+	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { X, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { X, ChevronLeft, ChevronRight, FileText } from 'lucide-svelte';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
 
@@ -65,6 +65,7 @@
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
 	const isImage = $derived(hasAllowedImageExtension(file.file_name));
+	const isPdfFile = $derived(isPdfFilename(file.file_name));
 	const addLabel = $derived(
 		addable.find((c) => c.id === addClassId)?.displayName ?? 'Add to class…'
 	);
@@ -201,9 +202,7 @@
 			onblur={rename}
 			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 		/>
-		{#if isImage}
-			<MetadataButton id={file.id} filename={file.file_name} {onchanged} />
-		{/if}
+		<MetadataButton id={file.id} filename={file.file_name} {onchanged} />
 		<Button variant="ghost" size="icon" title="Close" onclick={onclose}>
 			<X class="size-4" />
 		</Button>
@@ -216,6 +215,22 @@
 				alt={file.file_name}
 				class="mb-3 max-h-48 w-full rounded object-contain"
 			/>
+		{:else}
+			<div
+				class="mb-3 flex flex-col items-center justify-center gap-2 rounded border border-dashed py-8 text-muted-foreground"
+			>
+				<FileText class="h-10 w-10" />
+				{#if isPdfFile}
+					<a
+						href={apiBlobUrl(file.id)}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="text-sm text-primary hover:underline"
+					>
+						Open PDF in new tab
+					</a>
+				{/if}
+			</div>
 		{/if}
 
 		<div class="mb-3 flex items-center gap-2">

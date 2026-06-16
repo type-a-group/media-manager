@@ -9,7 +9,8 @@ const OVERWRITE_ORIGINAL = '-overwrite_original';
 const MAGIC: { bytes: number[]; ext: string; offset?: number }[] = [
 	{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], ext: '.png' },
 	{ bytes: [0xff, 0xd8, 0xff], ext: '.jpg' },
-	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' } // RIFF
+	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' }, // RIFF
+	{ bytes: [0x25, 0x50, 0x44, 0x46], ext: '.pdf' } // %PDF
 ];
 
 /** HEIC/HEIF ftyp brands (at byte offset 4). */
@@ -49,8 +50,122 @@ async function detectExtensionFromMagic(filePath: string): Promise<string | null
 	}
 }
 
+/** exiftool tag keys mapped to explicit top-level fields (excluded from the generic `exif` blob). */
+const COMMON_EXPLICIT_KEYS = new Set([
+	'ImageWidth',
+	'ImageHeight',
+	'FileType',
+	'FileName',
+	'Directory',
+	'FileSize',
+	'FileModifyDate',
+	'FileAccessDate',
+	'FileCreateDate',
+	'FileInodeChangeDate',
+	'SourceFile'
+]);
+
+/** exiftool PDF tag keys mapped to explicit top-level fields (excluded from the generic `exif` blob). */
+const PDF_EXPLICIT_KEYS = new Set([
+	'Title',
+	'Author',
+	'Subject',
+	'Keywords',
+	'Creator',
+	'Producer',
+	'PDFVersion',
+	'PageCount',
+	'Encryption',
+	'CreateDate',
+	'ModifyDate'
+]);
+
 /**
- * Read image metadata from a file on disk using exiftool-vendored.
+ * Build the generic `exif` blob from all exiftool tags except system tags and any explicitly-mapped ones.
+ *
+ * @param tags - Raw exiftool tags
+ * @param extraExclude - Additional tag keys to omit (e.g. ones mapped to top-level PDF fields)
+ * @returns Object of remaining tag key/value pairs (never null; caller decides on emptiness)
+ *
+ * Use case:
+ * - Preserves "whatever information we can get" from a file under one blob, without duplicating
+ *   the values surfaced as friendly top-level fields.
+ */
+function buildExifBlob(
+	tags: Record<string, unknown>,
+	extraExclude: ReadonlySet<string> = new Set()
+): Record<string, unknown> {
+	const exif: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(tags)) {
+		if (key === 'errors' || COMMON_EXPLICIT_KEYS.has(key) || extraExclude.has(key)) continue;
+		if (value !== undefined && value !== null) exif[key] = value;
+	}
+	return exif;
+}
+
+/**
+ * Build the metadata response for a PDF document.
+ *
+ * @param base - Shared base fields (filename, size, dates, optional extension-mismatch info)
+ * @param tags - Raw exiftool tags read from the PDF
+ * @returns Metadata object in the same shape the UI consumes, with document fields populated and
+ *          image-only fields left undefined.
+ *
+ * Use case:
+ * - PDFs carry document properties (title, author, page count) rather than image EXIF; this maps
+ *   the common PDF tags to friendly fields while keeping everything else under `exif`.
+ *
+ * Concerns / future improvements:
+ * - exiftool exposes more PDF tags (e.g. Linearized, Trapped); these are retained in `exif`.
+ */
+function buildPdfMetadata(base: Record<string, unknown>, tags: Record<string, unknown>) {
+	const str = (v: unknown) => (v == null ? undefined : String(v));
+	const exif = buildExifBlob(tags, PDF_EXPLICIT_KEYS);
+	return {
+		...base,
+		format: 'pdf',
+
+		title: str(tags.Title),
+		author: str(tags.Author),
+		subject: str(tags.Subject),
+		keywords: str(tags.Keywords),
+		creator: str(tags.Creator),
+		producer: str(tags.Producer),
+		pdfVersion: str(tags.PDFVersion),
+		pageCount: tags.PageCount != null ? Number(tags.PageCount) : undefined,
+		encryption: str(tags.Encryption),
+		pdfCreateDate: str(tags.CreateDate),
+		pdfModifyDate: str(tags.ModifyDate),
+
+		// Image-only fields are not applicable to PDFs.
+		width: undefined,
+		height: undefined,
+		density: undefined,
+		channels: undefined,
+		depth: undefined,
+		space: undefined,
+		hasAlpha: undefined,
+		hasProfile: undefined,
+
+		exif: Object.keys(exif).length > 0 ? exif : null,
+		rawExif: null,
+
+		orientation: undefined,
+		compression: undefined,
+		resolutionUnit: undefined,
+		isProgressive: undefined,
+		pages: undefined,
+		pageHeight: undefined,
+		loop: undefined,
+		delay: undefined,
+
+		aspectRatio: null,
+		megapixels: null
+	};
+}
+
+/**
+ * Read file metadata from a file on disk using exiftool-vendored.
  * Returns a response shape compatible with the existing API and MetadataButton UI.
  *
  * @param imagesDir - Absolute directory containing images
@@ -79,31 +194,11 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 
 	const tags = await exiftool.read(filePath);
 
-	const width = tags.ImageWidth ?? null;
-	const height = tags.ImageHeight ?? null;
-	const format = tags.FileType?.toLowerCase?.() ?? null;
+	const isPdf =
+		fileExt === '.pdf' || detectedExt === '.pdf' || tags.FileType?.toLowerCase?.() === 'pdf';
 
-	// Build exif-like object from all tags (excluding a few we map explicitly) for the UI
-	const explicitKeys = new Set([
-		'ImageWidth',
-		'ImageHeight',
-		'FileType',
-		'FileName',
-		'Directory',
-		'FileSize',
-		'FileModifyDate',
-		'FileAccessDate',
-		'FileCreateDate',
-		'FileInodeChangeDate',
-		'SourceFile'
-	]);
-	const exif: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(tags)) {
-		if (key === 'errors' || explicitKeys.has(key)) continue;
-		if (value !== undefined && value !== null) exif[key] = value;
-	}
-
-	return {
+	// Fields shared by every supported file type.
+	const base = {
 		filename,
 		fileSize: stats.size,
 		fileSizeFormatted: formatFileSize(stats.size),
@@ -116,7 +211,19 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 					fileExtension: fileExt || undefined,
 					detectedFormatExtension: detectedExt
 				}
-			: {}),
+			: {})
+	};
+
+	if (isPdf) return buildPdfMetadata(base, tags as Record<string, unknown>);
+
+	const width = tags.ImageWidth ?? null;
+	const height = tags.ImageHeight ?? null;
+	const format = tags.FileType?.toLowerCase?.() ?? null;
+
+	const exif = buildExifBlob(tags as Record<string, unknown>);
+
+	return {
+		...base,
 
 		width: width ?? undefined,
 		height: height ?? undefined,
@@ -222,10 +329,17 @@ export async function stripImageFileMetadata(
  *
  * @param filePath - Absolute path to the image file
  * @returns Object with width and height (numbers or undefined)
+ *
+ * Concerns / future improvements:
+ * - PDFs are skipped: exiftool reports page size in points, not pixels, and the sidebar renders
+ *   these as "W × H px", which would be misleading. Returns undefined dimensions for PDFs.
  */
 export async function readImageDimensions(
 	filePath: string
 ): Promise<{ width: number | undefined; height: number | undefined }> {
+	if (path.extname(filePath).toLowerCase() === '.pdf') {
+		return { width: undefined, height: undefined };
+	}
 	try {
 		const tags = await exiftool.read(filePath);
 		return {

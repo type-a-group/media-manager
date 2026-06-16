@@ -320,3 +320,13 @@ A per-class review affordance that helps answer "which files should be in this c
 
 - **Default values**: is storing explicit defaults (beyond `false` for booleans / `0` for numbers) worth it, or is filtering for empty values sufficient?
 - **Svelte usage guidance**: expand [`.cursor/rules/svelte5.mdc`](../.cursor/rules/svelte5.mdc) with an explicit do/don't list, including when `$bindable` is appropriate vs. confusing.
+
+---
+
+## 21. Full PDF Preview
+
+**Priority**: low (PDF storage + metadata already shipped)
+**Context**: PDFs are stored, served as `application/pdf`, and read for document metadata (title, author, page count, etc. via exiftool — see [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts) and the `MetadataButton` "Document Information" section). The file editor and grids currently show a generic file icon for non-images.
+
+- Render PDFs inline via native browser embed (`<iframe>`/`<embed>`, no new deps) in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte), replacing the icon placeholder.
+- Generate/serve first-page PDF thumbnails so the Files grid shows a preview instead of the icon (`hasAllowedImageExtension` currently gates `thumbnailUrl`).
