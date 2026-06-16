@@ -22,17 +22,20 @@
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import ClassSchemaDialog from '$lib/components/ClassSchemaDialog.svelte';
 	import ClassSettingsDialog from '$lib/components/ClassSettingsDialog.svelte';
+	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
+	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Popover from '$lib/components/ui/popover/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Home, MoreVertical, Plus, Upload, FileText } from 'lucide-svelte';
+	import { Home, MoreVertical, Plus, Upload, Settings } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import { settingsStore } from '$lib/stores/settings.js';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
 
 	let files = $state<FileItem[]>([]);
@@ -63,6 +66,8 @@
 	let bulkClassId = $state('');
 	let deleteFilesOpen = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	/** Save pending edits before prev/next in the editor panel (persisted app setting). */
+	let autoSave = $state(false);
 
 	// Class management dialogs
 	let schemaOpen = $state(false);
@@ -73,8 +78,14 @@
 	let deleteClassId = $state('');
 	let deleteClassName = $state('');
 
-	const fileOptions = $derived(files.map((f) => ({ id: f.id, name: f.file_name })));
 	const editorFile = $derived(files.find((f) => f.id === editorFileId) ?? null);
+	const editorIndex = $derived(files.findIndex((f) => f.id === editorFileId));
+
+	/** Open the neighbour file in the current filtered grid order. */
+	function gotoFile(delta: number) {
+		const next = files[editorIndex + delta];
+		if (next) editorFileId = next.id;
+	}
 	const filteredClasses = $derived(
 		classSearch
 			? classes.filter((c) => c.displayName.toLowerCase().includes(classSearch.toLowerCase()))
@@ -170,12 +181,46 @@
 		return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
 	});
 
-	/** Tile column min width (px) by grid size; the All Files view always uses medium. */
-	const colMin = $derived(
-		!soloClass ? 140 : catalogSize === 'small' ? 110 : catalogSize === 'large' ? 200 : 140
+	/** Map a blob row to a side-agnostic grid item (chips = class membership, capped at 3 + "+N"). */
+	function toGridItem(f: FileItem): GridItem {
+		const shown = f.classes.slice(0, 3);
+		return {
+			id: f.id,
+			primaryLabel: f.file_name,
+			thumbnailUrl: hasAllowedImageExtension(f.file_name) ? apiBlobUrl(f.id) : undefined,
+			chips:
+				f.classes.length === 0
+					? [{ label: 'unclassified', tone: 'muted' }]
+					: shown.map((cid) => ({ label: classes.find((c) => c.id === cid)?.displayName ?? cid })),
+			extraChips: f.classes.length > 3 ? f.classes.length - 3 : undefined,
+			warning: f.missing_file_fields?.length
+				? `Missing file reference: ${f.missing_file_fields.join(', ')}`
+				: undefined
+		};
+	}
+
+	const gridItems = $derived(files.map(toGridItem));
+	const groupedGridItems = $derived<[string | null, GridItem[]][] | null>(
+		groupedFiles
+			? groupedFiles.map(([k, list]) => [k, list.map(toGridItem)] as [string | null, GridItem[]])
+			: null
 	);
+	const gridConfig = $derived<GridConfig>({
+		size: soloClass ? catalogSize : 'medium',
+		selectable: true,
+		activeId: editorFileId,
+		groupLabel: (k) => `${fieldLabel(catalogGroupBy)}: ${k}`,
+		emptyText: 'No files.'
+	});
+	const gridCallbacks: GridCallbacks = {
+		onOpen: (id) => (editorFileId = id),
+		onToggleSelect: (id) => toggleSelect(id),
+		isSelected: (id) => selectedIds.has(id)
+	};
 
 	onMount(async () => {
+		await settingsStore.fetchSettings();
+		autoSave = settingsStore.getCurrentSettings().autoSaveOnAdvance;
 		await loadMeta();
 		// ?class=<id> opens directly in that class's catalog view.
 		const initialClass = $page.url.searchParams.get('class');
@@ -184,6 +229,11 @@
 		}
 		await loadFiles();
 	});
+
+	function toggleAutoSave(v: boolean) {
+		autoSave = v;
+		settingsStore.updateSetting('autoSaveOnAdvance', v);
+	}
 
 	// Reload the grid when filters/search change.
 	$effect(() => {
@@ -298,56 +348,6 @@
 	}
 </script>
 
-{#snippet tile(f: FileItem)}
-	<Card.Root
-		class="group relative cursor-pointer gap-0 overflow-hidden p-0 hover:ring-2 hover:ring-primary {editorFileId ===
-		f.id
-			? 'ring-2 ring-primary'
-			: ''}"
-		role="button"
-		tabindex={0}
-		onclick={() => (editorFileId = f.id)}
-		onkeydown={(e) => e.key === 'Enter' && (editorFileId = f.id)}
-	>
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div
-			class="absolute left-1 top-1 z-10 rounded bg-background/80 p-0.5"
-			onclick={(e) => e.stopPropagation()}
-		>
-			<Checkbox checked={selectedIds.has(f.id)} onCheckedChange={() => toggleSelect(f.id)} />
-		</div>
-		<div class="flex aspect-square items-center justify-center bg-muted">
-			{#if hasAllowedImageExtension(f.file_name)}
-				<img
-					src={apiBlobUrl(f.id)}
-					alt={f.file_name}
-					class="h-full w-full object-cover"
-					loading="lazy"
-				/>
-			{:else}
-				<FileText class="size-8 text-muted-foreground" />
-			{/if}
-		</div>
-		<div class="p-1.5">
-			<div class="truncate text-xs" title={f.file_name}>{f.file_name}</div>
-			<div class="mt-0.5 flex flex-wrap gap-0.5">
-				{#if f.classes.length === 0}
-					<span class="text-[10px] text-muted-foreground">unclassified</span>
-				{:else}
-					{#each f.classes.slice(0, 3) as cid (cid)}
-						<span class="rounded bg-secondary px-1 text-[10px] text-secondary-foreground"
-							>{classes.find((c) => c.id === cid)?.displayName ?? cid}</span
-						>
-					{/each}
-					{#if f.classes.length > 3}<span class="text-[10px] text-muted-foreground"
-							>+{f.classes.length - 3}</span
-						>{/if}
-				{/if}
-			</div>
-		</div>
-	</Card.Root>
-{/snippet}
-
 <Sidebar.Provider>
 	<Sidebar.Root collapsible="none" class="h-screen border-r">
 		<Sidebar.Header class="gap-2">
@@ -364,6 +364,7 @@
 					<Home class="size-4" />
 				</Button>
 			</div>
+			<Input class="h-8 text-sm" placeholder="Search filenames…" bind:value={query} />
 			{#if missing.count > 0}
 				<Button
 					variant="ghost"
@@ -448,6 +449,15 @@
 					{/if}
 				</ul>
 
+				{#if selectedClasses.size > 1 && !unclassified}
+					<div class="mt-2 flex items-center gap-2">
+						<span class="text-xs text-muted-foreground">Match</span>
+						<Button variant="outline" size="sm" class="h-7" onclick={() => (matchAll = !matchAll)}>
+							{matchAll ? 'all of' : 'any of'}
+						</Button>
+					</div>
+				{/if}
+
 				<div class="mt-3 flex items-center gap-2 border-t pt-2">
 					<Checkbox
 						id="filter-unclassified"
@@ -483,12 +493,6 @@
 	<!-- Main -->
 	<main class="flex h-screen min-w-0 flex-1 flex-col">
 		<header class="flex items-center gap-3 border-b p-3">
-			<Input class="w-64" placeholder="Search filenames…" bind:value={query} />
-			{#if selectedClasses.size > 1 && !unclassified}
-				<Button variant="outline" size="sm" onclick={() => (matchAll = !matchAll)}>
-					{matchAll ? 'all of' : 'any of'}
-				</Button>
-			{/if}
 			<span class="text-sm text-muted-foreground"
 				>{files.length} file{files.length === 1 ? '' : 's'}</span
 			>
@@ -522,6 +526,30 @@
 				</div>
 			{/if}
 			<div class="flex-1"></div>
+			<Popover.Root>
+				<Popover.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="ghost" size="icon" title="Settings">
+							<Settings class="size-4" />
+						</Button>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content align="end" class="w-60">
+					<div class="flex flex-col gap-2">
+						<p class="text-sm font-medium">Settings</p>
+						<div class="flex items-center gap-2">
+							<Checkbox
+								id="autosave-advance"
+								checked={autoSave}
+								onCheckedChange={(v) => toggleAutoSave(v === true)}
+							/>
+							<Label for="autosave-advance" class="cursor-pointer text-sm font-normal">
+								Autosave on advance
+							</Label>
+						</div>
+					</div>
+				</Popover.Content>
+			</Popover.Root>
 			<Button size="sm" onclick={() => fileInput?.click()}>
 				<Upload class="size-4" /> Upload
 			</Button>
@@ -559,37 +587,16 @@
 			</div>
 		{/if}
 
-		<div class="flex-1 overflow-y-auto p-4">
+		<div class="min-h-0 flex-1">
 			{#if loading}
-				<p class="text-muted-foreground">Loading…</p>
-			{:else if files.length === 0}
-				<p class="text-muted-foreground">No files.</p>
-			{:else if groupedFiles}
-				{#each groupedFiles as [groupKey, groupFiles] (groupKey)}
-					<div class="mb-5">
-						<h3 class="mb-2 text-sm font-semibold text-muted-foreground">
-							{fieldLabel(catalogGroupBy)}: {groupKey}
-							<span class="ml-1 font-normal">({groupFiles.length})</span>
-						</h3>
-						<div
-							class="grid gap-3"
-							style={`grid-template-columns: repeat(auto-fill, minmax(${colMin}px, 1fr))`}
-						>
-							{#each groupFiles as f (f.id)}
-								{@render tile(f)}
-							{/each}
-						</div>
-					</div>
-				{/each}
+				<p class="p-4 text-muted-foreground">Loading…</p>
 			{:else}
-				<div
-					class="grid gap-3"
-					style={`grid-template-columns: repeat(auto-fill, minmax(${colMin}px, 1fr))`}
-				>
-					{#each files as f (f.id)}
-						{@render tile(f)}
-					{/each}
-				</div>
+				<DataGrid
+					items={gridItems}
+					groups={groupedGridItems}
+					config={gridConfig}
+					callbacks={gridCallbacks}
+				/>
 			{/if}
 		</div>
 	</main>
@@ -598,8 +605,11 @@
 		<FileEditorPanel
 			file={editorFile}
 			{classes}
-			{fileOptions}
 			refresh={editorRefresh}
+			index={editorIndex}
+			total={files.length}
+			onPrev={() => gotoFile(-1)}
+			onNext={() => gotoFile(1)}
 			onclose={() => (editorFileId = null)}
 			onchanged={async () => {
 				await loadMeta();

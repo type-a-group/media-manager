@@ -1,16 +1,12 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { toast } from 'svelte-sonner';
-	import { ChevronLeft, ChevronRight, Trash2, X, TriangleAlert } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import JsonRecordGrid from '$lib/components/JsonRecordGrid.svelte';
-	import FilePicker from '$lib/components/FilePicker.svelte';
-	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
+	import FieldInput from '$lib/components/FieldInput.svelte';
 	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -35,55 +31,6 @@
 	let deleteOpen = $state(false);
 	let formValues = $state<Record<string, unknown>>({});
 	let lastSavedPatch = $state<Record<string, unknown>>({});
-	let newListItemValues = $state<Record<string, string>>({});
-	let newListItemUrlDisplayName = $state<Record<string, string>>({});
-	let newListItemUrlUrl = $state<Record<string, string>>({});
-
-	/**
-	 * Returns display text for a list item (string, number, or url object).
-	 * For url objects, shows both display name and URL (e.g. "Label (https://...)") when present.
-	 */
-	function listItemDisplayText(item: unknown): string {
-		if (item != null && typeof item === 'object' && 'url' in (item as object)) {
-			const o = item as { display_name?: string; url?: string };
-			const name = (o.display_name ?? '').trim();
-			const url = (o.url ?? '').trim();
-			if (name && url) return `${name} (${url})`;
-			if (url) return url;
-			return name || '';
-		}
-		return String(item);
-	}
-
-	function addListItem(key: string) {
-		const itemType =
-			(schema?.[key] as { itemTypes?: ('string' | 'number' | 'url')[] })?.itemTypes?.[0] ??
-			'string';
-		const arr = [...(Array.isArray(formValues[key]) ? (formValues[key] as unknown[]) : [])];
-		let value: string | number | { display_name: string; url: string };
-		if (itemType === 'url') {
-			value = {
-				display_name: (newListItemUrlDisplayName[key] ?? '').trim(),
-				url: (newListItemUrlUrl[key] ?? '').trim()
-			};
-			if (!value.url) return;
-			newListItemUrlDisplayName = { ...newListItemUrlDisplayName, [key]: '' };
-			newListItemUrlUrl = { ...newListItemUrlUrl, [key]: '' };
-		} else if (itemType === 'number') {
-			const v = (newListItemValues[key] ?? '').trim();
-			const n = Number(v);
-			if (v === '' || !Number.isFinite(n)) return;
-			value = n;
-		} else {
-			const v = (newListItemValues[key] ?? '').trim();
-			if (!v) return;
-			value = v;
-		}
-		arr.push(value);
-		formValues = { ...formValues, [key]: arr };
-		if (itemType !== 'url') newListItemValues = { ...newListItemValues, [key]: '' };
-	}
-
 	/** Ordered editable keys (name first for JSON list/editor display). */
 	function getOrderedEditableKeys(s: SchemaDefinition): string[] {
 		const keys = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'name');
@@ -315,222 +262,23 @@
 						<div class="flex flex-col gap-4">
 							{#each getOrderedEditableKeys(schema) as key (key)}
 								{@const def = schema[key]}
-								{@const type = def?.type ?? 'string'}
+								{@const rec = record as Record<string, unknown> | null}
+								{@const mf = (rec?._missing_files ?? undefined) as
+									| Record<string, string>
+									| undefined}
+								{@const isMissing =
+									def?.type === 'file' && mf?.[key] !== undefined && formValues[key] === rec?.[key]}
 								<div class="flex flex-col gap-2">
 									<Label for={key}>{fieldLabel(key)}</Label>
-									{#if type === 'boolean'}
-										<div class="flex items-center gap-2">
-											<Checkbox
-												id={key}
-												checked={!!formValues[key]}
-												onCheckedChange={(c) => (formValues = { ...formValues, [key]: !!c })}
-											/>
-										</div>
-									{:else if type === 'number'}
-										<Input
+									{#if def}
+										<FieldInput
+											{def}
 											id={key}
-											type="number"
-											value={formValues[key] ?? ''}
-											oninput={(e) =>
-												(formValues = {
-													...formValues,
-													[key]: (e.currentTarget as HTMLInputElement).valueAsNumber ?? 0
-												})}
+											bind:value={formValues[key]}
+											missing={isMissing}
+											missingName={mf?.[key]}
+											onEnterSave={save}
 										/>
-									{:else if type === 'dropdown' && def?.options?.length}
-										{#if (def as { multiselect?: boolean }).multiselect}
-											<Select.Root
-												type="multiple"
-												value={(formValues[key] ?? []) as string[]}
-												onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? [] })}
-											>
-												<Select.Trigger id={key} class="w-full">
-													{((formValues[key] ?? []) as string[]).length === 0
-														? '(none)'
-														: ((formValues[key] ?? []) as string[]).join(', ')}
-												</Select.Trigger>
-												<Select.Content>
-													{#each def.options ?? [] as opt}
-														<Select.Item value={opt}>{opt}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										{:else}
-											<Select.Root
-												type="single"
-												value={String(formValues[key] ?? '')}
-												onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? '' })}
-											>
-												<Select.Trigger id={key} class="w-full">
-													{String(formValues[key] ?? '') || 'Select…'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each def.options ?? [] as opt}
-														<Select.Item value={opt}>{opt}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										{/if}
-									{:else if type === 'list'}
-										{@const itemType =
-											(def as { itemTypes?: ('string' | 'number' | 'url')[] })?.itemTypes?.[0] ??
-											'string'}
-										<div class="flex flex-col gap-2">
-											<div class="flex flex-wrap gap-1">
-												{#each Array.isArray(formValues[key]) ? (formValues[key] as unknown[]) : [] as item, i}
-													<span
-														class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted text-sm"
-													>
-														{listItemDisplayText(item)}
-														<button
-															type="button"
-															class="hover:text-destructive"
-															onclick={() => {
-																const arr = [...(formValues[key] as unknown[])];
-																arr.splice(i, 1);
-																formValues = { ...formValues, [key]: arr };
-															}}
-															aria-label="Remove item"
-														>
-															<X class="size-3" />
-														</button>
-													</span>
-												{/each}
-											</div>
-											<div class="flex flex-wrap gap-2 items-end">
-												{#if itemType === 'url'}
-													<Input
-														type="text"
-														placeholder="Display name"
-														value={newListItemUrlDisplayName[key] ?? ''}
-														oninput={(e) => {
-															newListItemUrlDisplayName = {
-																...newListItemUrlDisplayName,
-																[key]: (e.target as HTMLInputElement).value
-															};
-														}}
-														class="w-32"
-													/>
-													<Input
-														type="url"
-														placeholder="https://..."
-														value={newListItemUrlUrl[key] ?? ''}
-														oninput={(e) => {
-															newListItemUrlUrl = {
-																...newListItemUrlUrl,
-																[key]: (e.target as HTMLInputElement).value
-															};
-														}}
-														onkeydown={(e) => {
-															if (e.key === 'Enter') {
-																e.preventDefault();
-																addListItem(key);
-															}
-														}}
-														class="flex-1 min-w-0"
-													/>
-												{:else}
-													<Input
-														type={itemType === 'number' ? 'number' : 'text'}
-														placeholder="Add item"
-														value={newListItemValues[key] ?? ''}
-														oninput={(e) => {
-															newListItemValues = {
-																...newListItemValues,
-																[key]: (e.target as HTMLInputElement).value
-															};
-														}}
-														onkeydown={(e) => {
-															if (e.key === 'Enter') {
-																e.preventDefault();
-																addListItem(key);
-															}
-														}}
-														class="flex-1 min-w-0"
-													/>
-												{/if}
-												<Button
-													type="button"
-													variant="outline"
-													size="sm"
-													onclick={() => addListItem(key)}
-												>
-													Add
-												</Button>
-											</div>
-										</div>
-									{:else if type === 'url'}
-										{@const urlObj =
-											formValues[key] != null &&
-											typeof formValues[key] === 'object' &&
-											'url' in (formValues[key] as object)
-												? (formValues[key] as { display_name?: string; url?: string })
-												: { display_name: '', url: '' }}
-										<div class="flex flex-col gap-2">
-											<Input
-												id={key + '-display'}
-												type="text"
-												placeholder="Display name"
-												value={urlObj.display_name ?? ''}
-												oninput={(e) => {
-													const v = (e.currentTarget as HTMLInputElement).value;
-													formValues = { ...formValues, [key]: { ...urlObj, display_name: v } };
-												}}
-											/>
-											<Input
-												id={key}
-												type="url"
-												placeholder="https://..."
-												value={urlObj.url ?? ''}
-												oninput={(e) => {
-													const v = (e.currentTarget as HTMLInputElement).value;
-													formValues = { ...formValues, [key]: { ...urlObj, url: v } };
-												}}
-											/>
-										</div>
-									{:else if type === 'file'}
-										{@const missingName = (record as Record<string, any>)?._missing_files?.[key]}
-										{@const isMissing =
-											missingName !== undefined &&
-											formValues[key] === (record as Record<string, any>)?.[key]}
-										<div class="flex flex-col gap-1 w-full">
-											<FilePicker
-												value={formValues[key] as string}
-												onSelect={(id) => (formValues[key] = id)}
-											/>
-											{#if isMissing}
-												<div class="flex items-center justify-between gap-2 mt-1">
-													<span class="text-xs text-destructive flex items-center gap-1">
-														<TriangleAlert class="h-3 w-3 shrink-0" />
-														{missingName
-															? `Missing file: ${missingName}`
-															: 'File not found on disk'}
-													</span>
-													<Button
-														variant="ghost"
-														size="sm"
-														class="h-6 px-2 text-xs"
-														onclick={() => (formValues[key] = '')}
-													>
-														Clear
-													</Button>
-												</div>
-											{/if}
-										</div>
-									{:else}
-										<textarea
-											id={key}
-											rows="1"
-											use:autogrow={formValues[key]}
-											onkeydown={(e) => blurSaveOnEnter(e, save)}
-											class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-											value={String(formValues[key] ?? '')}
-											oninput={(e) =>
-												(formValues = {
-													...formValues,
-													[key]: (e.currentTarget as HTMLTextAreaElement).value
-												})}
-										></textarea>
 									{/if}
 								</div>
 							{/each}

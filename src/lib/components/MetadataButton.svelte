@@ -9,21 +9,18 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
-	import {
-		apiGetFileMetadataById,
-		apiGetFileMetadataByIdForType,
-		apiStripFileMetadataById,
-		apiStripFileMetadataByIdForType,
-		apiRenameFileByIdForType
-	} from '$lib/api/client.js';
-	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
+	import { apiGetFileMetadata, apiStripFileMetadata, apiRenameFile } from '$lib/api/files.js';
 	import type { ImageId } from '$lib/core/ids.js';
 
-	/** Image record id (required for fetching by-id). Media type id when in media-type context. Filename for display only. */
+	/**
+	 * Per-blob EXIF/file metadata viewer (file-first `/api/files/[id]/...` surface): view, strip
+	 * all / GPS-only, rename, and fix a mismatched extension. `filename` is display-only; `onchanged`
+	 * fires after any mutation so the host (e.g. the file grid) can refresh.
+	 */
 	let {
 		id = undefined as ImageId | undefined,
-		typeId = undefined as string | undefined,
-		filename = undefined as string | undefined
+		filename = undefined as string | undefined,
+		onchanged = undefined as (() => void) | undefined
 	} = $props();
 
 	let isOpen = $state(false);
@@ -44,21 +41,17 @@
 	let renameError = $state<string | null>(null);
 
 	/**
-	 * Fetch metadata from the API by image id (and optional typeId).
-	 * Uses type-scoped or default file-metadata endpoint.
+	 * Fetch a blob's EXIF/file metadata from the file-first surface.
 	 *
-	 * @param imageId - Image record id
-	 * @param mediaTypeId - Optional media type id for type-scoped API
+	 * @param imageId - Blob id (manifest UUID)
 	 */
-	async function fetchMetadata(imageId: ImageId, mediaTypeId?: string) {
+	async function fetchMetadata(imageId: ImageId) {
 		loading = true;
 		error = null;
 		metadata = null;
 
 		try {
-			metadata = mediaTypeId
-				? await apiGetFileMetadataByIdForType(mediaTypeId, imageId)
-				: await apiGetFileMetadataById(imageId);
+			metadata = (await apiGetFileMetadata(imageId)) as Record<string, any>;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to fetch metadata';
 			console.error('Error fetching metadata:', err);
@@ -154,11 +147,8 @@
 		stripLoading = true;
 		confirmClearAllOpen = false;
 		try {
-			if (typeId) {
-				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'all');
-			} else {
-				metadata = await apiStripFileMetadataById(id, 'all');
-			}
+			metadata = (await apiStripFileMetadata(id, 'all')) as Record<string, any>;
+			onchanged?.();
 			toast.success('All metadata removed');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'Failed to strip metadata');
@@ -175,11 +165,8 @@
 		stripLoading = true;
 		confirmClearGpsOpen = false;
 		try {
-			if (typeId) {
-				metadata = await apiStripFileMetadataByIdForType(typeId, id, 'gps');
-			} else {
-				metadata = await apiStripFileMetadataById(id, 'gps');
-			}
+			metadata = (await apiStripFileMetadata(id, 'gps')) as Record<string, any>;
+			onchanged?.();
 			toast.success('GPS metadata removed');
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'Failed to strip GPS metadata');
@@ -192,7 +179,7 @@
 	 * Fix the file extension to match the detected format.
 	 */
 	async function handleFixExtension() {
-		if (!id || !typeId || !metadata?.extensionMismatch) return;
+		if (!id || !metadata?.extensionMismatch) return;
 		const currentName = metadata.filename as string;
 		const detectedExt = metadata.detectedFormatExtension as string;
 		const baseName = currentName.replace(/\.[^.]+$/, '');
@@ -200,10 +187,10 @@
 
 		fixExtLoading = true;
 		try {
-			await apiRenameFileByIdForType(typeId, id, newFilename);
+			await apiRenameFile(id, newFilename);
 			toast.success(`Renamed to ${newFilename}`);
-			triggerImageListRefresh();
-			await fetchMetadata(id, typeId);
+			onchanged?.();
+			await fetchMetadata(id);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Failed to fix extension';
 			if (msg.includes('409') || msg.includes('already exists')) {
@@ -220,7 +207,7 @@
 	 * Rename the file (base name only, extension locked).
 	 */
 	async function handleRename() {
-		if (!id || !typeId || !renameValue.trim() || !metadata?.filename) return;
+		if (!id || !renameValue.trim() || !metadata?.filename) return;
 		const currentExt = (metadata.filename as string).substring(
 			(metadata.filename as string).lastIndexOf('.')
 		);
@@ -229,21 +216,12 @@
 		renameLoading = true;
 		renameError = null;
 		try {
-			const result = await apiRenameFileByIdForType(typeId, id, newFilename);
-			const name =
-				result?.record && typeof (result.record as { file_name?: string }).file_name === 'string'
-					? (result.record as { file_name: string }).file_name
-					: newFilename;
+			const name = await apiRenameFile(id, newFilename);
 			toast.success(`Renamed to ${name}`);
-			triggerImageListRefresh();
+			onchanged?.();
 			renameMode = false;
-			const nextId =
-				result?.record &&
-				'id' in (result.record as object) &&
-				(result.record as { id?: ImageId }).id != null
-					? (result.record as { id: ImageId }).id
-					: id;
-			await fetchMetadata(nextId, typeId);
+			// The blob id is unchanged by a rename (O(1) manifest rename), so refetch by the same id.
+			await fetchMetadata(id);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Rename failed';
 			if (msg.includes('409') || msg.includes('already exists')) {
@@ -259,7 +237,7 @@
 	// Fetch metadata when dialog opens and we have an id
 	$effect(() => {
 		if (isOpen && id) {
-			fetchMetadata(id, typeId);
+			fetchMetadata(id);
 		}
 		if (!isOpen) {
 			renameMode = false;
@@ -482,7 +460,7 @@
 												{:else}
 													<dd class="text-sm text-foreground mt-1 flex items-center gap-2">
 														{formatValue(metadata[key])}
-														{#if typeId}
+														{#if id}
 															<button
 																class="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-accent"
 																title="Rename file"

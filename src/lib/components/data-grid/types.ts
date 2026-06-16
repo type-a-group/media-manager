@@ -1,0 +1,58 @@
+/**
+ * Side-agnostic data model for the shared {@link DataGrid}. Neither the file-first `FileItem`
+ * nor the legacy `ImageListItem` shape may leak past a host's adapter: each host maps its native
+ * rows to {@link GridItem} and feeds the grid these normalized values only. This is what lets one
+ * grid serve both the files hub and the json record views without re-introducing the legacy
+ * linked/unlinked/excluded model (those concepts have no representation here).
+ */
+
+export type GridSize = 'small' | 'medium' | 'large';
+
+/** A small membership/label badge under a tile (e.g. a class name, or a muted "unclassified"). */
+export interface GridChip {
+	label: string;
+	/** `muted` renders a low-emphasis hint (e.g. "unclassified"); defaults to a solid secondary chip. */
+	tone?: 'default' | 'muted';
+}
+
+/** One tile in the grid. Carries only what a tile renders — no native row fields survive here. */
+export interface GridItem {
+	id: string;
+	/** Filename / record name / id fallback — already resolved by the host adapter. */
+	primaryLabel: string;
+	/** Blob bytes URL for an image thumbnail; omit to render the file-icon fallback. */
+	thumbnailUrl?: string;
+	chips: GridChip[];
+	/** Count of chips beyond those in `chips` (renders a trailing "+N"). */
+	extraChips?: number;
+	/** A warning to surface on the tile, e.g. "Missing file reference: cover". */
+	warning?: string;
+}
+
+/** Presentational configuration injected by the host. */
+export interface GridConfig {
+	size: GridSize;
+	/** Show the per-tile selection checkbox. */
+	selectable: boolean;
+	/** Highlight the tile whose item is open in an editor. */
+	activeId?: string | null;
+	/** Header text for a group key (host already stringified the group value into the key). */
+	groupLabel?: (groupKey: string) => string;
+	/** Message shown when there are no items. */
+	emptyText?: string;
+}
+
+/** Interaction callbacks. The grid never mutates data or reads a host's selection store directly. */
+export interface GridCallbacks {
+	/** Single click on a tile (open editor / select). */
+	onOpen: (id: string) => void;
+	/** Toggle the tile's selection checkbox (only used when `config.selectable`). */
+	onToggleSelect?: (id: string) => void;
+	/** Whether a tile is currently selected. */
+	isSelected?: (id: string) => boolean;
+}
+
+/** Min tile column width (px) for each grid size. */
+export function gridColMin(size: GridSize): number {
+	return size === 'small' ? 110 : size === 'large' ? 200 : 140;
+}

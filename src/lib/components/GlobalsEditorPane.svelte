@@ -14,6 +14,8 @@
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { GLOBALS_FIELD_KINDS_KEY, GLOBALS_FIELD_META_KEY } from '$lib/core/fieldKeys.js';
 	import FilePicker from './FilePicker.svelte';
+	import FieldInput from './FieldInput.svelte';
+	import type { FieldDefinition } from '$lib/core/types.js';
 
 	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
 	type ItemType = 'string' | 'number' | 'url';
@@ -158,6 +160,17 @@
 
 	function getFieldKind(key: string): ValueKind {
 		return fieldKinds[key] ?? inferKind(formValues[key]);
+	}
+
+	/** Build a schema-style FieldDefinition from a field's kind + stored meta, to drive FieldInput. */
+	function syntheticDef(key: string): FieldDefinition {
+		const meta = getMeta(key);
+		return {
+			type: getFieldKind(key),
+			options: meta.options,
+			multiselect: meta.multiselect,
+			itemTypes: meta.itemType ? [meta.itemType] : undefined
+		} as FieldDefinition;
 	}
 
 	function setFieldOptions(key: string, csv: string) {
@@ -368,219 +381,30 @@
 									</Button>
 								</div>
 							</div>
-							{#if getFieldKind(key) === 'boolean'}
-								<div class="flex items-center gap-2">
-									<Checkbox
-										checked={formValues[key] === true}
-										onCheckedChange={(checked) =>
-											(formValues = { ...formValues, [key]: checked === true })}
-									/>
-									<Label>{formValues[key] === true ? 'True' : 'False'}</Label>
-								</div>
-							{:else if getFieldKind(key) === 'number'}
-								<Input
-									type="number"
-									value={String(formValues[key] ?? 0)}
-									oninput={(e) =>
-										(formValues = {
-											...formValues,
-											[key]: Number((e.currentTarget as HTMLInputElement).value || 0)
-										})}
-								/>
-							{:else if getFieldKind(key) === 'url'}
-								{@const urlVal = normalizeUrlValue(formValues[key])}
-								<div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-									<Input
-										type="text"
-										placeholder="Display name"
-										value={urlVal.display_name}
-										oninput={(e) =>
-											(formValues = {
-												...formValues,
-												[key]: {
-													...(formValues[key] as UrlValue),
-													display_name: (e.currentTarget as HTMLInputElement).value
-												}
-											})}
-									/>
-									<Input
-										type="url"
-										placeholder="https://..."
-										value={urlVal.url}
-										oninput={(e) =>
-											(formValues = {
-												...formValues,
-												[key]: {
-													...(formValues[key] as UrlValue),
-													url: (e.currentTarget as HTMLInputElement).value
-												}
-											})}
-									/>
-								</div>
-							{:else if getFieldKind(key) === 'dropdown'}
-								{@const meta = getMeta(key)}
-								{#if meta.multiselect}
-									<Select.Root
-										type="multiple"
-										value={(formValues[key] ?? []) as string[]}
-										onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? [] })}
-									>
-										<Select.Trigger class="w-full">
-											{((formValues[key] ?? []) as string[]).length === 0
-												? '(none)'
-												: ((formValues[key] ?? []) as string[]).join(', ')}
-										</Select.Trigger>
-										<Select.Content>
-											{#each meta.options ?? [] as opt}
-												<Select.Item value={opt}>{opt}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								{:else}
-									<Select.Root
-										type="single"
-										value={String(formValues[key] ?? '')}
-										onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? '' })}
-									>
-										<Select.Trigger class="w-full">
-											{String(formValues[key] ?? '') || 'Select…'}
-										</Select.Trigger>
-										<Select.Content>
-											{#each meta.options ?? [] as opt}
-												<Select.Item value={opt}>{opt}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								{/if}
+							<FieldInput
+								def={syntheticDef(key)}
+								bind:value={formValues[key]}
+								missing={missingFiles[key] !== undefined && formValues[key] === baseValues[key]}
+								missingName={missingFiles[key]}
+								onEnterSave={save}
+							/>
+							{#if getFieldKind(key) === 'dropdown'}
 								<div class="flex items-center gap-2">
 									<Input
 										class="text-xs"
 										placeholder="Options (comma-separated)"
-										value={(meta.options ?? []).join(', ')}
+										value={(getMeta(key).options ?? []).join(', ')}
 										oninput={(e) =>
 											setFieldOptions(key, (e.currentTarget as HTMLInputElement).value)}
 									/>
 									<label class="flex items-center gap-1 text-xs whitespace-nowrap">
 										<Checkbox
-											checked={meta.multiselect === true}
+											checked={getMeta(key).multiselect === true}
 											onCheckedChange={(c) => setFieldMultiselect(key, c === true)}
 										/>
 										Multiple
 									</label>
 								</div>
-							{:else if getFieldKind(key) === 'list'}
-								{@const itemType = getMeta(key).itemType ?? 'string'}
-								<div class="space-y-2">
-									<div class="flex flex-wrap gap-2">
-										{#each Array.isArray(formValues[key]) ? formValues[key] : [] as item, idx (idx)}
-											<span class="inline-flex items-center rounded border px-2 py-1 text-sm">
-												{listItemDisplayText(item)}
-												<button
-													type="button"
-													class="ml-2 text-muted-foreground hover:text-foreground"
-													onclick={() => removeListItem(key, idx)}
-												>
-													x
-												</button>
-											</span>
-										{/each}
-									</div>
-									<div class="flex gap-2 items-end flex-wrap">
-										{#if itemType === 'url'}
-											<Input
-												type="text"
-												placeholder="Display name"
-												class="w-32"
-												value={pendingListUrl[key]?.display_name ?? ''}
-												oninput={(e) =>
-													(pendingListUrl = {
-														...pendingListUrl,
-														[key]: {
-															display_name: (e.currentTarget as HTMLInputElement).value,
-															url: pendingListUrl[key]?.url ?? ''
-														}
-													})}
-											/>
-											<Input
-												type="url"
-												placeholder="https://..."
-												class="flex-1 min-w-0"
-												value={pendingListUrl[key]?.url ?? ''}
-												oninput={(e) =>
-													(pendingListUrl = {
-														...pendingListUrl,
-														[key]: {
-															display_name: pendingListUrl[key]?.display_name ?? '',
-															url: (e.currentTarget as HTMLInputElement).value
-														}
-													})}
-												onkeydown={(e) => {
-													if (e.key === 'Enter') {
-														e.preventDefault();
-														addListItem(key);
-													}
-												}}
-											/>
-										{:else}
-											<Input
-												type={itemType === 'number' ? 'number' : 'text'}
-												placeholder="Add item"
-												class="flex-1 min-w-0"
-												value={pendingListItem[key] ?? ''}
-												oninput={(e) =>
-													(pendingListItem = {
-														...pendingListItem,
-														[key]: (e.currentTarget as HTMLInputElement).value
-													})}
-												onkeydown={(e) => {
-													if (e.key === 'Enter') {
-														e.preventDefault();
-														addListItem(key);
-													}
-												}}
-											/>
-										{/if}
-										<Button variant="outline" onclick={() => addListItem(key)}>Add</Button>
-									</div>
-								</div>
-							{:else if getFieldKind(key) === 'file'}
-								<div class="flex flex-col gap-1 w-full">
-									<FilePicker
-										value={formValues[key] as string}
-										onSelect={(id) => (formValues = { ...formValues, [key]: id })}
-									/>
-									{#if missingFiles[key] !== undefined && formValues[key] === baseValues[key]}
-										<div class="flex items-center justify-between gap-2 mt-1">
-											<span class="text-xs text-destructive flex items-center gap-1">
-												<TriangleAlert class="h-3 w-3 shrink-0" />
-												{missingFiles[key]
-													? `Missing file: ${missingFiles[key]}`
-													: 'File not found on disk'}
-											</span>
-											<Button
-												variant="ghost"
-												size="sm"
-												class="h-6 px-2 text-xs"
-												onclick={() => (formValues = { ...formValues, [key]: '' })}
-											>
-												Clear
-											</Button>
-										</div>
-									{/if}
-								</div>
-							{:else}
-								<textarea
-									rows="1"
-									use:autogrow={formValues[key]}
-									onkeydown={(e) => blurSaveOnEnter(e, save)}
-									class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-									value={String(formValues[key] ?? '')}
-									oninput={(e) =>
-										(formValues = {
-											...formValues,
-											[key]: (e.currentTarget as HTMLTextAreaElement).value
-										})}
-								></textarea>
 							{/if}
 						</div>
 					{/each}

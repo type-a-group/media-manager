@@ -8,7 +8,7 @@ export const refreshTrigger = writable(0);
 
 /**
  * Trigger for refreshing the schema (e.g. after schema editor changes).
- * ImageEditorPane subscribes to this to refetch schema and properties.
+ * AppSidebar subscribes to this to refetch the schema and record list.
  */
 export const schemaRefreshTrigger = writable(0);
 
@@ -20,7 +20,7 @@ export function triggerImageListRefresh(): void {
 }
 
 /**
- * Call to trigger a refresh of the schema in ImageEditorPane and other consumers.
+ * Call to trigger a refresh of the schema in AppSidebar and other consumers.
  */
 export function triggerSchemaRefresh(): void {
 	schemaRefreshTrigger.update((n) => n + 1);

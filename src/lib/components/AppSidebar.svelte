@@ -1,28 +1,17 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/sidebar/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import {
-		ChevronsUpDownIcon,
-		Home,
-		LayoutGrid,
-		Plus,
-		RefreshCwIcon,
-		UploadIcon
-	} from 'lucide-svelte';
+	import { ChevronsUpDownIcon, Home, LayoutGrid, Plus, RefreshCwIcon } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
 	import { toast } from 'svelte-sonner';
 	import SettingsButton from './SettingsButton.svelte';
 	import SchemaEditorButton from './SchemaEditorButton.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import { TOOLTIP_DELAY_MS } from '$lib/utils.js';
-	import type { ImageId } from '$lib/core/ids.js';
 	import type { ImageListItem, SchemaDefinition } from '$lib/core/types.js';
 	import {
 		getOperatorsForFieldType,
@@ -31,38 +20,23 @@
 		OPERATORS,
 		type OperatorId
 	} from '$lib/core/filters.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import {
 		apiCreateRecordForType,
-		apiGetConfig,
-		apiGetMediaType,
 		apiGetSchemaForType,
-		apiImageUrlByIdForType,
-		apiListRecordsForType,
-		apiUploadImageForType,
-		apiCheckUploadConflictsForType,
-		apiUploadImageForTypeWithResolution,
-		apiCleanExcludedFilesForType,
-		type AppConfig
+		apiListRecordsForType
 	} from '$lib/api/client.js';
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
-	import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
 	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import { useSelection } from '$lib/state/selection.svelte';
-	import { isBrowseFirstFileKind } from '$lib/core/mediaKinds.js';
 
-	let imageLists = $state<{
-		linked: ImageListItem[];
-		unlinked: ImageListItem[];
-		excluded: ImageListItem[];
-		excluded_missing_files: string[];
-	}>({
-		linked: [],
-		unlinked: [],
-		excluded: [],
-		excluded_missing_files: []
-	});
+	/**
+	 * The shared shell for `/media/[typeId]` — a `json` record type (or the reserved `globals`
+	 * singleton). Lists records with a multi-filter panel, a filename/name search, a grid-view
+	 * toggle, and a "New record" action. (The legacy image/blob-store machinery — upload,
+	 * linked/unlinked/excluded — was retired with the file-first model; blobs live in `/files`.)
+	 */
+	let records = $state<ImageListItem[]>([]);
 	let loading = $state(true);
 
 	// NOTE: This is a class instance; do not destructure it or you’ll capture initial values.
@@ -80,55 +54,15 @@
 	let filters = $state<FilterRow[]>([]);
 	let schema = $state<SchemaDefinition | null>(null);
 	let schemaFields = $state<string[]>([]);
-	let config = $state<AppConfig | null>(null);
 
 	/** Current media type from store (set by /media/[typeId] page). */
 	const currentMediaType = $derived($currentMediaTypeStore);
 	const typeId = $derived(currentMediaType?.typeId ?? null);
-	const kind = $derived(currentMediaType?.kind ?? 'images');
-	const browseFirst = $derived(isBrowseFirstFileKind(kind));
 	const isGlobals = $derived(typeId === 'globals');
-	/**
-	 * Blob store ("Files") is a flat file manager: no linked/unlinked/excluded split.
-	 * The reserved `files` group is always the blob store even if its on-disk kind is still legacy `generic`.
-	 */
-	const isBlobStore = $derived(kind === 'blob_store' || typeId === 'files');
 
-	// This will hold the list items actually displayed in the sidebar
+	// The records actually displayed in the sidebar (after the local search filter).
 	let displayedItems = $state<ImageListItem[]>([]);
 	let searchQuery = $state('');
-
-	// Upload-related state variables
-	let fileInput: HTMLInputElement | undefined; // Reference to hidden file input (multiple files)
-	let folderInput: HTMLInputElement | undefined; // Reference to hidden folder input (webkitdirectory)
-	let uploading = $state(false); // Track upload status
-
-	// Upload conflict dialog state
-	let uploadConflictFile = $state<File | null>(null);
-	let uploadConflictOpen = $state(false);
-	let uploadConflictResolve = $state<
-		((resolution: 'overwrite' | 'auto-rename' | 'skip') => void) | null
-	>(null);
-
-	// HEIC conversion warning dialog state
-	let heicWarningOpen = $state(false);
-	let heicWarningCount = $state(0);
-	let heicWarningResolve = $state<((proceed: boolean) => void) | null>(null);
-
-	// Removed liked/unliked functionality as those fields don't exist
-
-	/**
-	 * Fetch runtime config (e.g. active images directory or media type info).
-	 */
-	async function fetchConfig() {
-		if (!typeId) return;
-		try {
-			const info = await apiGetMediaType(typeId);
-			config = { imagesDir: info.filesDir ?? info.baseDir ?? '', baseDir: info.baseDir };
-		} catch (error) {
-			console.error('Error fetching config:', error);
-		}
-	}
 
 	/**
 	 * Fetches the schema from the API and updates schemaFields for filter field dropdowns.
@@ -139,36 +73,26 @@
 		try {
 			const s = await apiGetSchemaForType(typeId);
 			schema = s;
-			schemaFields = Object.keys(s).filter(
-				(k) => isUserFieldKey(k) || k === 'image_name' || k === 'name'
-			);
-			await fetchImageLists();
+			schemaFields = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'name');
+			await fetchRecords();
 		} catch (error) {
 			console.error('Error fetching schema:', error);
 		}
 	}
 
-	/**
-	 * Gets the display name for a list item.
-	 * Images: image_name or file_name. Json: name, then group_by_value, then short id.
-	 */
+	/** Display name for a record: name, then group_by_value, then short id. */
 	function getDisplayName(
 		item: ImageListItem & {
 			name?: string;
 			group_by_value?: string | number | boolean | string[] | null;
 		}
 	): string {
-		const imageName = (item as ImageListItem).image_name?.trim();
-		if (imageName && imageName.length > 0) return imageName;
 		const jsonName = (item as { name?: string }).name?.trim();
 		if (jsonName && jsonName.length > 0) return jsonName;
-		if ('file_name' in item && item.file_name) return item.file_name;
 		if (item.group_by_value != null && item.group_by_value !== '')
 			return String(item.group_by_value);
 		return (item.id as string).slice(0, 8);
 	}
-
-	// Removed isImageLiked function as liked field doesn't exist
 
 	/**
 	 * Builds API filter clauses from UI filter rows: only enabled rows with field and operator set;
@@ -191,11 +115,8 @@
 			});
 	}
 
-	/**
-	 * Fetches record lists based on current multi-filter state.
-	 * For images: linked/unlinked. For json: single records list.
-	 */
-	async function fetchImageLists() {
+	/** Fetch the record list for the current type, honoring the multi-filter state. */
+	async function fetchRecords() {
 		if (!typeId || isGlobals) return;
 		loading = true;
 		try {
@@ -204,109 +125,48 @@
 				...(apiFilters.length > 0 ? { filters: apiFilters } : {}),
 				groupBy: selection.gridGroupByField ?? undefined
 			});
-			if ('linked' in data) {
-				imageLists = {
-					linked: data.linked,
-					unlinked: data.unlinked,
-					excluded: data.excluded ?? [],
-					excluded_missing_files: data.excluded_missing_files ?? []
-				};
-				// Lazy heal: the list call reconciled the manifest against disk. Surface any drift.
-				const healed = data.healed;
-				if (healed && (healed.added > 0 || healed.missing > 0)) {
-					const parts: string[] = [];
-					if (healed.added > 0) parts.push(`${healed.added} new file(s) detected`);
-					if (healed.missing > 0) parts.push(`${healed.missing} file(s) missing from disk`);
-					toast.info(parts.join('; '));
-				}
-				if (imageLists.excluded_missing_files.length > 0) {
-					toast.warning(
-						`${imageLists.excluded_missing_files.length} missing excluded file(s) found.`,
-						{
-							action: {
-								label: 'Clean List',
-								onClick: async () => {
-									if (!typeId) return;
-									try {
-										await apiCleanExcludedFilesForType(typeId, imageLists.excluded_missing_files);
-										toast.success('Cleaned excluded files list.');
-										await fetchImageLists();
-									} catch (e) {
-										console.error(e);
-										toast.error('Failed to clean list.');
-									}
-								}
-							}
-						}
-					);
-				}
-			} else {
-				// JsonListResponse: single list
-				imageLists = {
-					linked: data.records as ImageListItem[],
-					unlinked: [],
-					excluded: [],
-					excluded_missing_files: []
-				};
-			}
+			records = 'records' in data ? (data.records as ImageListItem[]) : [];
 			updateDisplayedItems();
 		} catch (error) {
-			console.error('Error fetching lists:', error);
+			console.error('Error fetching records:', error);
 		}
 		loading = false;
 	}
 
 	/**
-	 * Updates the displayed list based on current view mode.
-	 * Also updates the shared `visibleImageIds` state for navigation.
+	 * Applies the local search filter and updates the shared `visibleImage*` state for navigation.
 	 */
 	function updateDisplayedItems() {
-		let baseItems: ImageListItem[] = [];
-		if (isBlobStore) {
-			// Blob store is a flat file manager: always show the full file list.
-			baseItems = imageLists.unlinked;
-		} else {
-			baseItems =
-				selection.viewMode === 'linked'
-					? imageLists.linked
-					: selection.viewMode === 'unlinked'
-						? imageLists.unlinked
-						: imageLists.excluded;
-		}
-
 		if (searchQuery.trim()) {
 			const q = searchQuery.toLowerCase().trim();
-			displayedItems = baseItems.filter((item) => {
+			displayedItems = records.filter((item) => {
 				const dn = getDisplayName(item).toLowerCase();
 				const fn = (item.file_name ?? '').toLowerCase();
 				return dn.includes(q) || fn.includes(q);
 			});
 		} else {
-			displayedItems = baseItems;
+			displayedItems = records;
 		}
 
 		selection.setVisibleImageIds(displayedItems.map((i) => i.id));
 		selection.setVisibleImageItems(displayedItems);
 	}
 
-	// When view changes or searchQuery changes, update displayed list + shared navigation IDs.
+	// When searchQuery changes, update displayed list + shared navigation IDs.
 	$effect(() => {
 		const _q = searchQuery;
 		updateDisplayedItems();
 	});
 
 	$effect(() => {
-		if (typeId) {
-			fetchConfig();
-			fetchSchema();
-		}
+		if (typeId) fetchSchema();
 	});
 
 	$effect(() => {
 		const _t = typeId;
 		const _filters = filters;
 		const _groupBy = selection.gridGroupByField;
-		if (typeId) fetchImageLists();
+		if (typeId) fetchRecords();
 	});
 
 	$effect(() => {
@@ -314,7 +174,7 @@
 		const unsub = refreshTrigger.subscribe((n) => {
 			if (n !== prev) {
 				prev = n;
-				fetchImageLists();
+				fetchRecords();
 			}
 		});
 		return unsub;
@@ -332,183 +192,7 @@
 	});
 
 	/**
-	 * Triggers the hidden file or folder input to open selection dialog.
-	 *
-	 * @param mode - 'files' for multiple file(s), 'folder' for folder (webkitdirectory)
-	 */
-	function triggerUpload(mode: 'files' | 'folder') {
-		if (mode === 'files' && fileInput) fileInput.click();
-		else if (mode === 'folder' && folderInput) folderInput.click();
-	}
-
-	/** HEIC/HEIF MIME types. */
-	const HEIC_MIME_TYPES = ['image/heic', 'image/heif'];
-
-	/** Check if a file is HEIC/HEIF. */
-	function isHeicFile(f: File): boolean {
-		if (HEIC_MIME_TYPES.includes(f.type.toLowerCase())) return true;
-		const ext = f.name.toLowerCase().split('.').pop();
-		return ext === 'heic' || ext === 'heif';
-	}
-
-	/** Wait for user to resolve a filename conflict. */
-	function waitForConflictResolution(file: File): Promise<'overwrite' | 'auto-rename' | 'skip'> {
-		return new Promise((resolve) => {
-			uploadConflictFile = file;
-			uploadConflictResolve = resolve;
-			uploadConflictOpen = true;
-		});
-	}
-
-	/** Resolve a filename conflict from the dialog. */
-	function resolveConflict(resolution: 'overwrite' | 'auto-rename' | 'skip') {
-		uploadConflictOpen = false;
-		uploadConflictFile = null;
-		uploadConflictResolve?.(resolution);
-		uploadConflictResolve = null;
-	}
-
-	/** Wait for user to confirm HEIC conversion. */
-	function waitForHeicConfirmation(count: number): Promise<boolean> {
-		return new Promise((resolve) => {
-			heicWarningCount = count;
-			heicWarningResolve = resolve;
-			heicWarningOpen = true;
-		});
-	}
-
-	/** Resolve the HEIC warning dialog. */
-	function resolveHeicWarning(proceed: boolean) {
-		heicWarningOpen = false;
-		heicWarningResolve?.(proceed);
-		heicWarningResolve = null;
-	}
-
-	/**
-	 * Handles file(s) or folder upload after user selects.
-	 * Validates each file type, checks for conflicts and HEIC files,
-	 * uploads each to the server, refreshes list once.
-	 *
-	 * @param event - change event from the file input
-	 */
-	async function handleFileUpload(event: Event) {
-		const target = event.target as HTMLInputElement;
-		const files = target.files;
-		if (!files?.length) return;
-
-		const allowed = ALLOWED_IMAGE_MIME_TYPES as readonly string[];
-		const isGenericGroup = browseFirst;
-		const toUpload: File[] = [];
-		for (let i = 0; i < files.length; i++) {
-			const f = files[i];
-			if (isGenericGroup || allowed.includes(f.type) || isHeicFile(f)) toUpload.push(f);
-		}
-		if (toUpload.length === 0) {
-			toast(
-				isGenericGroup
-					? 'Error: Please select valid files'
-					: 'Error: Please select valid image files (JPEG, PNG, GIF, SVG, WebP, or HEIC)'
-			);
-			target.value = '';
-			return;
-		}
-		if (toUpload.length < files.length) {
-			toast(`Skipped ${files.length - toUpload.length} non-image file(s).`);
-		}
-
-		// Check for HEIC files and warn
-		const heicFiles = toUpload.filter(isHeicFile);
-		if (heicFiles.length > 0) {
-			const proceed = await waitForHeicConfirmation(heicFiles.length);
-			if (!proceed) {
-				// Remove HEIC files from the upload list
-				const heicSet = new Set(heicFiles);
-				const remaining = toUpload.filter((f) => !heicSet.has(f));
-				if (remaining.length === 0) {
-					target.value = '';
-					return;
-				}
-				toUpload.length = 0;
-				toUpload.push(...remaining);
-			}
-		}
-
-		uploading = true;
-		let ok = 0;
-		let fail = 0;
-		let skipped = 0;
-		let lastUploadedId: ImageId | null = null;
-
-		try {
-			// Check for filename conflicts
-			let conflictSet = new Set<string>();
-			if (typeId) {
-				const filenames = toUpload.map((f) => {
-					// For HEIC files, the server will rename to .jpg
-					if (isHeicFile(f)) {
-						const base = f.name.replace(/\.[^.]+$/, '');
-						return `${base}.jpg`;
-					}
-					return f.name;
-				});
-				try {
-					const { conflicts } = await apiCheckUploadConflictsForType(typeId, filenames);
-					conflictSet = new Set(conflicts);
-				} catch {
-					// If conflict check fails, proceed without it
-				}
-			}
-
-			for (const file of toUpload) {
-				const effectiveName = isHeicFile(file)
-					? `${file.name.replace(/\.[^.]+$/, '')}.jpg`
-					: file.name;
-
-				let resolution: 'overwrite' | 'auto-rename' | null = null;
-				if (conflictSet.has(effectiveName)) {
-					const choice = await waitForConflictResolution(file);
-					if (choice === 'skip') {
-						skipped++;
-						continue;
-					}
-					resolution = choice;
-				}
-
-				try {
-					const result = typeId
-						? resolution
-							? await apiUploadImageForTypeWithResolution(typeId, file, resolution)
-							: await apiUploadImageForType(typeId, file)
-						: await Promise.reject(new Error('No media type'));
-					if (result?.id) {
-						ok++;
-						lastUploadedId = result.id;
-					} else fail++;
-				} catch {
-					fail++;
-				}
-			}
-			await fetchImageLists();
-			if (ok > 0 && lastUploadedId) {
-				selection.setViewMode('unlinked');
-				selection.selectImage(lastUploadedId);
-			}
-			const parts: string[] = [];
-			if (ok > 0) parts.push(`Uploaded ${ok} image(s)`);
-			if (fail > 0) parts.push(`${fail} failed`);
-			if (skipped > 0) parts.push(`${skipped} skipped`);
-			if (parts.length > 0) toast(parts.join('; '));
-		} catch (error) {
-			console.error('Upload error:', error);
-			toast('Upload failed');
-		} finally {
-			uploading = false;
-			target.value = '';
-		}
-	}
-
-	/**
-	 * Resolves schema field type for a field key. image_name and unknown keys default to 'string'.
+	 * Resolves schema field type for a field key. Unknown keys default to 'string'.
 	 */
 	function getFieldTypeForField(
 		fieldKey: string
@@ -526,7 +210,7 @@
 
 	/** Adds a new filter row with default field and operator. */
 	function addFilter() {
-		const field = schemaFields[0] ?? (kind === 'json' ? 'name' : 'image_name');
+		const field = schemaFields[0] ?? 'name';
 		const ops = operatorsForField(field);
 		filters = [
 			...filters,
@@ -566,16 +250,9 @@
 		);
 	}
 
-	/**
-	 * Manually refreshes the image lists using the current filters and view.
-	 * Use case: Triggered by the Sync button in the Filters section to reload files and listings.
-	 *
-	 * Future improvements:
-	 * - Optionally re-fetch schema while preserving the selected field if it still exists.
-	 * - Add visual loading indicator on the button itself.
-	 */
-	async function syncImageLists() {
-		await fetchImageLists();
+	/** Manually refresh the record list using the current filters. */
+	async function syncRecords() {
+		await fetchRecords();
 	}
 
 	async function openImage(item: ImageListItem) {
@@ -584,15 +261,14 @@
 	}
 
 	/**
-	 * Create a new JSON record (JSON media type only). Refreshes list then selects the new record
-	 * so the list and selection stay in sync and the editor can load the record without racing.
+	 * Create a new JSON record. Refreshes list then selects the new record so the list and selection
+	 * stay in sync and the editor can load the record without racing.
 	 */
 	async function createRecord() {
-		if (!typeId || kind !== 'json' || isGlobals) return;
+		if (!typeId || isGlobals) return;
 		try {
 			const created = await apiCreateRecordForType(typeId);
-			// Await list refresh so the new record is in displayedItems before we select (avoids race where GET by id fails or UI is stale).
-			await fetchImageLists();
+			await fetchRecords();
 			selection.selectImage(created.id);
 		} catch (e) {
 			console.error(e);
@@ -600,15 +276,12 @@
 		}
 	}
 
-	/**
-	 * Toggle grid view. When entering grid view, runs save-before-navigate hook then clears selection and multiselect.
-	 */
+	/** Toggle grid view. When entering grid view, runs save-before-navigate hook then clears selection. */
 	async function toggleGridView() {
 		await selection.setGridViewActive(!selection.gridViewActive);
 	}
 </script>
 
-<!-- <div class="sidebar" class:collapsed> -->
 <Sidebar.Root>
 	<Sidebar.Header>
 		<div class="flex flex-row items-center gap-2 min-w-0">
@@ -627,32 +300,13 @@
 			>
 				<Home class="h-4 w-4" />
 			</Button>
-			{#if !browseFirst && !isGlobals}
+			{#if !isGlobals}
 				<SchemaEditorButton />
 				<SettingsButton />
 			{/if}
 		</div>
 		<Sidebar.Separator />
-		<!-- Hidden file inputs: multiple files and folder (triggered by upload dropdown) -->
-		<input
-			type="file"
-			multiple
-			bind:this={fileInput}
-			onchange={handleFileUpload}
-			accept={browseFirst ? '*' : 'image/*,.heic,.heif'}
-			style="display: none;"
-			aria-label="Upload files"
-		/>
-		<input
-			type="file"
-			webkitdirectory
-			multiple
-			bind:this={folderInput}
-			onchange={handleFileUpload}
-			style="display: none;"
-			aria-label="Upload folder"
-		/>
-		{#if !browseFirst && !isGlobals}
+		{#if !isGlobals}
 			<Sidebar.Group>
 				<Collapsible.Root>
 					<div class="flex flex-row gap-2 items-center justify-between">
@@ -805,54 +459,14 @@
 				</Collapsible.Root>
 			</Sidebar.Group>
 		{/if}
-
-		{#if (kind === 'images' || browseFirst) && !isBlobStore}
-			<!-- View: Linked / Unlinked / Excluded (file-backed catalogs; blob store is a flat file manager) -->
-			<Sidebar.Separator />
-			<Sidebar.Group>
-				<Sidebar.GroupLabel>View</Sidebar.GroupLabel>
-				<div class="filter-controls">
-					<div class="flex flex-row gap-2 items-center justify-center flex-wrap">
-						<Button
-							variant={selection.viewMode === 'linked' ? 'default' : 'outline'}
-							onclick={() => selection.setViewMode('linked')}
-							size="sm"
-						>
-							Linked
-						</Button>
-						<Button
-							variant={selection.viewMode === 'unlinked' ? 'default' : 'outline'}
-							onclick={() => selection.setViewMode('unlinked')}
-							size="sm"
-						>
-							Unlinked
-						</Button>
-						<Button
-							variant={selection.viewMode === 'excluded' ? 'default' : 'outline'}
-							onclick={() => selection.setViewMode('excluded')}
-							size="sm"
-						>
-							Excluded
-						</Button>
-					</div>
-				</div>
-			</Sidebar.Group>
-			<Sidebar.Separator />
-		{/if}
 	</Sidebar.Header>
 
-	<!-- Removed Key Section as liked/unliked fields don't exist -->
-
-	<!-- Upload Section -->
 	{#if !isGlobals}
 		<Sidebar.Content>
-			<!-- Image List -->
 			<Sidebar.Group>
 				<Sidebar.GroupLabel>
 					<div class="flex items-center justify-between gap-2 w-full">
-						<span class="ml-2"
-							>{kind === 'images' ? 'Images' : browseFirst ? 'Files' : 'Records'} ({displayedItems.length})</span
-						>
+						<span class="ml-2">Records ({displayedItems.length})</span>
 						<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
 							<div class="flex items-center gap-2">
 								<Tooltip.Root>
@@ -875,65 +489,31 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											title={kind === 'json'
-												? 'Reload records'
-												: browseFirst
-													? 'Reload files'
-													: 'Reload images'}
-											onclick={syncImageLists}
+											title="Reload records"
+											onclick={syncRecords}
 											disabled={loading}
 											class="h-7 w-7"
 										>
 											<RefreshCwIcon class="h-4 w-4" />
 										</Button>
 									</Tooltip.Trigger>
-									<Tooltip.Content
-										>{kind === 'json'
-											? 'Sync records'
-											: browseFirst
-												? 'Sync files'
-												: 'Sync image lists'}</Tooltip.Content
-									>
+									<Tooltip.Content>Sync records</Tooltip.Content>
 								</Tooltip.Root>
-								{#if kind === 'json' && !isGlobals}
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											<Button
-												variant="outline"
-												size="icon"
-												title="New record"
-												onclick={createRecord}
-												disabled={loading}
-												class="h-7 w-7"
-											>
-												<Plus class="h-4 w-4" aria-hidden="true" />
-											</Button>
-										</Tooltip.Trigger>
-										<Tooltip.Content>New record</Tooltip.Content>
-									</Tooltip.Root>
-								{:else if kind === 'images' || browseFirst}
-									<DropdownMenu.Root>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												<DropdownMenu.Trigger
-													class="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-													disabled={uploading}
-												>
-													<UploadIcon class="h-4 w-4" />
-												</DropdownMenu.Trigger>
-											</Tooltip.Trigger>
-											<Tooltip.Content>Upload image(s) or folder</Tooltip.Content>
-										</Tooltip.Root>
-										<DropdownMenu.Content align="end">
-											<DropdownMenu.Item onclick={() => triggerUpload('files')}>
-												Upload file(s)
-											</DropdownMenu.Item>
-											<DropdownMenu.Item onclick={() => triggerUpload('folder')}>
-												Upload folder
-											</DropdownMenu.Item>
-										</DropdownMenu.Content>
-									</DropdownMenu.Root>
-								{/if}
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<Button
+											variant="outline"
+											size="icon"
+											title="New record"
+											onclick={createRecord}
+											disabled={loading}
+											class="h-7 w-7"
+										>
+											<Plus class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</Tooltip.Trigger>
+									<Tooltip.Content>New record</Tooltip.Content>
+								</Tooltip.Root>
 							</div>
 						</Tooltip.Provider>
 					</div>
@@ -941,7 +521,7 @@
 				<div class="px-3 pb-2">
 					<Input
 						type="text"
-						placeholder={kind === 'json' ? 'Search records...' : 'Search files...'}
+						placeholder="Search records..."
 						bind:value={searchQuery}
 						class="h-8 text-xs"
 					/>
@@ -951,8 +531,8 @@
 						<li class="italic flex justify-center">Loading...</li>
 					{:else if displayedItems.length > 0}
 						{#each displayedItems as item (item.id)}
-							<HoverCard.Root openDelay={300} closeDelay={0}>
-								<HoverCard.Trigger
+							<li>
+								<button
 									class={buttonVariants({
 										variant: selection.selectedImageId === item.id ? 'default' : 'ghost',
 										class: 'w-full justify-start focus-visible:ring-0'
@@ -964,67 +544,14 @@
 									>
 										{getDisplayName(item)}
 									</span>
-								</HoverCard.Trigger>
-								{#if selection.selectedImageId !== item.id && (kind === 'images' || browseFirst)}
-									<HoverCard.Content
-										side="right"
-										align="center"
-										class="pointer-events-none flex flex-col gap-2"
-									>
-										<img
-											src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
-											alt="Preview of {getDisplayName(item)}"
-										/>
-										{#if 'file_name' in item && item.file_name}
-											<p class="text-sm text-gray-500 break-all">{item.file_name}</p>
-										{/if}
-									</HoverCard.Content>
-								{/if}
-							</HoverCard.Root>
+								</button>
+							</li>
 						{/each}
 					{:else}
-						<li class="italic flex justify-center">
-							No {kind === 'images' || browseFirst
-								? selection.viewMode + (browseFirst ? ' files' : ' images')
-								: 'records'} found.
-						</li>
+						<li class="italic flex justify-center">No records found.</li>
 					{/if}
 				</ul>
 			</Sidebar.Group>
 		</Sidebar.Content>
 	{/if}
 </Sidebar.Root>
-
-<!-- Upload filename conflict dialog -->
-<AlertDialog.Root bind:open={uploadConflictOpen}>
-	<AlertDialog.Content>
-		<AlertDialog.Title>File already exists</AlertDialog.Title>
-		<AlertDialog.Description>
-			A file named "{uploadConflictFile?.name}" already exists. What would you like to do?
-		</AlertDialog.Description>
-		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="outline" onclick={() => resolveConflict('skip')}>Skip</Button>
-			<Button variant="outline" onclick={() => resolveConflict('auto-rename')}>Auto-rename</Button>
-			<Button onclick={() => resolveConflict('overwrite')}>Overwrite</Button>
-		</div>
-	</AlertDialog.Content>
-</AlertDialog.Root>
-
-<!-- HEIC conversion warning dialog -->
-<AlertDialog.Root bind:open={heicWarningOpen}>
-	<AlertDialog.Content>
-		<AlertDialog.Title>HEIC files detected</AlertDialog.Title>
-		<AlertDialog.Description>
-			{heicWarningCount === 1
-				? 'This file is in HEIC format, which cannot be displayed in most browsers. It will be converted to JPEG.'
-				: `${heicWarningCount} files are in HEIC format, which cannot be displayed in most browsers. They will be converted to JPEG.`}
-		</AlertDialog.Description>
-		<div class="flex justify-end gap-2 mt-4">
-			<Button variant="outline" onclick={() => resolveHeicWarning(false)}>Cancel</Button>
-			<Button onclick={() => resolveHeicWarning(true)}>Convert and upload</Button>
-		</div>
-	</AlertDialog.Content>
-</AlertDialog.Root>
-
-<style>
-</style>

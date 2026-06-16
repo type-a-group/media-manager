@@ -3,13 +3,9 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Search, File, X, ExternalLink } from 'lucide-svelte';
-	import {
-		apiListRecordsForType,
-		apiImageUrlByIdForType,
-		apiListMediaTypes
-	} from '$lib/api/client.js';
+	import { apiListFiles, apiBlobUrl } from '$lib/api/files.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
-	import type { ImageListItem } from '$lib/core/types.js';
+	import type { FileItem } from '$lib/core/types.js';
 
 	let {
 		value = $bindable(),
@@ -21,47 +17,24 @@
 	} = $props();
 
 	let open = $state(false);
-	let records = $state<ImageListItem[]>([]);
+	let files = $state<FileItem[]>([]);
 	let loading = $state(false);
 	let query = $state('');
-	let blobStoreTypeId = $state<string | null>(null);
-	let noBlobStore = $state(false);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Resolve the selected file_id to a display name from the loaded blob list. */
-	const selectedName = $derived(
-		value ? (records.find((r) => r.id === value)?.file_name ?? '') : ''
-	);
-	/** URL to the selected blob's bytes (for thumbnail + open-in-new-tab), once the store is known. */
-	const selectedUrl = $derived(
-		value && blobStoreTypeId ? apiImageUrlByIdForType(blobStoreTypeId, value) : ''
-	);
+	const selectedName = $derived(value ? (files.find((f) => f.id === value)?.file_name ?? '') : '');
+	/** URL to the selected blob's bytes (for thumbnail + open-in-new-tab). */
+	const selectedUrl = $derived(value ? apiBlobUrl(value) : '');
 	/** Whether the selected blob is an image we can thumbnail. */
 	const selectedIsImage = $derived(!!selectedName && hasAllowedImageExtension(selectedName));
 
-	/**
-	 * Discover the blob_store type dynamically.
-	 * Falls back to 'files' if a blob_store is not found by kind.
-	 */
-	async function discoverBlobStore(): Promise<string | null> {
-		try {
-			const types = await apiListMediaTypes();
-			const blobType = types.find((t) => t.kind === 'blob_store');
-			return blobType?.id ?? null;
-		} catch {
-			return null;
-		}
-	}
-
+	/** Load blobs from the global files hub, honouring the current search query. */
 	async function fetchFiles() {
-		if (!blobStoreTypeId) return;
 		loading = true;
 		try {
-			const res = await apiListRecordsForType(blobStoreTypeId, { query: query || undefined });
-			if ('linked' in res) {
-				// blob_store returns all files as unlinked (disk-only listing)
-				records = [...(res.unlinked ?? []), ...(res.linked ?? [])] as ImageListItem[];
-			}
+			const res = await apiListFiles({ query: query || undefined });
+			files = res.files;
 		} catch (e) {
 			console.error('FilePicker: failed to fetch files', e);
 		} finally {
@@ -75,83 +48,63 @@
 		debounceTimer = setTimeout(() => fetchFiles(), 300);
 	}
 
-	/** Discover the blob store and load files (shared by dialog-open and label-resolution paths). */
-	async function ensureFilesLoaded() {
-		if (!blobStoreTypeId) {
-			const id = await discoverBlobStore();
-			if (id) {
-				blobStoreTypeId = id;
-				noBlobStore = false;
-			} else {
-				noBlobStore = true;
-				return;
-			}
-		}
-		await fetchFiles();
-	}
-
 	$effect(() => {
-		if (open) ensureFilesLoaded();
+		if (open) fetchFiles();
 	});
 
 	// When a value is set but we haven't loaded the blob list yet, load it once so the trigger button
 	// can show the resolved filename instead of the raw file_id.
 	$effect(() => {
-		if (value && records.length === 0 && !loading && !noBlobStore) ensureFilesLoaded();
+		if (value && files.length === 0 && !loading) fetchFiles();
 	});
 
-	function handleSelect(rec: ImageListItem) {
-		value = rec.id;
+	function handleSelect(file: FileItem) {
+		value = file.id;
 		open = false;
-		onSelect?.(rec.id);
+		onSelect?.(file.id);
 	}
 
 	function handleClear() {
 		value = '';
 		onSelect?.('');
 	}
-
-	function fileUrl(rec: ImageListItem): string {
-		if (!blobStoreTypeId) return '';
-		return apiImageUrlByIdForType(blobStoreTypeId, rec.id);
-	}
 </script>
 
 <div class="flex items-center gap-2">
 	<Dialog.Root bind:open>
-		<Dialog.Trigger class="flex-1 min-w-0">
+		<Dialog.Trigger class="min-w-0 flex-1">
 			<Button
 				variant="outline"
-				class="w-full justify-start text-left font-normal gap-2 h-auto py-1.5"
+				class="h-auto w-full justify-start gap-2 py-1.5 text-left font-normal"
 			>
 				{#if value}
 					<span
-						class="size-10 shrink-0 rounded bg-muted overflow-hidden flex items-center justify-center"
+						class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
 					>
 						{#if selectedIsImage && selectedUrl}
 							<img
 								src={selectedUrl}
 								alt={selectedName}
-								class="w-full h-full object-cover"
+								class="h-full w-full object-cover"
 								loading="lazy"
 							/>
 						{:else}
 							<File class="size-5 text-muted-foreground" />
 						{/if}
 					</span>
-					<span class="truncate flex-1">{selectedName || 'Selected file'}</span>
+					<span class="flex-1 truncate">{selectedName || 'Selected file'}</span>
 				{:else}
 					<span class="text-muted-foreground">Select file…</span>
 				{/if}
 			</Button>
 		</Dialog.Trigger>
-		<Dialog.Content class="max-w-2xl max-h-[80vh] flex flex-col">
+		<Dialog.Content class="flex max-h-[80vh] max-w-2xl flex-col">
 			<Dialog.Title>Select File</Dialog.Title>
 			<Dialog.Description
 				>Search and select a file from the global files directory.</Dialog.Description
 			>
-			<div class="flex gap-2 items-center mt-4">
-				<Search class="size-4 text-muted-foreground shrink-0" />
+			<div class="mt-4 flex items-center gap-2">
+				<Search class="size-4 shrink-0 text-muted-foreground" />
 				<Input
 					type="search"
 					placeholder="Search files…"
@@ -160,50 +113,39 @@
 				/>
 			</div>
 			<div
-				class="flex-1 overflow-y-auto min-h-[16rem] border rounded-md p-2 mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2"
+				class="mt-4 grid min-h-[16rem] flex-1 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-2 sm:grid-cols-3 md:grid-cols-4"
 			>
-				{#if noBlobStore}
-					<div
-						class="col-span-full flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground"
-					>
-						<File class="size-8" />
-						<p class="text-sm text-center">No global files directory found.</p>
-						<p class="text-xs text-center">
-							Create a blob store media type or ensure the "files" folder exists under your data
-							root.
-						</p>
-					</div>
-				{:else if loading}
+				{#if loading}
 					<div class="col-span-full flex justify-center py-8 text-muted-foreground">Loading…</div>
-				{:else if records.length === 0}
+				{:else if files.length === 0}
 					<div class="col-span-full flex justify-center py-8 text-muted-foreground">
 						{query ? 'No files match your search.' : 'No files found.'}
 					</div>
 				{:else}
-					{#each records as rec (rec.id)}
-						{@const isSelected = value === rec.id}
+					{#each files as file (file.id)}
+						{@const isSelected = value === file.id}
 						<button
-							class="flex flex-col items-center gap-2 p-2 border rounded-md hover:bg-accent hover:text-accent-foreground text-left focus:outline-none focus:ring-2 focus:ring-ring transition-colors {isSelected
-								? 'ring-2 ring-primary bg-accent/50'
+							class="flex flex-col items-center gap-2 rounded-md border p-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring {isSelected
+								? 'bg-accent/50 ring-2 ring-primary'
 								: ''}"
-							onclick={() => handleSelect(rec)}
+							onclick={() => handleSelect(file)}
 						>
 							<div
-								class="w-full aspect-square bg-muted flex items-center justify-center rounded overflow-hidden"
+								class="flex aspect-square w-full items-center justify-center overflow-hidden rounded bg-muted"
 							>
-								{#if hasAllowedImageExtension(rec.file_name)}
+								{#if hasAllowedImageExtension(file.file_name)}
 									<img
-										src={fileUrl(rec)}
-										alt={rec.image_name || rec.file_name}
-										class="w-full h-full object-cover"
+										src={apiBlobUrl(file.id)}
+										alt={file.file_name}
+										class="h-full w-full object-cover"
 										loading="lazy"
 									/>
 								{:else}
 									<File class="size-8 text-muted-foreground" />
 								{/if}
 							</div>
-							<span class="text-xs truncate w-full text-center" title={rec.file_name}>
-								{rec.file_name}
+							<span class="w-full truncate text-center text-xs" title={file.file_name}>
+								{file.file_name}
 							</span>
 						</button>
 					{/each}
@@ -217,7 +159,7 @@
 				href={selectedUrl}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+				class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 				aria-label="Open file in new tab"
 				title="Open in new tab"
 			>
@@ -226,7 +168,7 @@
 		{/if}
 		<button
 			type="button"
-			class="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+			class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 			onclick={handleClear}
 			aria-label="Clear file selection"
 		>
