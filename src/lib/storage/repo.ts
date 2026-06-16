@@ -29,7 +29,7 @@ import {
 	normalizeUrlValue
 } from '$lib/core/types.js';
 import { newImageId, type ImageId } from '$lib/core/ids.js';
-import { hasAllowedImageExtension } from '$lib/core/images.js';
+import { hasAllowedFileExtension } from '$lib/core/images.js';
 import {
 	type FilterClause,
 	OPERATORS,
@@ -401,7 +401,7 @@ export function createImageRepo(typeId?: string) {
 		});
 
 		const diskFiles = new Set(
-			(await fs.readdir(paths.imagesDir).catch(() => [] as string[])).filter((f) => hasAllowedImageExtension(f))
+			(await fs.readdir(paths.imagesDir).catch(() => [] as string[])).filter((f) => hasAllowedFileExtension(f))
 		);
 
 		// Linked = records in JSON that exist on disk. Unlinked = files on disk that are not in JSON.

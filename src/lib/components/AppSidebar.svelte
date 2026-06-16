@@ -6,7 +6,8 @@
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { ChevronsUpDownIcon, Home, LayoutGrid, Plus, RefreshCwIcon, UploadIcon } from 'lucide-svelte';
+	import { ChevronsUpDownIcon, FileText, Home, LayoutGrid, Plus, RefreshCwIcon, UploadIcon } from 'lucide-svelte';
+	import { isPdfFilename } from '$lib/core/images.js';
 	import { goto } from '$app/navigation';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as HoverCard from '$lib/components/ui/hover-card/index.js';
@@ -39,7 +40,7 @@
 	} from '$lib/api/client.js';
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
-	import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
+	import { ALLOWED_FILE_MIME_TYPES } from '$lib/core/images.js';
 	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
 	import { useSelection } from '$lib/state/selection.svelte';
 
@@ -290,14 +291,14 @@
 		const files = target.files;
 		if (!files?.length) return;
 
-		const allowed = ALLOWED_IMAGE_MIME_TYPES as readonly string[];
+		const allowed = ALLOWED_FILE_MIME_TYPES as readonly string[];
 		const toUpload: File[] = [];
 		for (let i = 0; i < files.length; i++) {
 			const f = files[i];
 			if (allowed.includes(f.type) || isHeicFile(f)) toUpload.push(f);
 		}
 		if (toUpload.length === 0) {
-			toast('Error: Please select valid image files (JPEG, PNG, GIF, SVG, WebP, or HEIC)');
+			toast('Error: Please select valid files (JPEG, PNG, GIF, SVG, WebP, HEIC, or PDF)');
 			target.value = '';
 			return;
 		}
@@ -515,7 +516,7 @@
 			multiple
 			bind:this={fileInput}
 			onchange={handleFileUpload}
-			accept="image/*,.heic,.heif"
+			accept="image/*,.heic,.heif,application/pdf,.pdf"
 			style="display: none;"
 			aria-label="Upload image files"
 		/>
@@ -798,7 +799,14 @@
 							</HoverCard.Trigger>
 							{#if selection.selectedImageId !== item.id && kind === 'images'}
 								<HoverCard.Content side="right" align="center" class='pointer-events-none flex flex-col gap-2'>
-									<img src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''} alt="Preview of {getDisplayName(item)}" />
+									{#if 'file_name' in item && isPdfFilename(item.file_name)}
+										<div class="flex flex-col items-center justify-center gap-2 py-6 text-muted-foreground">
+											<FileText class="h-10 w-10" />
+											<span class="text-xs">PDF document</span>
+										</div>
+									{:else}
+										<img src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''} alt="Preview of {getDisplayName(item)}" />
+									{/if}
 									{#if 'file_name' in item && item.file_name}
 										<p class="text-sm text-gray-500 break-all">{item.file_name}</p>
 									{/if}

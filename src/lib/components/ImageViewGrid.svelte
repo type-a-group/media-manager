@@ -8,7 +8,8 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { CheckSquare, Square, Trash2, Unlink } from 'lucide-svelte';
+	import { CheckSquare, FileText, Square, Trash2, Unlink } from 'lucide-svelte';
+	import { isPdfFilename } from '$lib/core/images.js';
 	import { toast } from 'svelte-sonner';
 
 	import type { ImageListItem } from '$lib/core/types.js';
@@ -649,13 +650,20 @@
 										But we want to ensure the image fits nicely.
 									-->
 									<div class="w-full relative {isUnlinked ? 'aspect-square' : ''}">
-										<img
-											src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
-											alt={getDisplayName(item)}
-											class="w-full {isUnlinked
-												? 'h-full object-cover absolute inset-0'
-												: 'h-auto object-contain block'}"
-										/>
+										{#if isPdfFilename(item.file_name)}
+											<div class="flex flex-col items-center justify-center gap-2 p-4 text-muted-foreground {isUnlinked ? 'h-full absolute inset-0' : 'aspect-square'}">
+												<FileText class="h-10 w-10" />
+												<span class="text-xs break-all text-center line-clamp-2">{getDisplayName(item)}</span>
+											</div>
+										{:else}
+											<img
+												src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
+												alt={getDisplayName(item)}
+												class="w-full {isUnlinked
+													? 'h-full object-cover absolute inset-0'
+													: 'h-auto object-contain block'}"
+											/>
+										{/if}
 									</div>
 									{#if selection.gridSelectMode}
 										<div

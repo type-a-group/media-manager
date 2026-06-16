@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { error } from '@sveltejs/kit';
-import { hasAllowedImageExtension } from '$lib/core/images.js';
+import { hasAllowedFileExtension } from '$lib/core/images.js';
 
 /**
  * Validate and normalize an image filename coming from persisted data.
@@ -29,7 +29,7 @@ export function assertSafeImageFilename(filename: string): string {
 	if (base !== filename) throw error(400, 'Invalid filename');
 
 	// Basic extension allowlist.
-	if (!hasAllowedImageExtension(base)) throw error(400, 'Unsupported image extension');
+	if (!hasAllowedFileExtension(base)) throw error(400, 'Unsupported image extension');
 
 	return base;
 }

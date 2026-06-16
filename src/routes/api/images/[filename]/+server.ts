@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import { imageRepo } from '$lib/server/imageRepo.js';
 import { assertSafeImageFilename } from '$lib/storage/filenames.js';
+import { contentTypeForFile } from '$lib/server/contentType.js';
 
 export const GET: RequestHandler = ({ params }) => {
 	const { filename } = params;
@@ -16,28 +17,9 @@ export const GET: RequestHandler = ({ params }) => {
 	try {
 		if (fs.existsSync(filePath)) {
 			const imageBuffer = fs.readFileSync(filePath);
-			const fileExtension = path.extname(safe).toLowerCase();
-			let contentType = 'application/octet-stream'; // Default content type
-
-			switch (fileExtension) {
-				case '.jpg':
-				case '.jpeg':
-					contentType = 'image/jpeg';
-					break;
-				case '.png':
-					contentType = 'image/png';
-					break;
-				case '.gif':
-					contentType = 'image/gif';
-					break;
-				case '.svg':
-					contentType = 'image/svg+xml';
-					break;
-			}
-
 			return new Response(imageBuffer, {
 				headers: {
-					'Content-Type': contentType
+					'Content-Type': contentTypeForFile(safe)
 				}
 			});
 		} else {

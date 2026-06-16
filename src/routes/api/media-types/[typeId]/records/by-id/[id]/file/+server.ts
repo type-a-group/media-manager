@@ -5,6 +5,7 @@ import path from 'node:path';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import { getMediaTypePaths } from '$lib/storage/paths.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
+import { contentTypeForFile } from '$lib/server/contentType.js';
 
 /**
  * GET: Return raw image file bytes by record id (images kind only).
@@ -23,20 +24,9 @@ export const GET: RequestHandler = async ({ params }) => {
 		const filePath = path.join(paths.filesDir, filename);
 		if (!fs.existsSync(filePath)) throw error(404, 'Image file not found');
 		const imageBuffer = fs.readFileSync(filePath);
-		const ext = path.extname(filename).toLowerCase();
-		const contentType =
-			ext === '.jpg' || ext === '.jpeg'
-				? 'image/jpeg'
-				: ext === '.png'
-					? 'image/png'
-					: ext === '.gif'
-						? 'image/gif'
-						: ext === '.svg'
-							? 'image/svg+xml'
-							: ext === '.webp'
-								? 'image/webp'
-								: 'application/octet-stream';
-		return new Response(imageBuffer, { headers: { 'Content-Type': contentType } });
+		return new Response(imageBuffer, {
+			headers: { 'Content-Type': contentTypeForFile(filename) }
+		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;

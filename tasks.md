@@ -15,6 +15,12 @@
 -  Verbose mode: like not compact at all, images are displayed as the sidebar, so you can visually search through the data
     - Option to look at the images in a larger grid view (like lightroom) and select one in case you REALLY need to search for something visually
 
+# Future changes
+- Full PDF file support (storage + metadata already shipped):
+    - render PDFs inline in the editor via native browser embed (`<iframe>`/`<embed>` with `application/pdf` content-type, no new deps) instead of the current icon placeholder
+    - generate/serve PDF thumbnails for the grid + sidebar previews (currently a PDF icon)
+    - reconsider splitting a dedicated `documents` media kind out of `images` (the `ALLOWED_IMAGE_EXTENSIONS`/`ImageEditorPane` "image" naming is now a slight misnomer)
+
 # Things to think about
 - is having default values important? other than like false for bools and 0 for ints - maybe we can just filter for empty values?
 

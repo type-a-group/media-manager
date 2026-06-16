@@ -18,12 +18,25 @@
 	} from '$lib/api/client.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { ImageId } from '$lib/core/ids.js';
+	import { supportsFileMetadata, fileExtension } from '$lib/core/images.js';
 
 	/** Image record id (required for fetching by-id). Media type id when in media-type context. Filename for display only. */
 	let { id = undefined as ImageId | undefined, typeId = undefined as string | undefined, filename = undefined as string | undefined } = $props();
 
+	/** Whether file metadata can be extracted for this file's type. Defaults to true when no filename is known. */
+	const metadataSupported = $derived(filename ? supportsFileMetadata(filename) : true);
+	/** Tooltip text shown when metadata isn't supported for this file's extension. */
+	const unsupportedMessage = $derived.by(() => {
+		const ext = fileExtension(filename ?? '');
+		return ext
+			? `Metadata isn't supported for ${ext} files`
+			: "Metadata isn't supported for this file type";
+	});
+
 	let isOpen = $state(false);
 	let metadata = $state<Record<string, any> | null>(null);
+	/** True when the loaded metadata describes a PDF document (vs a raster image). */
+	const isPdf = $derived(metadata?.format === 'pdf');
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let stripLoading = $state(false);
@@ -98,6 +111,7 @@
 		if (e === '.png') return 'PNG';
 		if (e === '.webp') return 'WebP';
 		if (e === '.heic' || e === '.heif') return 'HEIC';
+		if (e === '.pdf') return 'PDF';
 		return ext || 'unknown';
 	}
 
@@ -134,7 +148,18 @@
 			loop: 'Loop',
 			delay: 'Delay',
 			aspectRatio: 'Aspect Ratio',
-			megapixels: 'Megapixels'
+			megapixels: 'Megapixels',
+			title: 'Title',
+			author: 'Author',
+			subject: 'Subject',
+			keywords: 'Keywords',
+			creator: 'Creator',
+			producer: 'Producer',
+			pageCount: 'Page Count',
+			pdfVersion: 'PDF Version',
+			encryption: 'Encryption',
+			pdfCreateDate: 'Created',
+			pdfModifyDate: 'Modified'
 		};
 
 		return labelMap[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
@@ -255,20 +280,32 @@
 <Dialog.Root bind:open={isOpen}>
 	<Tooltip.Root>
 		<Tooltip.Trigger>
-			<Dialog.Trigger
-				class={buttonVariants({ variant: 'outline', size: 'icon' })}
-				title="Metadata"
-				aria-label="Metadata"
-			>
-				<InfoIcon />
-			</Dialog.Trigger>
+			{#if metadataSupported}
+				<Dialog.Trigger
+					class={buttonVariants({ variant: 'outline', size: 'icon' })}
+					title="Metadata"
+					aria-label="Metadata"
+				>
+					<InfoIcon />
+				</Dialog.Trigger>
+			{:else}
+				<span
+					class={buttonVariants({ variant: 'outline', size: 'icon' }) + ' cursor-not-allowed opacity-50'}
+					aria-disabled="true"
+					aria-label="Metadata not supported"
+				>
+					<InfoIcon />
+				</span>
+			{/if}
 		</Tooltip.Trigger>
-		<Tooltip.Content side="top" sideOffset={6}>View file metadata</Tooltip.Content>
+		<Tooltip.Content side="top" sideOffset={6}>
+			{metadataSupported ? 'View file metadata' : unsupportedMessage}
+		</Tooltip.Content>
 	</Tooltip.Root>
 	<Dialog.Content>
-		<Dialog.Title>Image Metadata</Dialog.Title>
+		<Dialog.Title>{isPdf ? 'PDF Metadata' : 'Image Metadata'}</Dialog.Title>
 		<Dialog.Description>
-			View detailed information about the image file.
+			View detailed information about the {isPdf ? 'PDF document' : 'image file'}.
 		</Dialog.Description>
 		<div class="flex flex-wrap gap-2 py-2">
 			<Button
@@ -279,14 +316,16 @@
 			>
 				Clear all metadata
 			</Button>
-			<Button
-				variant="outline"
-				size="sm"
-				disabled={stripLoading || loading || !metadata}
-				onclick={() => (confirmClearGpsOpen = true)}
-			>
-				Clear GPS only
-			</Button>
+			{#if !isPdf}
+				<Button
+					variant="outline"
+					size="sm"
+					disabled={stripLoading || loading || !metadata}
+					onclick={() => (confirmClearGpsOpen = true)}
+				>
+					Clear GPS only
+				</Button>
+			{/if}
 		</div>
 		<AlertDialog.Root bind:open={confirmClearAllOpen}>
 			<AlertDialog.Content>
@@ -366,9 +405,11 @@
 								<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
 							</svg>
 							<div>
-								<h3 class="text-sm font-medium text-foreground">Image Format: {metadata.format?.toUpperCase()}</h3>
+								<h3 class="text-sm font-medium text-foreground">File Format: {metadata.format?.toUpperCase()}</h3>
 								<p class="text-sm text-muted-foreground mt-1">
-									{#if metadata.format === 'png'}
+									{#if metadata.format === 'pdf'}
+										PDF documents carry document properties like author, title, and page count rather than image EXIF data.
+									{:else if metadata.format === 'png'}
 										PNG files typically contain basic image properties but limited EXIF data compared to JPEG files.
 									{:else if metadata.format === 'jpeg' || metadata.format === 'jpg'}
 										JPEG files can contain rich EXIF data including camera settings, GPS coordinates, and creation details.
@@ -438,6 +479,22 @@
 						</div>
 					</div>
 
+					{#if isPdf}
+					<!-- Document Information (PDF) -->
+					<div>
+						<h3 class="text-lg font-semibold text-foreground mb-3">Document Information</h3>
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+							{#each ['title', 'author', 'subject', 'keywords', 'creator', 'producer', 'pageCount', 'pdfVersion', 'encryption', 'pdfCreateDate', 'pdfModifyDate'] as key}
+								{#if metadata[key] !== undefined}
+									<div class="rounded-md p-3 bg-muted">
+										<dt class="text-sm font-medium text-muted-foreground">{getDisplayLabel(key)}</dt>
+										<dd class="text-sm text-foreground mt-1 break-words">{formatValue(metadata[key])}</dd>
+									</div>
+								{/if}
+							{/each}
+						</div>
+					</div>
+					{:else}
 					<!-- Image Properties -->
 					<div>
 						<h3 class="text-lg font-semibold text-foreground mb-3">Image Properties</h3>
@@ -482,11 +539,12 @@
 							{/each}
 						</div>
 					</div>
+					{/if}
 
 					<!-- EXIF Data -->
 					 <Collapsible.Root>
 						<div class="flex flex-row gap-2 items-center justify-between">
-							<h3 class="text-lg font-semibold text-foreground mb-3">EXIF Data</h3>
+							<h3 class="text-lg font-semibold text-foreground mb-3">{isPdf ? 'Additional Metadata' : 'EXIF Data'}</h3>
 							<Collapsible.Trigger class={buttonVariants({ variant: "ghost", size: "sm", class: "w-9 p-0" })}>
 								<ChevronsUpDownIcon />
 							</Collapsible.Trigger>

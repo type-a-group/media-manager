@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { imageRepo } from '$lib/server/imageRepo.js';
-import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
+import { ALLOWED_FILE_MIME_TYPES } from '$lib/core/images.js';
 import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 
 /**
@@ -31,7 +31,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		// Validate file type - only allow common image formats
-		if (!(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
+		if (!(ALLOWED_FILE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
 			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, and SVG images are allowed.');
 		}
 

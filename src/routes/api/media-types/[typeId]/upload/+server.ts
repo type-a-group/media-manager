@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { getMediaTypePaths } from '$lib/storage/paths.js';
-import { ALLOWED_IMAGE_MIME_TYPES } from '$lib/core/images.js';
+import { ALLOWED_FILE_MIME_TYPES } from '$lib/core/images.js';
 import { assertSafeImageFilename } from '$lib/storage/filenames.js';
 import { generateUniqueFilename } from '$lib/storage/repo.js';
 import convert from 'heic-convert';
@@ -41,8 +41,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		const formData = await request.formData();
 		const imageFile = formData.get('image') as File;
 		if (!imageFile) throw error(400, 'No image file provided');
-		if (!(ALLOWED_IMAGE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
-			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, SVG, WebP, and HEIC images are allowed.');
+		if (!(ALLOWED_FILE_MIME_TYPES as readonly string[]).includes(imageFile.type)) {
+			throw error(400, 'Invalid file type. Only JPEG, PNG, GIF, SVG, WebP, HEIC images, and PDF files are allowed.');
 		}
 		if (!fs.existsSync(imagesDirPath)) {
 			fs.mkdirSync(imagesDirPath, { recursive: true });

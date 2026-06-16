@@ -8,9 +8,10 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { toast } from 'svelte-sonner';
-	import { ChevronLeft, ChevronRight, MoreVertical, Trash2, Unlink, X } from 'lucide-svelte';
+	import { ChevronLeft, ChevronRight, FileText, MoreVertical, Trash2, Unlink, X } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
+	import { isPdfFilename } from '$lib/core/images.js';
 	import { fieldLabel, isUserFieldKey, RESERVED_FIELD_KEYS } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -69,6 +70,10 @@
 			? decodeURIComponent(String(selection.selectedImageId).slice(9))
 			: ''
 	);
+	/** Filename of the current selection (linked record or unlinked file). */
+	const selectedFilename = $derived(record?.file_name ?? unlinkedFilename);
+	/** True when the current selection is a PDF, which cannot render in an <img> tag. */
+	const isPdfFile = $derived(isPdfFilename(selectedFilename));
 	/** True when current form values differ from the last saved record (or last init for unlinked). */
 	const isDirty = $derived(
 		schema !== null &&
@@ -532,10 +537,27 @@
 		<div class="flex-1 min-w-0 overflow-auto p-4">
 			<Card.Root>
 				<Card.Content>
-					<img
-						src={typeId ? apiImageUrlByIdForType(typeId, selection.selectedImageId) : ''}
-						alt={record?.image_name || record?.file_name || unlinkedFilename}
-					/>
+					{#if isPdfFile}
+						<div class="flex flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+							<FileText class="h-16 w-16" />
+							<p class="text-sm break-all text-center">{selectedFilename}</p>
+							{#if typeId && record?.id}
+								<a
+									href={apiImageUrlByIdForType(typeId, selection.selectedImageId)}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="text-sm text-primary hover:underline"
+								>
+									Open PDF in new tab
+								</a>
+							{/if}
+						</div>
+					{:else}
+						<img
+							src={typeId ? apiImageUrlByIdForType(typeId, selection.selectedImageId) : ''}
+							alt={record?.image_name || record?.file_name || unlinkedFilename}
+						/>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		</div>
