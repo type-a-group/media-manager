@@ -17,7 +17,8 @@
 		X,
 		EyeOff,
 		Eye,
-		FileIcon
+		FileIcon,
+		TriangleAlert
 	} from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
@@ -789,7 +790,10 @@
 								Exclude from this group
 							</Button>
 							<form onsubmit={handleDeleteFromDisk} class="inline">
-								<AlertDialog.Action type="submit" class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+								<AlertDialog.Action
+									type="submit"
+									class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+								>
 									Delete from disk
 								</AlertDialog.Action>
 							</form>
@@ -1012,7 +1016,31 @@
 											</div>
 										</div>
 									{:else if schema[key]?.type === 'file'}
-										<FilePicker bind:value={formValues[key]} />
+										{@const missingName = (record as Record<string, any>)?._missing_files?.[key]}
+										{@const isMissing =
+											missingName !== undefined &&
+											formValues[key] === (record as Record<string, any>)?.[key]}
+										<div class="flex flex-col gap-1 w-full">
+											<FilePicker bind:value={formValues[key]} />
+											{#if isMissing}
+												<div class="flex items-center justify-between gap-2 mt-1">
+													<span class="text-xs text-destructive flex items-center gap-1">
+														<TriangleAlert class="h-3 w-3 shrink-0" />
+														{missingName
+															? `Missing file: ${missingName}`
+															: 'File not found on disk'}
+													</span>
+													<Button
+														variant="ghost"
+														size="sm"
+														class="h-6 px-2 text-xs"
+														onclick={() => (formValues[key] = '')}
+													>
+														Clear
+													</Button>
+												</div>
+											{/if}
+										</div>
 									{:else}
 										<textarea
 											bind:value={formValues[key]}

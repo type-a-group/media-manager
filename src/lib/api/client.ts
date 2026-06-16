@@ -28,7 +28,9 @@ export const MediaTypeStatsSchema = z.object({
 export type MediaTypeStats = z.infer<typeof MediaTypeStatsSchema>;
 
 /** Union of list response shapes (images vs json). */
-export type ListRecordsResponse = z.infer<typeof ImageListResponseSchema> | z.infer<typeof JsonListResponseSchema>;
+export type ListRecordsResponse =
+	| z.infer<typeof ImageListResponseSchema>
+	| z.infer<typeof JsonListResponseSchema>;
 
 /**
  * Ensure a fetch Response is OK, otherwise throw with a useful message.
@@ -81,10 +83,7 @@ export async function apiGetConfig(fetchFn: typeof fetch = fetch) {
  *
  * @param payload - Field creation payload
  */
-export async function apiAddSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
+export async function apiAddSchemaField(payload: unknown, fetchFn: typeof fetch = fetch) {
 	const body = AddFieldRequestSchema.parse(payload);
 	const res = await fetchFn('/api/schema', {
 		method: 'POST',
@@ -100,10 +99,7 @@ export async function apiAddSchemaField(
  *
  * @param payload - Update payload with fieldName and optional newFieldName, fieldType, defaultValue, options
  */
-export async function apiUpdateSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
+export async function apiUpdateSchemaField(payload: unknown, fetchFn: typeof fetch = fetch) {
 	const body = UpdateFieldRequestSchema.parse(payload);
 	const res = await fetchFn('/api/schema', {
 		method: 'PATCH',
@@ -119,10 +115,7 @@ export async function apiUpdateSchemaField(
  *
  * @param payload - Delete payload
  */
-export async function apiDeleteSchemaField(
-	payload: unknown,
-	fetchFn: typeof fetch = fetch
-) {
+export async function apiDeleteSchemaField(payload: unknown, fetchFn: typeof fetch = fetch) {
 	const body = DeleteFieldRequestSchema.parse(payload);
 	const res = await fetchFn('/api/schema', {
 		method: 'DELETE',
@@ -298,7 +291,9 @@ export async function apiStripFileMetadataById(
 /**
  * List all media types (scan root for valid folders).
  */
-export async function apiListMediaTypes(fetchFn: typeof fetch = fetch): Promise<MediaTypeSummary[]> {
+export async function apiListMediaTypes(
+	fetchFn: typeof fetch = fetch
+): Promise<MediaTypeSummary[]> {
 	const res = await fetchFn('/api/media-types');
 	await assertOk(res, 'Failed to list media types');
 	const json = await res.json();
@@ -513,7 +508,10 @@ export async function apiRepairRecordsForType(
 	typeId: string,
 	dryRun: boolean,
 	fetchFn: typeof fetch = fetch
-): Promise<{ issues: { id: string; field: string; issue: string; fix?: unknown }[]; fixed: number }> {
+): Promise<{
+	issues: { id: string; field: string; issue: string; fix?: unknown }[];
+	fixed: number;
+}> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/repair`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -540,7 +538,10 @@ export async function apiBulkUpdatePropertiesForType(
 	patch: unknown,
 	fetchFn: typeof fetch = fetch
 ) {
-	const body = { ids: ids.map((id) => ImageIdSchema.parse(id)), patch: UpdatePropertiesRequestSchema.parse(patch) };
+	const body = {
+		ids: ids.map((id) => ImageIdSchema.parse(id)),
+		patch: UpdatePropertiesRequestSchema.parse(patch)
+	};
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/records/bulk-update`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -615,7 +616,11 @@ export async function apiGetFieldValuesForType(
 	return { values: Array.isArray(json?.values) ? json.values : [] };
 }
 
-export async function apiGetRecordByIdForType(typeId: string, id: ImageId, fetchFn: typeof fetch = fetch) {
+export async function apiGetRecordByIdForType(
+	typeId: string,
+	id: ImageId,
+	fetchFn: typeof fetch = fetch
+) {
 	ImageIdSchema.parse(id);
 	const res = await fetchFn(
 		`/api/media-types/${encodeURIComponent(typeId)}/records/by-id/${encodeURIComponent(id)}`
@@ -644,7 +649,11 @@ export async function apiUpdatePropertiesByIdForType(
 	return await res.json();
 }
 
-export async function apiUnlinkByIdForType(typeId: string, id: ImageId, fetchFn: typeof fetch = fetch) {
+export async function apiUnlinkByIdForType(
+	typeId: string,
+	id: ImageId,
+	fetchFn: typeof fetch = fetch
+) {
 	ImageIdSchema.parse(id);
 	const res = await fetchFn(
 		`/api/media-types/${encodeURIComponent(typeId)}/records/by-id/${encodeURIComponent(id)}`,
@@ -654,7 +663,11 @@ export async function apiUnlinkByIdForType(typeId: string, id: ImageId, fetchFn:
 	return SuccessResponseSchema.parse(await res.json());
 }
 
-export async function apiDeleteRecordForType(typeId: string, id: ImageId, fetchFn: typeof fetch = fetch) {
+export async function apiDeleteRecordForType(
+	typeId: string,
+	id: ImageId,
+	fetchFn: typeof fetch = fetch
+) {
 	ImageIdSchema.parse(id);
 	const res = await fetchFn(
 		`/api/media-types/${encodeURIComponent(typeId)}/records/by-id/${encodeURIComponent(id)}`,
@@ -810,14 +823,11 @@ export async function apiCheckUploadConflictsForType(
 	filenames: string[],
 	fetchFn: typeof fetch = fetch
 ): Promise<{ conflicts: string[] }> {
-	const res = await fetchFn(
-		`/api/media-types/${encodeURIComponent(typeId)}/upload/check`,
-		{
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ filenames })
-		}
-	);
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/upload/check`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ filenames })
+	});
 	await assertOk(res, 'Failed to check upload conflicts');
 	return await res.json();
 }
@@ -870,4 +880,3 @@ export async function apiCleanExcludedFilesForType(
 	await assertOk(res, 'Failed to clean excluded files');
 	return await res.json();
 }
-

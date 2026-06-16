@@ -8,7 +8,16 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { CheckSquare, Square, Trash2, Unlink, FileIcon, Pencil, UploadIcon } from 'lucide-svelte';
+	import {
+		CheckSquare,
+		Square,
+		Trash2,
+		Unlink,
+		FileIcon,
+		Pencil,
+		UploadIcon,
+		TriangleAlert
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ImageListItem } from '$lib/core/types.js';
@@ -121,7 +130,9 @@
 			deleteDiskImpactLoading = false;
 			return;
 		}
-		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
+		const items = selection.visibleImageItems.filter((i) =>
+			selection.multiselectedIds.includes(i.id)
+		);
 		const unique = [...new Set(items.map((i) => i.id).filter(Boolean))];
 		if (unique.length === 0) {
 			deleteDiskImpactGroups = [];
@@ -535,7 +546,9 @@
 	 * From the delete confirmation: exclude all selected items from this group only (unlink + excluded list).
 	 */
 	async function excludeSelectedFromGroupFromDeleteDialog() {
-		const items = selection.visibleImageItems.filter((i) => selection.multiselectedIds.includes(i.id));
+		const items = selection.visibleImageItems.filter((i) =>
+			selection.multiselectedIds.includes(i.id)
+		);
 		if (!typeId || items.length === 0) return;
 		deleteFromDiskOpen = false;
 		const fileIds = items.map((i) => i.id);
@@ -802,8 +815,8 @@
 			<AlertDialog.Title>Delete from disk</AlertDialog.Title>
 			<AlertDialog.Description class="space-y-2">
 				<p>
-					This permanently deletes {deleteCount} file{deleteCount === 1 ? '' : 's'} from global storage and
-					removes matching catalog rows in every media group that references
+					This permanently deletes {deleteCount} file{deleteCount === 1 ? '' : 's'} from global storage
+					and removes matching catalog rows in every media group that references
 					{deleteCount === 1 ? 'it' : 'them'}.
 				</p>
 				{#if deleteDiskImpactLoading}
@@ -824,7 +837,10 @@
 					Exclude from this group
 				</Button>
 				<form onsubmit={handleDeleteFromDisk} class="inline">
-					<AlertDialog.Action type="submit" class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+					<AlertDialog.Action
+						type="submit"
+						class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+					>
 						Delete from disk
 					</AlertDialog.Action>
 				</form>
@@ -1098,6 +1114,14 @@
 											{:else}
 												<Square class="h-4 w-4" />
 											{/if}
+										</div>
+									{/if}
+									{#if item.missing_file_fields && item.missing_file_fields.length > 0}
+										<div
+											class="absolute top-1 right-1 rounded bg-background/80 p-0.5 text-amber-500 shadow-sm"
+											title={`Missing file reference: ${item.missing_file_fields.join(', ')}`}
+										>
+											<TriangleAlert class="h-4 w-4" />
 										</div>
 									{/if}
 									<div class="flex flex-row items-center w-full px-2">

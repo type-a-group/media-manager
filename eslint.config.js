@@ -12,12 +12,7 @@ import svelte from 'eslint-plugin-svelte';
  */
 export default [
 	{
-		ignores: [
-			'.svelte-kit/**',
-			'build/**',
-			'dist/**',
-			'node_modules/**'
-		]
+		ignores: ['.svelte-kit/**', 'build/**', 'dist/**', 'node_modules/**']
 	},
 	js.configs.recommended,
 	{
@@ -65,4 +60,3 @@ export default [
 		}
 	}
 ];
-

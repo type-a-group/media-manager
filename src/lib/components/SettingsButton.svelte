@@ -46,13 +46,15 @@
 	$effect(() => {
 		if (isOpen) {
 			if (typeId) {
-				apiGetSettingsForType(typeId).then((s) => {
-					settings = {
-						autoAdvanceToNextUnlinked: s.autoAdvanceToNextUnlinked ?? false,
-						autoSaveOnAdvance: s.autoSaveOnAdvance ?? false,
-						gridSize: (s.gridSize as 'small' | 'medium' | 'large') ?? 'medium'
-					};
-				}).catch(() => {});
+				apiGetSettingsForType(typeId)
+					.then((s) => {
+						settings = {
+							autoAdvanceToNextUnlinked: s.autoAdvanceToNextUnlinked ?? false,
+							autoSaveOnAdvance: s.autoSaveOnAdvance ?? false,
+							gridSize: (s.gridSize as 'small' | 'medium' | 'large') ?? 'medium'
+						};
+					})
+					.catch(() => {});
 			} else {
 				settingsStore.fetchSettings();
 			}
@@ -69,9 +71,11 @@
 
 	function handleAutoAdvanceChange(enabled: boolean) {
 		if (typeId) {
-			apiUpdateSettingsForType(typeId, { autoAdvanceToNextUnlinked: enabled }).then(() => {
-				settings = { ...settings, autoAdvanceToNextUnlinked: enabled };
-			}).catch(() => {});
+			apiUpdateSettingsForType(typeId, { autoAdvanceToNextUnlinked: enabled })
+				.then(() => {
+					settings = { ...settings, autoAdvanceToNextUnlinked: enabled };
+				})
+				.catch(() => {});
 		} else {
 			settingsStore.updateSetting('autoAdvanceToNextUnlinked', enabled);
 		}
@@ -79,9 +83,11 @@
 
 	function handleAutoSaveOnAdvanceChange(enabled: boolean) {
 		if (typeId) {
-			apiUpdateSettingsForType(typeId, { autoSaveOnAdvance: enabled }).then(() => {
-				settings = { ...settings, autoSaveOnAdvance: enabled };
-			}).catch(() => {});
+			apiUpdateSettingsForType(typeId, { autoSaveOnAdvance: enabled })
+				.then(() => {
+					settings = { ...settings, autoSaveOnAdvance: enabled };
+				})
+				.catch(() => {});
 		} else {
 			settingsStore.updateSetting('autoSaveOnAdvance', enabled);
 		}
@@ -105,7 +111,12 @@
 				autoAdvanceToNextUnlinked: false,
 				autoSaveOnAdvance: false
 			});
-			settings = { ...settings, gridSize: 'medium', autoAdvanceToNextUnlinked: false, autoSaveOnAdvance: false };
+			settings = {
+				...settings,
+				gridSize: 'medium',
+				autoAdvanceToNextUnlinked: false,
+				autoSaveOnAdvance: false
+			};
 		} else {
 			await settingsStore.resetToDefaults();
 		}
@@ -131,7 +142,8 @@
 			<div class="flex border-b gap-1 mt-2">
 				<button
 					type="button"
-					class="px-3 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors {activeTab === 'project'
+					class="px-3 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors {activeTab ===
+					'project'
 						? 'border-primary text-foreground'
 						: 'border-transparent text-muted-foreground hover:text-foreground'}"
 					onclick={() => (activeTab = 'project')}
@@ -140,7 +152,8 @@
 				</button>
 				<button
 					type="button"
-					class="px-3 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors {activeTab === 'global'
+					class="px-3 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors {activeTab ===
+					'global'
 						? 'border-primary text-foreground'
 						: 'border-transparent text-muted-foreground hover:text-foreground'}"
 					onclick={() => (activeTab = 'global')}
@@ -170,7 +183,9 @@
 										checked={settings.autoSaveOnAdvance}
 										onCheckedChange={(checked) => handleAutoSaveOnAdvanceChange(!!checked)}
 									/>
-									<Label for="auto-save-advance">Auto-save when advancing to next/previous {itemLabel}</Label>
+									<Label for="auto-save-advance"
+										>Auto-save when advancing to next/previous {itemLabel}</Label
+									>
 								</div>
 							</div>
 						</div>
@@ -186,14 +201,20 @@
 										if (v) {
 											gridSizeSetting = v as 'small' | 'medium' | 'large';
 											selection.setGridSize(gridSizeSetting);
-											apiUpdateSettingsForType(typeId, { gridSize: gridSizeSetting }).then(() => {
-												settings = { ...settings, gridSize: gridSizeSetting };
-											}).catch(() => {});
+											apiUpdateSettingsForType(typeId, { gridSize: gridSizeSetting })
+												.then(() => {
+													settings = { ...settings, gridSize: gridSizeSetting };
+												})
+												.catch(() => {});
 										}
 									}}
 								>
 									<Select.Trigger id="grid-size-setting" class="w-[120px]">
-										{gridSizeSetting === 'small' ? 'Small' : gridSizeSetting === 'large' ? 'Large' : 'Medium'}
+										{gridSizeSetting === 'small'
+											? 'Small'
+											: gridSizeSetting === 'large'
+												? 'Large'
+												: 'Medium'}
 									</Select.Trigger>
 									<Select.Content>
 										<Select.Item value="small">Small</Select.Item>
@@ -213,9 +234,7 @@
 				{#if activeTab === 'project'}
 					<AlertDialog.Root bind:open={resetToDefaultsOpen}>
 						<AlertDialog.Trigger>
-							<Button variant="outline" class="btn btn-secondary">
-								Reset to Defaults
-							</Button>
+							<Button variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
 						</AlertDialog.Trigger>
 						<AlertDialog.Content>
 							<AlertDialog.Title>Reset to Defaults</AlertDialog.Title>
@@ -223,7 +242,13 @@
 								Are you sure you want to reset project settings to their default values?
 							</AlertDialog.Description>
 							<div class="flex justify-end">
-								<form onsubmit={(e) => { e.preventDefault(); handleResetToDefaults(); }} class="flex gap-2">
+								<form
+									onsubmit={(e) => {
+										e.preventDefault();
+										handleResetToDefaults();
+									}}
+									class="flex gap-2"
+								>
 									<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
 									<AlertDialog.Action type="submit">Reset</AlertDialog.Action>
 								</form>
@@ -231,7 +256,12 @@
 						</AlertDialog.Content>
 					</AlertDialog.Root>
 				{/if}
-				<Button variant="default" class="btn btn-primary" type="button" onclick={() => (isOpen = false)}>
+				<Button
+					variant="default"
+					class="btn btn-primary"
+					type="button"
+					onclick={() => (isOpen = false)}
+				>
 					Done
 				</Button>
 			</Dialog.Footer>
@@ -255,7 +285,9 @@
 								checked={settings.autoSaveOnAdvance}
 								onCheckedChange={(checked) => handleAutoSaveOnAdvanceChange(!!checked)}
 							/>
-							<Label for="auto-save-advance-global">Auto-save when advancing to next/previous image</Label>
+							<Label for="auto-save-advance-global"
+								>Auto-save when advancing to next/previous image</Label
+							>
 						</div>
 					</div>
 				</div>
@@ -276,7 +308,11 @@
 							}}
 						>
 							<Select.Trigger id="grid-size-setting" class="w-[120px]">
-								{gridSizeSetting === 'small' ? 'Small' : gridSizeSetting === 'large' ? 'Large' : 'Medium'}
+								{gridSizeSetting === 'small'
+									? 'Small'
+									: gridSizeSetting === 'large'
+										? 'Large'
+										: 'Medium'}
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="small">Small</Select.Item>
@@ -293,9 +329,7 @@
 			<Dialog.Footer>
 				<AlertDialog.Root bind:open={resetToDefaultsOpen}>
 					<AlertDialog.Trigger>
-						<Button variant="outline" class="btn btn-secondary">
-							Reset to Defaults
-						</Button>
+						<Button variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
 					</AlertDialog.Trigger>
 					<AlertDialog.Content>
 						<AlertDialog.Title>Reset to Defaults</AlertDialog.Title>
@@ -303,14 +337,25 @@
 							Are you sure you want to reset all settings to their default values?
 						</AlertDialog.Description>
 						<div class="flex justify-end">
-							<form onsubmit={(e) => { e.preventDefault(); handleResetToDefaults(); }} class="flex gap-2">
+							<form
+								onsubmit={(e) => {
+									e.preventDefault();
+									handleResetToDefaults();
+								}}
+								class="flex gap-2"
+							>
 								<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
 								<AlertDialog.Action type="submit">Reset</AlertDialog.Action>
 							</form>
 						</div>
 					</AlertDialog.Content>
 				</AlertDialog.Root>
-				<Button variant="default" class="btn btn-primary" type="button" onclick={() => (isOpen = false)}>
+				<Button
+					variant="default"
+					class="btn btn-primary"
+					type="button"
+					onclick={() => (isOpen = false)}
+				>
 					Done
 				</Button>
 			</Dialog.Footer>

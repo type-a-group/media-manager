@@ -29,7 +29,9 @@
 	let setFieldDialogOpen = $state(false);
 	let setFieldSchema = $state<SchemaDefinition | null>(null);
 	let setFieldKey = $state('');
-	let setFieldValue = $state<string | number | boolean | string[] | { display_name: string; url: string }>('');
+	let setFieldValue = $state<
+		string | number | boolean | string[] | { display_name: string; url: string }
+	>('');
 	let gridSchemaFields = $state<string[]>([]);
 	let groupByValue = $state('');
 
@@ -53,9 +55,11 @@
 
 	$effect(() => {
 		if (typeId) {
-			apiGetSchemaForType(typeId).then((s) => {
-				gridSchemaFields = getOrderedEditableKeys(s);
-			}).catch(() => {});
+			apiGetSchemaForType(typeId)
+				.then((s) => {
+					gridSchemaFields = getOrderedEditableKeys(s);
+				})
+				.catch(() => {});
 		}
 	});
 
@@ -67,10 +71,16 @@
 		return keys.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)));
 	}
 
-	function getDisplayName(item: ImageListItem & { name?: string; group_by_value?: string | number | boolean | string[] | null }): string {
+	function getDisplayName(
+		item: ImageListItem & {
+			name?: string;
+			group_by_value?: string | number | boolean | string[] | null;
+		}
+	): string {
 		const n = (item as { name?: string }).name?.trim();
 		if (n && n.length > 0) return n;
-		if (item.group_by_value != null && item.group_by_value !== '') return String(item.group_by_value);
+		if (item.group_by_value != null && item.group_by_value !== '')
+			return String(item.group_by_value);
 		return (item.id as string).slice(0, 8);
 	}
 
@@ -97,7 +107,13 @@
 		}
 	}
 
-	function getCoercedValue(): string | number | boolean | string[] | { display_name: string; url: string } | null {
+	function getCoercedValue():
+		| string
+		| number
+		| boolean
+		| string[]
+		| { display_name: string; url: string }
+		| null {
 		if (!setFieldSchema || !setFieldKey) return null;
 		const def = setFieldSchema[setFieldKey];
 		const type = def?.type ?? 'string';
@@ -110,9 +126,18 @@
 		if (type === 'dropdown' && (def as { multiselect?: boolean }).multiselect) {
 			return Array.isArray(raw) ? (raw as string[]) : [];
 		}
-		if (type === 'list') return Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+		if (type === 'list')
+			return Array.isArray(raw)
+				? raw
+				: typeof raw === 'string'
+					? raw
+							.split(',')
+							.map((s) => s.trim())
+							.filter(Boolean)
+					: [];
 		if (type === 'url') {
-			if (raw != null && typeof raw === 'object' && 'url' in raw) return raw as { display_name: string; url: string };
+			if (raw != null && typeof raw === 'object' && 'url' in raw)
+				return raw as { display_name: string; url: string };
 			return { display_name: '', url: typeof raw === 'string' ? raw : '' };
 		}
 		return raw === null || raw === undefined ? '' : String(raw);
@@ -204,19 +229,23 @@
 			if (!map.has(key)) map.set(key, []);
 			map.get(key)!.push(item);
 		}
-		return [...map.entries()].map(([key, groupItems]) => ({
-			label: formatGroupLabel(key),
-			items: groupItems
-		})).sort((a, b) => {
-			if (a.label === '(empty)') return -1;
-			if (b.label === '(empty)') return 1;
-			return (a.label ?? '').localeCompare(b.label ?? '');
-		});
+		return [...map.entries()]
+			.map(([key, groupItems]) => ({
+				label: formatGroupLabel(key),
+				items: groupItems
+			}))
+			.sort((a, b) => {
+				if (a.label === '(empty)') return -1;
+				if (b.label === '(empty)') return 1;
+				return (a.label ?? '').localeCompare(b.label ?? '');
+			});
 	});
 </script>
 
 <div class="flex flex-col h-full w-full">
-	<div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border shrink-0 bg-background">
+	<div
+		class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border shrink-0 bg-background"
+	>
 		<div class="flex items-center gap-2 flex-wrap">
 			<Button
 				variant={selection.gridSelectMode ? 'default' : 'outline'}
@@ -232,12 +261,21 @@
 				{/if}
 			</Button>
 			{#if selection.gridSelectMode && selection.multiselectedIds.length > 0}
-				<Button variant="ghost" size="sm" onclick={() => { selection.clearMultiselect(); selection.setGridSelectMode(false); }}>
+				<Button
+					variant="ghost"
+					size="sm"
+					onclick={() => {
+						selection.clearMultiselect();
+						selection.setGridSelectMode(false);
+					}}
+				>
 					Done
 				</Button>
 			{/if}
 			<div class="flex items-center gap-2">
-				<Label for="grid-group-by" class="text-sm text-muted-foreground whitespace-nowrap">Group by</Label>
+				<Label for="grid-group-by" class="text-sm text-muted-foreground whitespace-nowrap"
+					>Group by</Label
+				>
 				<Select.Root type="single" bind:value={groupByValue}>
 					<Select.Trigger id="grid-group-by" class="w-[140px]">
 						{groupByValue ? fieldLabel(groupByValue) : 'None'}
@@ -279,14 +317,8 @@
 				<span class="text-sm text-muted-foreground">
 					{selection.multiselectedIds.length} selected
 				</span>
-				<Button variant="outline" size="sm" onclick={openSetFieldDialog}>
-					Set field…
-				</Button>
-				<Button
-					variant="destructive"
-					size="sm"
-					onclick={() => (deleteConfirmOpen = true)}
-				>
+				<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
+				<Button variant="destructive" size="sm" onclick={() => (deleteConfirmOpen = true)}>
 					<Trash2 class="h-4 w-4 mr-1" />
 					Delete
 				</Button>
@@ -303,9 +335,7 @@
 			</AlertDialog.Description>
 			<div class="flex justify-end gap-2 mt-4">
 				<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-				<Button variant="destructive" type="button" onclick={handleDeleteRecords}>
-					Delete
-				</Button>
+				<Button variant="destructive" type="button" onclick={handleDeleteRecords}>Delete</Button>
 			</div>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
@@ -314,7 +344,10 @@
 		<Dialog.Content>
 			<Dialog.Title>Set field for selected records</Dialog.Title>
 			<Dialog.Description>
-				Choose a field and value. This will update all {selection.multiselectedIds.length} selected record{selection.multiselectedIds.length === 1 ? '' : 's'}.
+				Choose a field and value. This will update all {selection.multiselectedIds.length} selected record{selection
+					.multiselectedIds.length === 1
+					? ''
+					: 's'}.
 			</Dialog.Description>
 			{#if setFieldSchema}
 				<div class="flex flex-col gap-4 py-4">
@@ -343,7 +376,9 @@
 										checked={typeof setFieldValue === 'boolean' ? setFieldValue : false}
 										onchange={(e) => (setFieldValue = (e.target as HTMLInputElement).checked)}
 									/>
-									<Label for="set-field-value" class="font-normal">{(def?.type === 'boolean' && setFieldValue) ? 'Yes' : 'No'}</Label>
+									<Label for="set-field-value" class="font-normal"
+										>{def?.type === 'boolean' && setFieldValue ? 'Yes' : 'No'}</Label
+									>
 								</div>
 							{:else if type === 'dropdown' && def?.options?.length}
 								{#if (def as { multiselect?: boolean }).multiselect}
@@ -383,31 +418,48 @@
 								<Input
 									id="set-field-value"
 									type="number"
-									value={typeof setFieldValue === 'number' ? setFieldValue : setFieldValue === '' ? '' : Number(setFieldValue)}
-									oninput={(e) => (setFieldValue = (e.currentTarget as HTMLInputElement).valueAsNumber ?? 0)}
+									value={typeof setFieldValue === 'number'
+										? setFieldValue
+										: setFieldValue === ''
+											? ''
+											: Number(setFieldValue)}
+									oninput={(e) =>
+										(setFieldValue = (e.currentTarget as HTMLInputElement).valueAsNumber ?? 0)}
 								/>
 							{:else if type === 'list'}
 								<Input
 									id="set-field-value"
 									type="text"
 									placeholder="Comma-separated values"
-									value={Array.isArray(setFieldValue) ? setFieldValue.join(', ') : String(setFieldValue ?? '')}
+									value={Array.isArray(setFieldValue)
+										? setFieldValue.join(', ')
+										: String(setFieldValue ?? '')}
 									oninput={(e) => (setFieldValue = (e.currentTarget as HTMLInputElement).value)}
 								/>
 							{:else if type === 'url'}
-								{@const urlObj = setFieldValue != null && typeof setFieldValue === 'object' && 'url' in setFieldValue ? (setFieldValue as { display_name: string; url: string }) : { display_name: '', url: '' }}
+								{@const urlObj =
+									setFieldValue != null &&
+									typeof setFieldValue === 'object' &&
+									'url' in setFieldValue
+										? (setFieldValue as { display_name: string; url: string })
+										: { display_name: '', url: '' }}
 								<div class="flex flex-col gap-2">
 									<Input
 										type="text"
 										placeholder="Display name"
 										value={urlObj.display_name ?? ''}
-										oninput={(e) => (setFieldValue = { ...urlObj, display_name: (e.target as HTMLInputElement).value })}
+										oninput={(e) =>
+											(setFieldValue = {
+												...urlObj,
+												display_name: (e.target as HTMLInputElement).value
+											})}
 									/>
 									<Input
 										type="url"
 										placeholder="https://..."
 										value={urlObj.url ?? ''}
-										oninput={(e) => (setFieldValue = { ...urlObj, url: (e.target as HTMLInputElement).value })}
+										oninput={(e) =>
+											(setFieldValue = { ...urlObj, url: (e.target as HTMLInputElement).value })}
 									/>
 								</div>
 							{:else}
@@ -424,9 +476,7 @@
 			{/if}
 			<div class="flex justify-end gap-2">
 				<Dialog.Close type="button">Cancel</Dialog.Close>
-				<Button type="button" onclick={handleSetFieldSubmit}>
-					Apply
-				</Button>
+				<Button type="button" onclick={handleSetFieldSubmit}>Apply</Button>
 			</div>
 		</Dialog.Content>
 	</Dialog.Root>
@@ -441,7 +491,9 @@
 				<div class="mb-6">
 					{#if section.label !== null}
 						<h3 class="text-sm font-semibold text-muted-foreground mb-2">
-							{selection.gridGroupByField ? fieldLabel(selection.gridGroupByField) + ': ' : ''}{section.label}
+							{selection.gridGroupByField
+								? fieldLabel(selection.gridGroupByField) + ': '
+								: ''}{section.label}
 						</h3>
 					{/if}
 					<div
@@ -457,15 +509,17 @@
 									: 'border-transparent hover:border-muted-foreground/30 hover:bg-muted/50'}"
 								onclick={() => handleRecordClick(item)}
 							>
-								<div class="aspect-square w-full bg-muted flex items-center justify-center overflow-hidden p-2">
+								<div
+									class="aspect-square w-full bg-muted flex items-center justify-center overflow-hidden p-2"
+								>
 									<span class="text-sm font-medium text-center line-clamp-4">
 										{getDisplayName(item)}
 									</span>
 								</div>
 								{#if item.missing_file_fields && item.missing_file_fields.length > 0}
 									<div
-										class="absolute top-1 right-1 p-1 rounded-full bg-destructive text-destructive-foreground shadow-sm"
-										title={`Missing files for: ${item.missing_file_fields.join(', ')}`}
+										class="absolute top-1 right-1 rounded bg-background/80 p-0.5 text-amber-500 shadow-sm"
+										title={`Missing file reference: ${item.missing_file_fields.join(', ')}`}
 									>
 										<TriangleAlert class="h-4 w-4" />
 									</div>

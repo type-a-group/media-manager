@@ -142,12 +142,8 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 		loop: undefined,
 		delay: undefined,
 
-		aspectRatio:
-			width != null && height != null ? (width / height).toFixed(2) : null,
-		megapixels:
-			width != null && height != null
-				? ((width * height) / 1_000_000).toFixed(2)
-				: null
+		aspectRatio: width != null && height != null ? (width / height).toFixed(2) : null,
+		megapixels: width != null && height != null ? ((width * height) / 1_000_000).toFixed(2) : null
 	};
 }
 
@@ -200,11 +196,7 @@ export async function stripImageFileMetadata(
 				await fs.unlink(tempBackupPath).catch(() => {});
 			}
 		} else if (options.gpsOnly) {
-			await exiftool.write(tempPath, {}, [
-				'-GPS*=',
-				'-Geolocation*=',
-				OVERWRITE_ORIGINAL
-			]);
+			await exiftool.write(tempPath, {}, ['-GPS*=', '-Geolocation*=', OVERWRITE_ORIGINAL]);
 		} else {
 			throw new Error('stripImageFileMetadata: specify options.all or options.gpsOnly');
 		}

@@ -2,12 +2,13 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Search, File, X } from 'lucide-svelte';
+	import { Search, File, X, ExternalLink } from 'lucide-svelte';
 	import {
 		apiListRecordsForType,
 		apiImageUrlByIdForType,
 		apiListMediaTypes
 	} from '$lib/api/client.js';
+	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import type { ImageListItem } from '$lib/core/types.js';
 
 	let {
@@ -28,7 +29,15 @@
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Resolve the selected file_id to a display name from the loaded blob list. */
-	const selectedName = $derived(value ? (records.find((r) => r.id === value)?.file_name ?? '') : '');
+	const selectedName = $derived(
+		value ? (records.find((r) => r.id === value)?.file_name ?? '') : ''
+	);
+	/** URL to the selected blob's bytes (for thumbnail + open-in-new-tab), once the store is known. */
+	const selectedUrl = $derived(
+		value && blobStoreTypeId ? apiImageUrlByIdForType(blobStoreTypeId, value) : ''
+	);
+	/** Whether the selected blob is an image we can thumbnail. */
+	const selectedIsImage = $derived(!!selectedName && hasAllowedImageExtension(selectedName));
 
 	/**
 	 * Discover the blob_store type dynamically.
@@ -102,11 +111,6 @@
 		onSelect?.('');
 	}
 
-	function isImage(filename: string) {
-		const ext = filename.split('.').pop()?.toLowerCase();
-		return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'].includes(ext ?? '');
-	}
-
 	function fileUrl(rec: ImageListItem): string {
 		if (!blobStoreTypeId) return '';
 		return apiImageUrlByIdForType(blobStoreTypeId, rec.id);
@@ -116,9 +120,26 @@
 <div class="flex items-center gap-2">
 	<Dialog.Root bind:open>
 		<Dialog.Trigger class="flex-1 min-w-0">
-			<Button variant="outline" class="w-full justify-start text-left font-normal truncate">
+			<Button
+				variant="outline"
+				class="w-full justify-start text-left font-normal gap-2 h-auto py-1.5"
+			>
 				{#if value}
-					<span class="truncate">{selectedName || 'Selected file'}</span>
+					<span
+						class="size-10 shrink-0 rounded bg-muted overflow-hidden flex items-center justify-center"
+					>
+						{#if selectedIsImage && selectedUrl}
+							<img
+								src={selectedUrl}
+								alt={selectedName}
+								class="w-full h-full object-cover"
+								loading="lazy"
+							/>
+						{:else}
+							<File class="size-5 text-muted-foreground" />
+						{/if}
+					</span>
+					<span class="truncate flex-1">{selectedName || 'Selected file'}</span>
 				{:else}
 					<span class="text-muted-foreground">Select file…</span>
 				{/if}
@@ -126,7 +147,9 @@
 		</Dialog.Trigger>
 		<Dialog.Content class="max-w-2xl max-h-[80vh] flex flex-col">
 			<Dialog.Title>Select File</Dialog.Title>
-			<Dialog.Description>Search and select a file from the global files directory.</Dialog.Description>
+			<Dialog.Description
+				>Search and select a file from the global files directory.</Dialog.Description
+			>
 			<div class="flex gap-2 items-center mt-4">
 				<Search class="size-4 text-muted-foreground shrink-0" />
 				<Input
@@ -140,11 +163,14 @@
 				class="flex-1 overflow-y-auto min-h-[16rem] border rounded-md p-2 mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2"
 			>
 				{#if noBlobStore}
-					<div class="col-span-full flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground">
+					<div
+						class="col-span-full flex flex-col items-center justify-center py-8 gap-2 text-muted-foreground"
+					>
 						<File class="size-8" />
 						<p class="text-sm text-center">No global files directory found.</p>
 						<p class="text-xs text-center">
-							Create a blob store media type or ensure the "files" folder exists under your data root.
+							Create a blob store media type or ensure the "files" folder exists under your data
+							root.
 						</p>
 					</div>
 				{:else if loading}
@@ -165,7 +191,7 @@
 							<div
 								class="w-full aspect-square bg-muted flex items-center justify-center rounded overflow-hidden"
 							>
-								{#if isImage(rec.file_name)}
+								{#if hasAllowedImageExtension(rec.file_name)}
 									<img
 										src={fileUrl(rec)}
 										alt={rec.image_name || rec.file_name}
@@ -176,10 +202,7 @@
 									<File class="size-8 text-muted-foreground" />
 								{/if}
 							</div>
-							<span
-								class="text-xs truncate w-full text-center"
-								title={rec.file_name}
-							>
+							<span class="text-xs truncate w-full text-center" title={rec.file_name}>
 								{rec.file_name}
 							</span>
 						</button>
@@ -189,6 +212,18 @@
 		</Dialog.Content>
 	</Dialog.Root>
 	{#if value}
+		{#if selectedUrl}
+			<a
+				href={selectedUrl}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+				aria-label="Open file in new tab"
+				title="Open in new tab"
+			>
+				<ExternalLink class="size-4" />
+			</a>
+		{/if}
 		<button
 			type="button"
 			class="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"

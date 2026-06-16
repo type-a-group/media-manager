@@ -25,4 +25,3 @@ describe('assertSafeBasename', () => {
 		expect(() => assertSafeBasename('a/b')).toThrow();
 	});
 });
-

@@ -1,10 +1,16 @@
 <script lang="ts">
-    import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { buttonVariants } from '$lib/components/ui/button';
 	import { Trash } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
-	let { title, description, onDelete, actionText = 'Delete', tooltip }: {
+	let {
+		title,
+		description,
+		onDelete,
+		actionText = 'Delete',
+		tooltip
+	}: {
 		title: string;
 		description: string;
 		onDelete: () => void;
@@ -33,11 +39,11 @@
 		<AlertDialog.Description>
 			{description}
 		</AlertDialog.Description>
-        <div class="flex justify-end">
-            <form onsubmit={onDelete}>
-                <AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
-                <AlertDialog.Action type="submit">{actionText}</AlertDialog.Action>
-            </form>
+		<div class="flex justify-end">
+			<form onsubmit={onDelete}>
+				<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+				<AlertDialog.Action type="submit">{actionText}</AlertDialog.Action>
+			</form>
 		</div>
 	</AlertDialog.Content>
 </AlertDialog.Root>

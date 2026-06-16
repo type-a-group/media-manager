@@ -1,0 +1,91 @@
+import { describe, expect, it, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+	createClass,
+	deleteClass,
+	classExists,
+	listClasses,
+	addMembers,
+	removeMembers,
+	updateRecord,
+	getRecord,
+	listAllFiles,
+	listClassMembers
+} from './classRepo.js';
+import type { SchemaDefinition } from '$lib/core/types.js';
+
+const schema = {
+	caption: { type: 'string', removable: true, defaultValue: '' }
+} as unknown as SchemaDefinition;
+
+describe('classRepo — opt-in class membership', () => {
+	let filesDir: string;
+	beforeEach(() => {
+		const root = path.join(
+			tmpdir(),
+			`mm-class-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		filesDir = path.join(root, 'media', 'files');
+		fs.mkdirSync(filesDir, { recursive: true });
+		fs.mkdirSync(path.join(root, 'media', 'classes'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	it('mints a file_id for a disk blob and starts it unclassified', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const { files } = await listAllFiles();
+		expect(files).toHaveLength(1);
+		expect(files[0].file_name).toBe('a.png');
+		expect(files[0].classes).toEqual([]);
+	});
+
+	it('round-trips membership, metadata, and the derived index', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+
+		const id = await createClass('Gallery', schema);
+		expect(id).toBe('gallery');
+		expect(classExists(id)).toBe(true);
+
+		await addMembers(id, [fileId]);
+		expect(listClasses().find((c) => c.id === id)?.count).toBe(1);
+
+		// The manifest's derived index now reflects membership.
+		expect((await listAllFiles()).files[0].classes).toEqual(['gallery']);
+
+		// One-class catalog view shows the member.
+		expect((await listClassMembers(id)).files.map((f) => f.id)).toEqual([fileId]);
+
+		await updateRecord(id, fileId, { caption: 'hello' });
+		expect((await getRecord(id, fileId))?.caption).toBe('hello');
+
+		await removeMembers(id, [fileId]);
+		expect((await listAllFiles()).files[0].classes).toEqual([]);
+		expect(await getRecord(id, fileId)).toBeNull();
+	});
+
+	it('deleting a class leaves the blob (now unclassified) on disk', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+		const id = await createClass('Temp', schema);
+		await addMembers(id, [fileId]);
+
+		await deleteClass(id);
+		expect(classExists(id)).toBe(false);
+		const { files } = await listAllFiles();
+		expect(files).toHaveLength(1);
+		expect(files[0].classes).toEqual([]);
+	});
+
+	it('an empty-schema class is a valid pure tag', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+		const id = await createClass('Favorites');
+		await addMembers(id, [fileId]);
+		const rec = await getRecord(id, fileId);
+		expect(rec).not.toBeNull();
+		expect((await listAllFiles()).files[0].classes).toEqual(['favorites']);
+	});
+});

@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`media-manager` is a **local-first** SvelteKit + Svelte 5 app for managing metadata over multiple media types. It ships as a Node server (via `adapter-node`) and is usually launched through the `media-manager` CLI. There is no database — all state lives on disk as JSON catalogs plus a shared blob directory under a single data root.
+`media-manager` is a **local-first** SvelteKit + Svelte 5 app for managing metadata over media files. It ships as a Node server (via `adapter-node`) and is usually launched through the `media-manager` CLI. There is no database — all state lives on disk as JSON under a single data root.
+
+**File-first model (current).** Files (blobs) are the primary entity; classification is an opt-in layer. A **class** is a schema + opt-in per-blob metadata (`media/classes/<id>.json`), for any file type. Membership is binary (member / not-member) — there is **no** linked/unlinked/excluded tri-state and no per-extension gating. The reserved `files` blob_store dissolved into the **`media/` hub** ("All Files"); `globals` stays as a `json` singleton on the records side. `json`-kind media types (records, no file attachment) remain top-level folders — their `records/` reorg is deferred (`docs/FUTURE_CHANGES.md` Item 18). See `docs/FILE_FIRST_CLASSES.md` for the full design.
 
 ## Commands
 
@@ -19,7 +21,7 @@ npm run test         # vitest run (one-shot)
 npm run test:watch   # vitest watch
 ```
 
-Run a single test file: `npx vitest run src/lib/storage/repo.test.ts`. Tests use `environment: 'node'` and match `src/**/*.{test,spec}.{ts,js}`.
+Run a single test file: `npx vitest run src/lib/storage/classRepo.test.ts`. Tests use `environment: 'node'` and match `src/**/*.{test,spec}.{ts,js}`.
 
 **Nothing works without a data root.** Dev: `MEDIA_MANAGER_ROOT=./my-data npm run dev` (create the folder first). Built app: `node bin/media-manager.js /abs/path/to/my-data` (the CLI sets `MEDIA_MANAGER_ROOT`, defaults `BODY_SIZE_LIMIT` to ~100 MiB, and opens the browser unless `--no-open`). Server listens on `PORT` (default 3000).
 
@@ -36,7 +38,7 @@ node bin/media-manager.js <root-dir>  # CLI sets MEDIA_MANAGER_ROOT, defaults BO
 # equivalently: MEDIA_MANAGER_ROOT=<root-dir> node build
 ```
 
-**Running the app mutates its data root** — it heals `settings.json`, writes `data.json` / `image-data.json`, and can rename or strip blob references. Never test against a folder you care about; test against a throwaway copy.
+**Running the app mutates its data root** — it heals the manifest/`settings.json`, writes class files + `data.json`, and can rename or strip blob references. Never test against a folder you care about; test against a throwaway copy.
 
 The canonical way to do this is the in-repo fixture:
 
@@ -45,7 +47,7 @@ npm run test:serve            # builds if needed, copies test-fixtures/ -> gitig
 npm run test:serve -- --no-open
 ```
 
-`test-fixtures/` is a **pristine committed seed** with one media type of every kind (`images`, `generic`, `json`, plus the reserved `files` blob_store and `globals` singleton) and a few tiny sample images. `scripts/serve-test.mjs` copies it to the gitignored `test-data/` working copy before each run, so runs never dirty git. See `test-fixtures/README.md`.
+`test-fixtures/` is a **pristine committed seed** in the file-first layout: a `media/` hub (blobs + `manifest.json` + two classes, `images` and `documents`) plus top-level `json` types (`notes`, `globals`). It includes a deliberately dangling `file`-reference to exercise the missing-files warning. `scripts/serve-test.mjs` copies it to the gitignored `test-data/` working copy before each run, so runs never dirty git. See `test-fixtures/README.md`.
 
 To **drive the UI and capture it** for a running feature, use Playwright (devDependency) via the `scripts/ui-capture.mjs` helper — it drives headless Chromium and saves **PNG screenshots** of any state (including mid-interaction states the URL doesn't encode) and/or a **WebM video** of a multi-step flow (`launchUi({ video: true })`) to the gitignored `.screenshots/` folder, returning absolute paths. One-time: `npx playwright install chromium` (or set `PW_CHANNEL=chrome` to reuse the system browser). The `test-ui-feature` skill (`.claude/skills/`) wraps this whole flow.
 
@@ -57,58 +59,84 @@ When a change alters on-disk structure — `settings.json` / data-file layout, r
 
 ## Architecture
 
-### Data root and discovery
+### On-disk layout and discovery
 
-`MEDIA_MANAGER_ROOT` points at a root folder containing one **subfolder per media type**. A subfolder is a valid media type iff it has a `settings.json` with a recognized `kind`. There is no manifest — `listMediaTypeIds()` scans the root. The folder name **is** the `typeId` (URL/API key); the human-readable `displayName` lives in settings and renaming it never changes the folder name.
+```
+<root>/
+├─ media/
+│  ├─ manifest.json     # blob registry + derived membership index (classes[])
+│  ├─ files/            # the global blob dir, any file type
+│  ├─ classes/<id>.json # { schema, config, records } — SOURCE OF TRUTH per class
+│  └─ settings.json     # media-wide prefs (class ordering, defaults)
+├─ <jsonType>/{settings.json,data.json}   # `json` media types (top-level)
+└─ globals/             # the reserved `json` singleton
+```
 
-### Media kinds (`settingsFile.ts: MediaTypeKind`)
+`listClassIds()` scans `media/classes/` (the stem is the class id). `listMediaTypeIds()` scans the root for `json`-type folders (skipping `media/`). A class id / typeId is fixed at creation; the renamable `displayName` lives in the class `config` / type `settings`.
 
-- `images` — image files + schema-driven metadata; only allowed image extensions surface.
-- `generic` — file-backed catalog like images but any extension; schema optional.
-- `blob_store` — the single global `files/` dir itself; flat, browse-only, no linked/unlinked split.
-- `json` — records only, no file attachments.
+### Classes and membership (critical design invariant)
 
-`usesImageRepoKind(kind)` (`paths.ts`) returns true for the three file-backed kinds; they all route through `createImageRepo` / `repo.ts`. `json` uses `jsonRepo.ts`. `isBrowseFirstFileKind` (`mediaKinds.ts`) is the client-safe check for generic/blob_store UI.
+**Every blob lives in ONE dir: `media/files/` (`getGlobalFilesDir()`), registered in `media/manifest.json` (`manifest.ts`)** which gives it a stable workspace-scoped **id** (UUID — the manifest key), its current filename, intrinsic dims, and a **derived `classes[]` membership index**. A blob is a **member** of a class iff that class file (`classRepo.ts`) has a record keyed by its id; `records` are keyed by `file_id`, and a class row's `id` **is** that blob's manifest id. The same id appears in every class referencing the blob — **overlap is intentional.** Consequences (all expected):
 
-### Shared global blob store (critical design invariant)
+- **Opt-in:** a blob is simply not a member until added; adding a class costs zero work against existing files. **Unclassified** = empty `classes[]`. No exclude, no `unlinked`.
+- Class files are the source of truth; `manifest.classes[]` is a cache. On membership write both update atomically; on list, a **mtime-gated resync** rebuilds the index from class files if any is newer (catches hand edits). Lock order: **manifest lock before any class lock**.
+- Every list call **lazy-heals** the manifest against disk (`reconcile`): new blobs get an id, vanished blobs are flagged `missing: true` (kept); the response carries `healed: { added, missing }`.
+- Renaming a blob is **O(1)** (`renameBlobById` → `manifest.renameFileId`): rename on disk + one manifest entry; every `id` reference is unaffected.
+- Deleting a blob from disk drops its manifest entry and strips its member record from **every** class (`deleteFromDiskById`). Rare, confirmed.
+- Deleting a class removes its file and strips its id from `manifest.classes[]`; blobs are untouched.
 
-**All file-backed kinds read/write binaries from ONE directory: `<root>/files/` (`getGlobalFilesDir()`).** Every blob is registered in a global **manifest** (`<root>/files/manifest.json`, `manifest.ts`) that gives it a stable, workspace-scoped **id** (UUID — the manifest key) and holds its current filename. A file-backed catalog row's primary key is `id` (same field json records use) and its value **is** that manifest id; the filename is **not** stored on the row — it's resolved from the manifest at read time. Unlike a json `id` (unique to one record), a file-backed `id` is the blob's identity, so the same `id` appears in every catalog referencing that blob — **overlap is intentional, not a bug.** Consequences (all expected):
-
-- Deleting a blob from disk drops its manifest entry and strips rows keyed by that `file_id` from _every_ catalog (`removeCatalogReferencesToFileIdGlobally`).
-- Renaming a file is **O(1)**: rename the blob on disk + update the one manifest entry (`renameFileById` → `manifest.renameFileId`). No cross-catalog fan-out — every `file_id` reference is unaffected. (The old `propagateFilenameRename` was removed.)
-- Every list call **lazy-heals** the manifest against disk (`reconcile`): new files get a `file_id`, vanished blobs are flagged (not deleted); the response carries `healed: { added, missing }`.
-- A non-image blob existing in `files/` will not appear in an `images` catalog — filtering by extension per-kind is by design.
-
-For file-backed catalogs: a blob is **linked** if it has a row whose `id` is the blob's manifest id, **unlinked** if on disk (a manifest id) with no row and not excluded, **excluded** if its id is listed in `settings.excludedFiles`. Identity is the manifest id, so linking an unlinked file never changes its id. The legacy `unlinked:<name>` id scheme was removed. Migration is explicit-only (`npm run upgrade-data -- <root> --apply`); the app errors loudly on a file-backed row not in the current `id`-keyed shape.
+Migration to this layout is explicit-only (`npm run upgrade-data -- <root> --apply`, step 5 in `scripts/upgrade-data.mjs`).
 
 ### Reserved types
 
-`files` (auto-created `blob_store`) and `globals` (auto-created `json` singleton) are in `RESERVED_TYPE_IDS` (`mediaTypes.ts`). They cannot be user-created, renamed, or deleted — enforced in both the storage layer and the API route guards. `ensureFilesGroupExists()` / `ensureGlobalsGroupExists()` create/heal them.
+Only `globals` (auto-created `json` singleton) is reserved (`RESERVED_TYPE_IDS`, `mediaTypes.ts`); it cannot be user-created, renamed, or deleted — enforced in the storage layer and API guards via `ensureGlobalsGroupExists()`. The old `files` blob_store type is gone — `media/` is the hub, not a media type. There are no reserved classes.
+
+**Globals must keep feature parity with `json` records.** `globals` is a `json`-kind singleton, but its editor (`GlobalsEditorPane.svelte`) is a separate free-form implementation (no schema). Because there is no schema, per-field metadata is persisted in two reserved record keys (`src/lib/core/fieldKeys.ts`): `__field_kinds` (key → field UI type) and `__field_meta` (key → `{ options, multiselect, itemType }`); the server builds a **synthetic schema** from `__field_kinds` (`jsonRepo.ts: globalsSyntheticSchema`) so schema-driven read logic (url normalization, `_missing_files` annotation) applies to globals too. As of now globals supports **all the same field types and features as regular json records** — every `FieldType` (`string | number | boolean | dropdown` with options + multiselect `| list` with item types `| url | file`), the file picker, and missing-file indicators. When adding a feature to `json`/`JsonEditorPane`, mirror it in `GlobalsEditorPane` (storing any new per-field metadata in `__field_meta`); treat any gap as a bug to close, not intended behavior.
 
 ### Storage layer (`src/lib/storage/`)
 
-- `paths.ts` — root + per-type path resolution, `usesImageRepoKind`, legacy `getAssetPaths()`.
-- `repo.ts` — file-backed persistence: list/CRUD/schema/filters, `id`-keyed rows whose id is the blob's manifest id (names resolved via the manifest). `listImages` reconciles the manifest then branches on `isDiskOnlyList` (blob_store) vs catalog kinds and `allowAnyExtension` (generic).
-- `manifest.ts` — global blob manifest (`files/manifest.json`): `file_id` registry with `mintFileId` / `renameFileId` / `removeFileId` / `reconcile` (lazy heal), atomic under a manifest lock taken before any catalog lock.
-- `jsonRepo.ts` — `json`-kind record persistence.
-- `settingsFile.ts` — read/write `settings.json` (both new and legacy layouts).
-- `mediaTypes.ts` — type CRUD + ensured default groups.
-- `lock.ts` — `withFileLock` coarse `.lock`-file mutex protecting JSON writes; **single-node only**, not distributed.
+- `paths.ts` — `media/` resolution: `getGlobalFilesDir()` (`media/files`), `getManifestPath()` (`media/manifest.json`), `getClassesDir()`/`getClassFilePath(id)`, `getMediaSettingsPath()`, `listClassIds()`; plus `getMediaTypePaths`/`listMediaTypeIds` for top-level `json` types.
+- `classRepo.ts` — class persistence + the file-first repo: class CRUD, schema editing, opt-in membership (`addMembers`/`removeMembers`), per-record metadata, `listAllFiles` (manifest-driven hub), `listClassMembers` (one-class catalog view), per-blob ops (`renameBlobById`, `deleteFromDiskById`, `getFilenameForId`), `listMissingFileReferences`.
+- `manifest.ts` — global blob manifest (`media/manifest.json`): id registry + `classes[]` index with `mintFileId`/`renameFileId`/`removeFileId`/`reconcile` (lazy heal), `setClassMembership`/`removeClassFromIndex`/`applyMembershipIndex` (resync), atomic under a manifest lock taken before any class lock.
+- `jsonRepo.ts` — `json`-kind record persistence (records side; unchanged by the redesign).
+- `settingsFile.ts` — read/write a `json` type's `settings.json` (now `json`-only).
+- `mediaTypes.ts` — `json` type CRUD + `ensureGlobalsGroupExists`; `RESERVED_TYPE_IDS = {globals}`.
+- `lock.ts` — `withFileLock` coarse `.lock`-file mutex protecting JSON writes; **single-node only**.
 - `json.ts` — atomic JSON writes.
+- `migrate.ts` — legacy→canonical record/schema normalization used by `jsonRepo` and the `upgrade-data` migration.
+- `filenames.ts` — `assertSafeBasename` / `assertSafeImageFilename` traversal guards.
 
 ### Server / API
 
-`src/lib/server/imageRepo.ts` validates `typeId` against `/^[a-zA-Z0-9_-]+$/` (path-traversal guard) and returns the right repo by kind. Routes live under `src/routes/api/media-types/[typeId]/...` (full index in FEATURES.md). A **legacy** single-folder layout is still supported via `/api/images/*`, `/api/schema`, `/api/config` (no `typeId` in path) backed by `getAssetPaths()`. Client fetch wrappers (type-scoped `*ForType` + legacy) are in `src/lib/api/client.ts`.
+`src/lib/server/imageRepo.ts` validates a typeId/class id against `/^[a-zA-Z0-9_-]+$/` (traversal guard); `getMediaTypeRepo` now always returns a `JsonRepo` (top-level types are `json`). The surface is split (full index in FEATURES.md):
+
+- **`/api/files/...`** — the blob/hub surface: `GET /api/files` (All Files, `?classIds&match&unclassified&query`), `upload`, `[id]/blob`, `[id]/rename`, `delete` (bulk from disk), `[id]/metadata(+/strip)`, `[id]/classes` (per-file editor sections + usage), `missing` (global warning).
+- **`/api/classes/...`** — `GET`/`POST` classes, `[id]` (GET/PATCH config/DELETE), `[id]/members` (GET catalog / POST add / DELETE remove), `[id]/schema` (GET/POST/PATCH/PUT/DELETE), `[id]/records/[fileId]` (GET/PATCH), `[id]/records/bulk-update`, `[id]/field-values`.
+- **`/api/media-types/[typeId]/...`** — `json` types only (records list/CRUD, schema, settings, stats); `globals/record`. Legacy `/api/images`, `/api/schema`, `/api/config` were removed.
+
+Client wrappers: `src/lib/api/files.ts` (files/classes) + the json-side `*ForType` wrappers in `src/lib/api/client.ts`.
+
+### Image processing (upload + EXIF), `src/lib/server/fileMetadata.ts`
+
+Server-side image handling lives outside the repo layer:
+
+- **Upload** (`/api/files/upload/+server.ts`) is per-blob (any file type): HEIC/HEIF → JPEG via `heic-convert` before saving; other types written as-is, then registered in the manifest.
+- **EXIF metadata** is read/stripped via `exiftool-vendored` (`fileMetadata.ts`), exposed per-blob through `/api/files/[id]/metadata` and `.../strip` (`mode: 'all' | 'gps'`). ExifTool rejects files whose extension disagrees with content, so `fileMetadata.ts` sniffs **magic bytes** first.
+- `ALLOWED_IMAGE_EXTENSIONS` / `ALLOWED_IMAGE_MIME_TYPES` are defined in `src/lib/core/images.ts` (client+server safe); `src/lib/storage/filenames.ts` re-validates persisted filenames to a safe basename.
+- Note: `sharp` is still a declared dependency but is **not** referenced in `src/` — don't reach for it without checking.
 
 ### Frontend
 
-- Routes: `/` overview (`MediaTypeOverview.svelte`), `/media/[typeId]` editor page that switches editor pane by kind: `ImageEditorPane` (image/generic/blob_store), `JsonEditorPane` (json), `GlobalsEditorPane` (the `globals` singleton).
-- Core (client+server safe, no Node imports): `src/lib/core/` — Zod DTOs/schema types (`types.ts`), `filters.ts`, `ids.ts`, `mediaKinds.ts`, `fieldKeys.ts` (reserved keys like `__field_kinds`).
+- `/` is the **dashboard** (`src/routes/+page.svelte`): a `Card` overview of All Files + every class + every `json` record type, each drilling into its view, plus toolbar actions `+ New class`, `+ New record type`, and global `Settings` (`SettingsButton`).
+- `/files` is the **All Files hub** (`src/routes/files/+page.svelte`): shadcn `Sidebar` with the class filter list (multi-select OR/AND + `Unclassified`), per-class `⋯` menu (Edit schema / Settings / Delete via `ClassSchemaDialog.svelte` + `ClassSettingsDialog.svelte` + delete `AlertDialog`), filename search, the files grid with class chips, bulk add/remove-to-class + delete-from-disk, and the global missing-files warning. `?class=<id>` opens directly in that class's catalog view; selecting a single class is the same catalog view. Clicking a file opens `FileEditorPanel.svelte` (one section per class via `ClassFieldInput.svelte`, plus rename + info bubble + add/remove-to-class).
+- `/media/[typeId]` serves `json` types via `JsonEditorPane` / `GlobalsEditorPane` (unchanged), reachable from the dashboard/hub. The legacy `ImageEditorPane`/`ImageViewGrid` components are still wired into the `/media` route's non-json branch and are dead code pending its removal (`MediaTypeOverview` was removed with the dashboard).
+- Core (client+server safe, no Node imports): `src/lib/core/` — Zod DTOs (`types.ts`, incl. `ClassFile`/`FileItem`), `filters.ts`, `ids.ts`, `mediaKinds.ts`, `fieldKeys.ts`.
 - State: `src/lib/state/selection.svelte.ts` (runes) + `src/lib/stores/`.
 - UI primitives under `src/lib/components/ui/` are shadcn-svelte (bits-ui) components via `components.json`; prefer composing these.
 
 ## Conventions
 
+- **shadcn-svelte for all UI** (non-negotiable): every interactive/form element must compose a primitive from `src/lib/components/ui/` — `Button`, `Input`, `Label`, `Checkbox`, `Select`, `Dialog`, `AlertDialog`, `DropdownMenu`, `Popover`, `Sidebar`, `Card`, `Separator`, etc. **Do not** hand-roll `<button>` / `<input>` / `<select>` / nav markup styled with Tailwind when a primitive exists. Match the established import style — `import * as Dialog from '$lib/components/ui/dialog/index.js'`, `import { Button } from '$lib/components/ui/button/index.js'`. Reference implementations: `SchemaEditorButton.svelte`, `JsonRecordGrid.svelte`. (Bare elements are acceptable only where no primitive exists — e.g. a `<textarea>` for long text, or a hidden `<input type="file">`.)
 - **Svelte 5 only** (`.cursor/rules/svelte5.mdc`): use runes (`$state`, `$derived`, `$effect`, `$props`) — not legacy `export let` / reactive `$:`.
 - **Document new functions** (`.cursor/rules/document.mdc`): the codebase uses rich JSDoc with `@param`, use-case, and a "Concerns / future improvements" section. Match that density.
 - Field values: `url`-type fields are `{ display_name, url }` (`UrlValue`); legacy plain strings are normalized via `normalizeUrlValue`. Records use snake_case keys on disk; every record is keyed by `id` (for file-backed rows that id is the blob's manifest id, with the filename resolved from the manifest, not stored), `last_modified` is an ISO string. A `file`-type field value is a manifest id reference.

@@ -128,7 +128,8 @@ function readSettings(baseDir) {
 	const settings = readJsonSafe(path.join(baseDir, 'settings.json'));
 	if (!settings || typeof settings !== 'object') return null;
 	const kind = settings.kind;
-	if (kind !== 'images' && kind !== 'json' && kind !== 'generic' && kind !== 'blob_store') return null;
+	if (kind !== 'images' && kind !== 'json' && kind !== 'generic' && kind !== 'blob_store')
+		return null;
 	return settings;
 }
 
@@ -150,7 +151,11 @@ if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
 	process.exit(2);
 }
 
-console.log(c.bold(`\nmedia-manager data upgrade — ${apply ? c.yellow('APPLY mode') : c.cyan('dry run (report only)')}`));
+console.log(
+	c.bold(
+		`\nmedia-manager data upgrade — ${apply ? c.yellow('APPLY mode') : c.cyan('dry run (report only)')}`
+	)
+);
 console.log(c.dim(`root: ${root}\n`));
 
 const globalFilesDir = path.join(root, GLOBAL_FILES_DIR_NAME);
@@ -187,7 +192,9 @@ console.log('');
 	const baseDir = path.join(root, GLOBAL_FILES_DIR_NAME);
 	const s = readSettings(baseDir);
 	if (!s) {
-		notes.push(`No "${GLOBAL_FILES_DIR_NAME}" group yet — it is auto-created as blob_store on first app load.`);
+		notes.push(
+			`No "${GLOBAL_FILES_DIR_NAME}" group yet — it is auto-created as blob_store on first app load.`
+		);
 	} else if (s.kind === 'generic' || s.kind === 'images') {
 		plan(`Upgrade "${GLOBAL_FILES_DIR_NAME}" group: kind ${s.kind} → blob_store`, () => {
 			const next = { ...s, kind: 'blob_store', displayName: s.displayName ?? 'Files', schema: {} };
@@ -196,7 +203,9 @@ console.log('');
 			writeJsonAtomic(path.join(baseDir, 'settings.json'), next);
 		});
 	} else if (s.kind !== 'blob_store') {
-		conflicts.push(`"${GLOBAL_FILES_DIR_NAME}" group has unexpected kind "${s.kind}" (expected blob_store).`);
+		conflicts.push(
+			`"${GLOBAL_FILES_DIR_NAME}" group has unexpected kind "${s.kind}" (expected blob_store).`
+		);
 	}
 }
 
@@ -211,7 +220,12 @@ console.log('');
 	} else {
 		if (s.kind !== 'json') {
 			plan(`Fix "globals" group kind: ${s.kind} → json`, () => {
-				writeJsonAtomic(settingsPath, { ...s, kind: 'json', displayName: s.displayName ?? 'Globals', schema: {} });
+				writeJsonAtomic(settingsPath, {
+					...s,
+					kind: 'json',
+					displayName: s.displayName ?? 'Globals',
+					schema: {}
+				});
 			});
 		}
 		const data = readJsonSafe(dataPath);
@@ -219,10 +233,10 @@ console.log('');
 		const canonical =
 			records.find((r) => r && typeof r === 'object' && r.id === GLOBALS_RECORD_ID) ??
 			(records[0] && typeof records[0] === 'object' ? records[0] : null);
-		const needsHeal =
-			records.length !== 1 || !records[0] || records[0].id !== GLOBALS_RECORD_ID;
+		const needsHeal = records.length !== 1 || !records[0] || records[0].id !== GLOBALS_RECORD_ID;
 		if (needsHeal) {
-			const legacyId = canonical && canonical.id && canonical.id !== GLOBALS_RECORD_ID ? canonical.id : null;
+			const legacyId =
+				canonical && canonical.id && canonical.id !== GLOBALS_RECORD_ID ? canonical.id : null;
 			const detail =
 				records.length === 0
 					? 'create singleton record'
@@ -359,11 +373,12 @@ function fileFieldKeys(s) {
 		if (!s) continue;
 		const fileBacked = s.kind === 'images' || s.kind === 'generic' || s.kind === 'blob_store';
 		const data = readJsonSafe(path.join(baseDir, dataFileFor(s)));
-		const rows = data && Array.isArray(data.images)
-			? data.images
-			: data && Array.isArray(data.records)
-				? data.records
-				: [];
+		const rows =
+			data && Array.isArray(data.images)
+				? data.images
+				: data && Array.isArray(data.records)
+					? data.records
+					: [];
 		const ffKeys = fileFieldKeys(s);
 		for (const rec of rows) {
 			if (!rec || typeof rec !== 'object') continue;
@@ -383,7 +398,9 @@ function fileFieldKeys(s) {
 
 	const manifestPath = path.join(globalFilesDir, 'manifest.json');
 	const manifestMissing = !fs.existsSync(manifestPath);
-	const blobsExist = listFiles(globalFilesDir).some((n) => n !== 'manifest.json' && !NON_BLOB_NAMES.has(n));
+	const blobsExist = listFiles(globalFilesDir).some(
+		(n) => n !== 'manifest.json' && !NON_BLOB_NAMES.has(n)
+	);
 
 	const needsMigration =
 		rowsToRekey > 0 ||
@@ -395,8 +412,10 @@ function fileFieldKeys(s) {
 		const detailParts = [];
 		if (manifestMissing) detailParts.push('build manifest.json');
 		if (rowsToRekey > 0) detailParts.push(`rekey ${rowsToRekey} row(s) → id`);
-		if (fileFieldsToMigrate > 0) detailParts.push(`migrate ${fileFieldsToMigrate} file-field value(s)`);
-		if (excludedToMigrate > 0) detailParts.push(`migrate ${excludedToMigrate} excluded entr(y/ies)`);
+		if (fileFieldsToMigrate > 0)
+			detailParts.push(`migrate ${fileFieldsToMigrate} file-field value(s)`);
+		if (excludedToMigrate > 0)
+			detailParts.push(`migrate ${excludedToMigrate} excluded entr(y/ies)`);
 		plan(`Stable file ids: ${detailParts.join(', ')}`, () => {
 			fs.mkdirSync(globalFilesDir, { recursive: true });
 
@@ -514,6 +533,99 @@ function fileFieldKeys(s) {
 	}
 }
 
+// --- Step 5: file-first classes reorg (move to <root>/media/, type folders → classes) ---
+// Runs after the id-keying step above so it consumes the final file-id manifest layout. Idempotent:
+// skipped once <root>/media/classes exists.
+(function planMediaReorg() {
+	const mediaDir = path.join(root, 'media');
+	const mediaClassesDir = path.join(mediaDir, 'classes');
+	const mediaFilesDir = path.join(mediaDir, 'files');
+	const oldFilesDir = path.join(root, GLOBAL_FILES_DIR_NAME);
+	const oldManifestPath = path.join(oldFilesDir, 'manifest.json');
+
+	if (fs.existsSync(mediaClassesDir)) return; // already on the file-first layout
+
+	// Only real catalogs become classes. The reserved `blob_store` (the global files dir itself) is the
+	// hub and dissolves — its folder is the old store, removed below.
+	const fileBackedTypes = typeDirs.filter((id) => {
+		const s = readSettings(path.join(root, id));
+		return s && (s.kind === 'images' || s.kind === 'generic');
+	});
+	const hasOldStore = fs.existsSync(oldManifestPath) || fs.existsSync(oldFilesDir);
+	if (fileBackedTypes.length === 0 && !hasOldStore) return; // nothing file-backed to reorg
+
+	plan(
+		`reorganize to file-first layout: move files/ → media/files/, ${fileBackedTypes.length} catalog(s) → media/classes/*.json`,
+		() => {
+			fs.mkdirSync(mediaFilesDir, { recursive: true });
+			fs.mkdirSync(mediaClassesDir, { recursive: true });
+
+			// 1. Move blobs into media/files/ (skip manifest/settings/data files/locks — they are
+			// bookkeeping, not blobs, and would otherwise be picked up as files).
+			if (fs.existsSync(oldFilesDir)) {
+				for (const name of fs.readdirSync(oldFilesDir)) {
+					if (name === 'manifest.json' || NON_BLOB_NAMES.has(name) || name.endsWith('.lock'))
+						continue;
+					fs.renameSync(path.join(oldFilesDir, name), path.join(mediaFilesDir, name));
+				}
+			}
+
+			// 2. Seed the v2 manifest from the old one (or empty).
+			const old = readJsonSafe(oldManifestPath) || { files: {} };
+			const manifest = { version: 2, files: {} };
+			for (const [fid, entry] of Object.entries(old.files || {})) {
+				manifest.files[fid] = {
+					file_name: entry.file_name,
+					classes: [],
+					missing: false,
+					...(entry.size != null ? { size: entry.size } : {}),
+					...(entry.created_at ? { created_at: entry.created_at } : {})
+				};
+			}
+
+			// 3. Convert each file-backed type folder into a class file + membership index.
+			for (const id of fileBackedTypes) {
+				const baseDir = path.join(root, id);
+				const s = readSettings(baseDir);
+				const schema = s.schema && typeof s.schema === 'object' ? s.schema : {};
+				const data = readJsonSafe(path.join(baseDir, dataFileFor(s)));
+				const rows = data && Array.isArray(data.images) ? data.images : [];
+				const records = {};
+				for (const rec of rows) {
+					if (!rec || typeof rec !== 'object' || typeof rec.id !== 'string') continue;
+					const { image_name, file_name, file_id, ...rest } = rec; // drop legacy/built-in keys
+					void image_name;
+					void file_name;
+					void file_id;
+					records[rec.id] = rest;
+					if (manifest.files[rec.id]) {
+						const set = new Set(manifest.files[rec.id].classes);
+						set.add(id);
+						manifest.files[rec.id].classes = [...set].sort();
+					}
+				}
+				const displayField = Object.keys(schema).find((k) => schema[k]?.type === 'string');
+				writeJsonAtomic(path.join(mediaClassesDir, `${id}.json`), {
+					schema,
+					config: { displayName: s.displayName || id, ...(displayField ? { displayField } : {}) },
+					records
+				});
+				fs.rmSync(baseDir, { recursive: true, force: true });
+			}
+
+			// 4. Persist manifest + media settings, then drop the old store.
+			writeJsonAtomic(path.join(mediaDir, 'manifest.json'), manifest);
+			if (!fs.existsSync(path.join(mediaDir, 'settings.json'))) {
+				writeJsonAtomic(path.join(mediaDir, 'settings.json'), {
+					classOrder: fileBackedTypes,
+					gridSize: 'medium'
+				});
+			}
+			fs.rmSync(oldFilesDir, { recursive: true, force: true });
+		}
+	);
+})();
+
 // --- Report ---
 console.log(c.bold('Pending upgrades:'));
 if (planned.length === 0) {
@@ -548,13 +660,16 @@ if (apply && planned.length > 0) {
 		}
 	}
 	console.log(`  ${c.green(`applied ${done}/${planned.length} upgrade(s).`)}`);
-	if (conflicts.length > 0) console.log(c.yellow(`  ${conflicts.length} conflict(s) still need manual attention.`));
+	if (conflicts.length > 0)
+		console.log(c.yellow(`  ${conflicts.length} conflict(s) still need manual attention.`));
 	console.log('');
 	process.exit(0);
 }
 
 if (planned.length > 0) {
-	console.log(c.dim(`Re-run with ${c.bold('--apply')} to perform the ${planned.length} upgrade(s) above.\n`));
+	console.log(
+		c.dim(`Re-run with ${c.bold('--apply')} to perform the ${planned.length} upgrade(s) above.\n`)
+	);
 	process.exit(1);
 }
 

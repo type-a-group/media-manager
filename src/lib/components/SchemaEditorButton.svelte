@@ -78,10 +78,10 @@
 	let importFileRef = $state<HTMLInputElement | null>(null);
 	let cloneDialogOpen = $state(false);
 	let cloneFromTypeId = $state('');
-	let availableTypes = $state<{id: string, displayName: string}[]>([]);
+	let availableTypes = $state<{ id: string; displayName: string }[]>([]);
 
 	let repairDialogOpen = $state(false);
-	let repairIssues = $state<{id: string, field: string, issue: string, fix?: unknown}[]>([]);
+	let repairIssues = $state<{ id: string; field: string; issue: string; fix?: unknown }[]>([]);
 	let repairing = $state(false);
 
 	const typeId = $derived($currentMediaTypeStore?.typeId ?? null);
@@ -444,7 +444,7 @@
 	async function openCloneDialog() {
 		try {
 			const types = await apiListMediaTypes();
-			availableTypes = types.filter(t => t.id !== typeId && t.id !== 'globals');
+			availableTypes = types.filter((t) => t.id !== typeId && t.id !== 'globals');
 			cloneFromTypeId = availableTypes[0]?.id ?? '';
 			cloneDialogOpen = true;
 		} catch (err) {
@@ -862,14 +862,16 @@
 	<Dialog.Content>
 		<Dialog.Title>Clone Schema</Dialog.Title>
 		<Dialog.Description>
-			Select a media type to clone its schema. This will overwrite the current schema entirely. Continue?
+			Select a media type to clone its schema. This will overwrite the current schema entirely.
+			Continue?
 		</Dialog.Description>
 		<div class="flex flex-col gap-4 py-4">
 			<div class="flex flex-col gap-2">
 				<Label for="clone-from">Clone from</Label>
 				<Select.Root type="single" bind:value={cloneFromTypeId}>
 					<Select.Trigger id="clone-from" class="w-full">
-						{availableTypes.find((t) => t.id === cloneFromTypeId)?.displayName ?? 'Select media type'}
+						{availableTypes.find((t) => t.id === cloneFromTypeId)?.displayName ??
+							'Select media type'}
 					</Select.Trigger>
 					<Select.Content>
 						{#each availableTypes as t}
@@ -903,10 +905,15 @@
 						<div class="p-3 border rounded-lg bg-muted/30 flex flex-col gap-1 text-sm">
 							<div><span class="font-semibold">Record ID:</span> {issue.id}</div>
 							<div><span class="font-semibold">Field:</span> {issue.field}</div>
-							<div class="text-destructive"><span class="font-semibold text-foreground">Issue:</span> {issue.issue}</div>
+							<div class="text-destructive">
+								<span class="font-semibold text-foreground">Issue:</span>
+								{issue.issue}
+							</div>
 							<div>
 								<span class="font-semibold">Proposed Fix:</span>
-								<span class="font-mono bg-muted px-1 py-0.5 rounded text-xs">{JSON.stringify(issue.fix)}</span>
+								<span class="font-mono bg-muted px-1 py-0.5 rounded text-xs"
+									>{JSON.stringify(issue.fix)}</span
+								>
 							</div>
 						</div>
 					{/each}

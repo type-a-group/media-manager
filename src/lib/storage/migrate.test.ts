@@ -51,4 +51,3 @@ describe('storage migrations', () => {
 		expect((rec as any).Description).toBeUndefined();
 	});
 });
-

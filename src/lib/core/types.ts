@@ -9,7 +9,15 @@ import { RESERVED_FIELD_KEYS } from './fieldKeys.js';
  * - Used by the schema editor and dynamic form rendering to decide which input control to show.
  * - Used by validation/migrations to ensure schema values are coherent.
  */
-export const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file']);
+export const FieldTypeSchema = z.enum([
+	'string',
+	'number',
+	'boolean',
+	'dropdown',
+	'list',
+	'url',
+	'file'
+]);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
 
 /**
@@ -33,7 +41,12 @@ export type UrlValue = z.infer<typeof UrlValueSchema>;
  * @returns Normalized UrlValue
  */
 export function normalizeUrlValue(value: unknown): UrlValue {
-	if (value != null && typeof value === 'object' && 'url' in value && typeof (value as UrlValue).url === 'string') {
+	if (
+		value != null &&
+		typeof value === 'object' &&
+		'url' in value &&
+		typeof (value as UrlValue).url === 'string'
+	) {
 		const o = value as Record<string, unknown>;
 		return {
 			display_name: typeof o.display_name === 'string' ? o.display_name : '',
@@ -256,15 +269,76 @@ export const ImageListResponseSchema = z.object({
 });
 export type ImageListResponse = z.infer<typeof ImageListResponseSchema>;
 
+/**
+ * Per-class configuration (lives in each class file's `config`, not in `media/settings.json`).
+ * `displayName` is freely renamable; the class **id** (the class filename stem) is fixed at creation.
+ */
+export const ClassConfigSchema = z.object({
+	displayName: z.string().default(''),
+	gridGroupByField: z.string().optional(),
+	displayField: z.string().optional(),
+	gridSize: z.enum(['small', 'medium', 'large']).optional()
+});
+export type ClassConfig = z.infer<typeof ClassConfigSchema>;
+
+/**
+ * A class file (`media/classes/<id>.json`) — the source of truth for one class: an embedded schema,
+ * config, and the opt-in per-blob metadata `records`, keyed by the blob's manifest `file_id`. A class
+ * with `schema: {}` is a valid pure-tag class (membership with no metadata).
+ */
+export const ClassFileSchema = z.object({
+	schema: SchemaDefinitionSchema.default({}),
+	config: ClassConfigSchema.default({ displayName: '' }),
+	records: z.record(JsonRecordSchema).default({})
+});
+export type ClassFile = z.infer<typeof ClassFileSchema>;
+
+/** A class row is identical in shape to a json record; its `id` is the blob's manifest id. */
+export type ClassRecord = JsonRecord;
+
+/** Summary of a class for sidebar / filter bar (member count is derived). */
+export const ClassSummarySchema = z.object({
+	id: z.string(),
+	displayName: z.string(),
+	count: z.number().default(0)
+});
+export type ClassSummary = z.infer<typeof ClassSummarySchema>;
+
+/**
+ * One blob as surfaced by the All Files grid: manifest identity + derived class membership + intrinsic
+ * info. `classes` is the denormalized membership index (so the grid renders chips from one read).
+ */
+export const FileItemSchema = z.object({
+	id: ImageIdSchema,
+	file_name: z.string(),
+	classes: z.array(z.string()).default([]),
+	missing: z.boolean().default(false),
+	size: z.number().optional(),
+	created_at: z.string().optional(),
+	width: z.number().optional(),
+	height: z.number().optional(),
+	/** Set only when one class is selected (the catalog view): that class's group-by value. */
+	group_by_value: z
+		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
+		.optional(),
+	/** Broken `file`-type field references on this blob's record in the selected class. */
+	missing_file_fields: z.array(z.string()).optional()
+});
+export type FileItem = z.infer<typeof FileItemSchema>;
+
+/** API: All Files (or one-class catalog) list response. */
+export const FileListResponseSchema = z.object({
+	files: z.array(FileItemSchema).default([]),
+	healed: HealSummarySchema.optional()
+});
+export type FileListResponse = z.infer<typeof FileListResponseSchema>;
+
 const FieldKeySchema = z
 	.string()
 	.min(1)
 	.max(64)
 	.regex(/^[a-z_][a-z0-9_]*$/, 'Field keys must be snake_case')
-	.refine(
-		(k) => !RESERVED_FIELD_KEYS.has(k),
-		'This field name is reserved'
-	);
+	.refine((k) => !RESERVED_FIELD_KEYS.has(k), 'This field name is reserved');
 
 /**
  * API: payload for adding a new field to the schema.
@@ -352,4 +426,3 @@ export const SuccessResponseSchema = z.object({
 	success: z.literal(true)
 });
 export type SuccessResponse = z.infer<typeof SuccessResponseSchema>;
-

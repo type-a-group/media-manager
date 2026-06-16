@@ -5,14 +5,16 @@
 			"title": "Welcome note",
 			"body": "This is a sample JSON record used to exercise the json media kind.",
 			"done": false,
-			"priority": "high"
+			"priority": "high",
+			"attachment": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75"
 		},
 		{
 			"id": "66666666-6666-4666-8666-666666666666",
 			"title": "Second note",
 			"body": "Another record so list and filter views have something to show.",
 			"done": true,
-			"priority": "low"
+			"priority": "low",
+			"attachment": "deadbeef-0000-4000-8000-000000000000"
 		}
 	]
 }

@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import AppSidebar from '$lib/components/AppSidebar.svelte';
-	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import '../app.css';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
@@ -17,7 +17,8 @@
 	// Initialize shared, in-memory selection state for the whole app.
 	const selection = setSelectionContext();
 
-	// Overview at / has no sidebar; editor at /media/[typeId] has sidebar + main.
+	// The dashboard (/) and the file hub (/files) bring their own chrome; only the record-type
+	// editor at /media/[typeId] uses the shared AppSidebar shell.
 	const isEditor = $derived($page.url.pathname.startsWith('/media/'));
 
 	onMount(async () => {
@@ -44,6 +45,6 @@
 	</Tooltip.Provider>
 {/if}
 <Toaster />
-<style>
 
+<style>
 </style>

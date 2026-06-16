@@ -3,8 +3,5 @@
 	"kind": "json",
 	"schema": {},
 	"dataFileName": "data.json",
-	"gridSize": "medium",
-	"autoAdvanceToNextUnlinked": false,
-	"autoSaveOnAdvance": false,
-	"excludedFiles": []
+	"gridSize": "medium"
 }

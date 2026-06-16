@@ -845,151 +845,153 @@
 
 	<!-- Upload Section -->
 	{#if !isGlobals}
-	<Sidebar.Content>
-		<!-- Image List -->
-		<Sidebar.Group>
-			<Sidebar.GroupLabel>
-				<div class="flex items-center justify-between gap-2 w-full">
-					<span class="ml-2"
-						>{kind === 'images' ? 'Images' : browseFirst ? 'Files' : 'Records'} ({displayedItems.length})</span
-					>
-					<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
-						<div class="flex items-center gap-2">
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<Button
-										variant={selection.gridViewActive ? 'default' : 'ghost'}
-										size="icon"
-										title="Grid view"
-										onclick={toggleGridView}
-										disabled={loading}
-										class="h-7 w-7"
-									>
-										<LayoutGrid class="h-4 w-4" />
-									</Button>
-								</Tooltip.Trigger>
-								<Tooltip.Content>Grid view</Tooltip.Content>
-							</Tooltip.Root>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									<Button
-										variant="ghost"
-										size="icon"
-										title={kind === 'json'
-											? 'Reload records'
-											: browseFirst
-												? 'Reload files'
-												: 'Reload images'}
-										onclick={syncImageLists}
-										disabled={loading}
-										class="h-7 w-7"
-									>
-										<RefreshCwIcon class="h-4 w-4" />
-									</Button>
-								</Tooltip.Trigger>
-								<Tooltip.Content
-									>{kind === 'json'
-										? 'Sync records'
-										: browseFirst
-											? 'Sync files'
-											: 'Sync image lists'}</Tooltip.Content
-								>
-							</Tooltip.Root>
-							{#if kind === 'json' && !isGlobals}
+		<Sidebar.Content>
+			<!-- Image List -->
+			<Sidebar.Group>
+				<Sidebar.GroupLabel>
+					<div class="flex items-center justify-between gap-2 w-full">
+						<span class="ml-2"
+							>{kind === 'images' ? 'Images' : browseFirst ? 'Files' : 'Records'} ({displayedItems.length})</span
+						>
+						<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
+							<div class="flex items-center gap-2">
 								<Tooltip.Root>
 									<Tooltip.Trigger>
 										<Button
-											variant="outline"
+											variant={selection.gridViewActive ? 'default' : 'ghost'}
 											size="icon"
-											title="New record"
-											onclick={createRecord}
+											title="Grid view"
+											onclick={toggleGridView}
 											disabled={loading}
 											class="h-7 w-7"
 										>
-											<Plus class="h-4 w-4" aria-hidden="true" />
+											<LayoutGrid class="h-4 w-4" />
 										</Button>
 									</Tooltip.Trigger>
-									<Tooltip.Content>New record</Tooltip.Content>
+									<Tooltip.Content>Grid view</Tooltip.Content>
 								</Tooltip.Root>
-							{:else if kind === 'images' || browseFirst}
-								<DropdownMenu.Root>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										<Button
+											variant="ghost"
+											size="icon"
+											title={kind === 'json'
+												? 'Reload records'
+												: browseFirst
+													? 'Reload files'
+													: 'Reload images'}
+											onclick={syncImageLists}
+											disabled={loading}
+											class="h-7 w-7"
+										>
+											<RefreshCwIcon class="h-4 w-4" />
+										</Button>
+									</Tooltip.Trigger>
+									<Tooltip.Content
+										>{kind === 'json'
+											? 'Sync records'
+											: browseFirst
+												? 'Sync files'
+												: 'Sync image lists'}</Tooltip.Content
+									>
+								</Tooltip.Root>
+								{#if kind === 'json' && !isGlobals}
 									<Tooltip.Root>
 										<Tooltip.Trigger>
-											<DropdownMenu.Trigger
-												class="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-												disabled={uploading}
+											<Button
+												variant="outline"
+												size="icon"
+												title="New record"
+												onclick={createRecord}
+												disabled={loading}
+												class="h-7 w-7"
 											>
-												<UploadIcon class="h-4 w-4" />
-											</DropdownMenu.Trigger>
+												<Plus class="h-4 w-4" aria-hidden="true" />
+											</Button>
 										</Tooltip.Trigger>
-										<Tooltip.Content>Upload image(s) or folder</Tooltip.Content>
+										<Tooltip.Content>New record</Tooltip.Content>
 									</Tooltip.Root>
-									<DropdownMenu.Content align="end">
-										<DropdownMenu.Item onclick={() => triggerUpload('files')}>
-											Upload file(s)
-										</DropdownMenu.Item>
-										<DropdownMenu.Item onclick={() => triggerUpload('folder')}>
-											Upload folder
-										</DropdownMenu.Item>
-									</DropdownMenu.Content>
-								</DropdownMenu.Root>
-							{/if}
-						</div>
-					</Tooltip.Provider>
+								{:else if kind === 'images' || browseFirst}
+									<DropdownMenu.Root>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												<DropdownMenu.Trigger
+													class="inline-flex h-7 w-7 items-center justify-center rounded-md border-0 hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+													disabled={uploading}
+												>
+													<UploadIcon class="h-4 w-4" />
+												</DropdownMenu.Trigger>
+											</Tooltip.Trigger>
+											<Tooltip.Content>Upload image(s) or folder</Tooltip.Content>
+										</Tooltip.Root>
+										<DropdownMenu.Content align="end">
+											<DropdownMenu.Item onclick={() => triggerUpload('files')}>
+												Upload file(s)
+											</DropdownMenu.Item>
+											<DropdownMenu.Item onclick={() => triggerUpload('folder')}>
+												Upload folder
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
+								{/if}
+							</div>
+						</Tooltip.Provider>
+					</div>
+				</Sidebar.GroupLabel>
+				<div class="px-3 pb-2">
+					<Input
+						type="text"
+						placeholder={kind === 'json' ? 'Search records...' : 'Search files...'}
+						bind:value={searchQuery}
+						class="h-8 text-xs"
+					/>
 				</div>
-			</Sidebar.GroupLabel>
-			<div class="px-3 pb-2">
-				<Input
-					type="text"
-					placeholder={kind === 'json' ? 'Search records...' : 'Search files...'}
-					bind:value={searchQuery}
-					class="h-8 text-xs"
-				/>
-			</div>
-			<ul>
-				{#if loading}
-					<li class="italic flex justify-center">Loading...</li>
-				{:else if displayedItems.length > 0}
-					{#each displayedItems as item (item.id)}
-						<HoverCard.Root openDelay={300} closeDelay={0}>
-							<HoverCard.Trigger
-								class={buttonVariants({
-									variant: selection.selectedImageId === item.id ? 'default' : 'ghost',
-									class: 'w-full justify-start focus-visible:ring-0'
-								})}
-								onclick={() => openImage(item)}
-							>
-								<span
-									class="overflow-x-auto whitespace-nowrap w-full text-left [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+				<ul>
+					{#if loading}
+						<li class="italic flex justify-center">Loading...</li>
+					{:else if displayedItems.length > 0}
+						{#each displayedItems as item (item.id)}
+							<HoverCard.Root openDelay={300} closeDelay={0}>
+								<HoverCard.Trigger
+									class={buttonVariants({
+										variant: selection.selectedImageId === item.id ? 'default' : 'ghost',
+										class: 'w-full justify-start focus-visible:ring-0'
+									})}
+									onclick={() => openImage(item)}
 								>
-									{getDisplayName(item)}
-								</span>
-							</HoverCard.Trigger>
-							{#if selection.selectedImageId !== item.id && (kind === 'images' || browseFirst)}
-								<HoverCard.Content
-									side="right"
-									align="center"
-									class="pointer-events-none flex flex-col gap-2"
-								>
-									<img
-										src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
-										alt="Preview of {getDisplayName(item)}"
-									/>
-									{#if 'file_name' in item && item.file_name}
-										<p class="text-sm text-gray-500 break-all">{item.file_name}</p>
-									{/if}
-								</HoverCard.Content>
-							{/if}
-						</HoverCard.Root>
-					{/each}
-				{:else}
-					<li class="italic flex justify-center">
-						No {kind === 'images' || browseFirst ? selection.viewMode + (browseFirst ? ' files' : ' images') : 'records'} found.
-					</li>
-				{/if}
-			</ul>
-		</Sidebar.Group>
-	</Sidebar.Content>
+									<span
+										class="overflow-x-auto whitespace-nowrap w-full text-left [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+									>
+										{getDisplayName(item)}
+									</span>
+								</HoverCard.Trigger>
+								{#if selection.selectedImageId !== item.id && (kind === 'images' || browseFirst)}
+									<HoverCard.Content
+										side="right"
+										align="center"
+										class="pointer-events-none flex flex-col gap-2"
+									>
+										<img
+											src={typeId ? apiImageUrlByIdForType(typeId, item.id) : ''}
+											alt="Preview of {getDisplayName(item)}"
+										/>
+										{#if 'file_name' in item && item.file_name}
+											<p class="text-sm text-gray-500 break-all">{item.file_name}</p>
+										{/if}
+									</HoverCard.Content>
+								{/if}
+							</HoverCard.Root>
+						{/each}
+					{:else}
+						<li class="italic flex justify-center">
+							No {kind === 'images' || browseFirst
+								? selection.viewMode + (browseFirst ? ' files' : ' images')
+								: 'records'} found.
+						</li>
+					{/if}
+				</ul>
+			</Sidebar.Group>
+		</Sidebar.Content>
 	{/if}
 </Sidebar.Root>
 

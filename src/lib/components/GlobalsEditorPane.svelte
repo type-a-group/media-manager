@@ -7,21 +7,32 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { toast } from 'svelte-sonner';
-	import { Trash2 } from 'lucide-svelte';
+	import { Trash2, TriangleAlert } from 'lucide-svelte';
 	import { apiGetGlobalsRecord, apiUpdateGlobalsRecord } from '$lib/api/client.js';
 	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
+	import { GLOBALS_FIELD_KINDS_KEY, GLOBALS_FIELD_META_KEY } from '$lib/core/fieldKeys.js';
+	import FilePicker from './FilePicker.svelte';
 
-	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url';
+	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+	type ItemType = 'string' | 'number' | 'url';
 	type UrlValue = { display_name: string; url: string };
+	/** Extra per-field metadata a schema would normally hold; persisted in `__field_meta`. */
+	type FieldMeta = { options?: string[]; multiselect?: boolean; itemType?: ItemType };
 
 	/**
-	 * Reserved record key used to persist each field's chosen UI type across reloads.
-	 * Globals has no schema, so the kind hint is stored alongside the data as a JSON-encoded
-	 * string (the record's value schema allows strings). Hidden from the editable field list.
+	 * Globals has no schema, so per-field UI hints are stored alongside the data in reserved keys:
+	 * `__field_kinds` (key → ValueKind) and `__field_meta` (key → FieldMeta). The server also annotates
+	 * reads with `_missing_files` for broken `file` references. All three are hidden from the field list.
 	 */
-	const FIELD_KINDS_KEY = '__field_kinds';
+	const RESERVED = new Set([
+		'id',
+		'last_modified',
+		'_missing_files',
+		GLOBALS_FIELD_KINDS_KEY,
+		GLOBALS_FIELD_META_KEY
+	]);
 
 	let loading = $state(true);
 	let saving = $state(false);
@@ -29,23 +40,31 @@
 	let formValues = $state<Record<string, unknown>>({});
 	let deletedKeys = $state<Set<string>>(new Set());
 	let fieldKinds = $state<Record<string, ValueKind>>({});
+	let fieldMeta = $state<Record<string, FieldMeta>>({});
+	let missingFiles = $state<Record<string, string>>({});
 	let pendingListItem = $state<Record<string, string>>({});
+	let pendingListUrl = $state<Record<string, UrlValue>>({});
+
+	// Add-field form
 	let addKey = $state('');
 	let addType = $state<ValueKind>('string');
 	let addValue = $state('');
+	let addOptions = $state(''); // comma-separated, for dropdown
+	let addMultiselect = $state(false);
+	let addItemType = $state<ItemType>('string');
 
 	function editableFromRecord(rec: Record<string, unknown>): Record<string, unknown> {
 		const out: Record<string, unknown> = {};
 		for (const [k, v] of Object.entries(rec)) {
-			if (k === 'id' || k === 'last_modified' || k === FIELD_KINDS_KEY) continue;
+			if (RESERVED.has(k)) continue;
 			out[k] = v;
 		}
 		return out;
 	}
 
-	/** Parse persisted field-kind hints from the reserved record key (tolerant of malformed input). */
+	/** Parse persisted field-kind hints from the reserved key (tolerant of malformed input). */
 	function parseStoredKinds(rec: Record<string, unknown>): Record<string, ValueKind> {
-		const raw = rec[FIELD_KINDS_KEY];
+		const raw = rec[GLOBALS_FIELD_KINDS_KEY];
 		if (typeof raw !== 'string') return {};
 		try {
 			const parsed = JSON.parse(raw) as Record<string, unknown>;
@@ -57,10 +76,35 @@
 					v === 'boolean' ||
 					v === 'dropdown' ||
 					v === 'list' ||
-					v === 'url'
+					v === 'url' ||
+					v === 'file'
 				) {
 					out[k] = v;
 				}
+			}
+			return out;
+		} catch {
+			return {};
+		}
+	}
+
+	/** Parse persisted per-field metadata (options/multiselect/itemType) from the reserved key. */
+	function parseStoredMeta(rec: Record<string, unknown>): Record<string, FieldMeta> {
+		const raw = rec[GLOBALS_FIELD_META_KEY];
+		if (typeof raw !== 'string') return {};
+		try {
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
+			const out: Record<string, FieldMeta> = {};
+			for (const [k, v] of Object.entries(parsed)) {
+				if (!v || typeof v !== 'object') continue;
+				const o = v as Record<string, unknown>;
+				const m: FieldMeta = {};
+				if (Array.isArray(o.options)) m.options = o.options.filter((x) => typeof x === 'string');
+				if (typeof o.multiselect === 'boolean') m.multiselect = o.multiselect;
+				if (o.itemType === 'string' || o.itemType === 'number' || o.itemType === 'url') {
+					m.itemType = o.itemType;
+				}
+				out[k] = m;
 			}
 			return out;
 		} catch {
@@ -76,31 +120,66 @@
 		return 'string';
 	}
 
-	function coerceToKind(kind: ValueKind, current: unknown): unknown {
+	function coerceToKind(kind: ValueKind, current: unknown, meta: FieldMeta): unknown {
 		if (kind === 'boolean') return current === true;
 		if (kind === 'number') {
 			const n = Number(current);
 			return Number.isFinite(n) ? n : 0;
 		}
-		if (kind === 'url') {
-			return normalizeUrlValue(current);
-		}
+		if (kind === 'url') return normalizeUrlValue(current);
 		if (kind === 'list') {
 			if (Array.isArray(current)) return current;
 			if (typeof current === 'string' && current.trim().length > 0) return [current.trim()];
 			return [];
 		}
-		// dropdown + string are both scalar string values in globals
+		// file stores a blob's manifest id (a string); keep an existing id, else reset to empty.
+		if (kind === 'file') return typeof current === 'string' ? current : '';
+		if (kind === 'dropdown') {
+			if (meta.multiselect)
+				return Array.isArray(current) ? current : current ? [String(current)] : [];
+			return Array.isArray(current)
+				? current[0] != null
+					? String(current[0])
+					: ''
+				: String(current ?? '');
+		}
+		// plain string
 		return String(current ?? '');
+	}
+
+	function getMeta(key: string): FieldMeta {
+		return fieldMeta[key] ?? {};
 	}
 
 	function setFieldKind(key: string, kind: ValueKind) {
 		fieldKinds = { ...fieldKinds, [key]: kind };
-		formValues = { ...formValues, [key]: coerceToKind(kind, formValues[key]) };
+		formValues = { ...formValues, [key]: coerceToKind(kind, formValues[key], getMeta(key)) };
 	}
 
 	function getFieldKind(key: string): ValueKind {
 		return fieldKinds[key] ?? inferKind(formValues[key]);
+	}
+
+	function setFieldOptions(key: string, csv: string) {
+		const options = csv
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean);
+		fieldMeta = { ...fieldMeta, [key]: { ...getMeta(key), options } };
+	}
+
+	function setFieldMultiselect(key: string, multi: boolean) {
+		fieldMeta = { ...fieldMeta, [key]: { ...getMeta(key), multiselect: multi } };
+		// Re-shape the current value to match (string <-> string[]).
+		formValues = { ...formValues, [key]: coerceToKind('dropdown', formValues[key], getMeta(key)) };
+	}
+
+	function listItemDisplayText(item: unknown): string {
+		if (item && typeof item === 'object' && 'url' in (item as object)) {
+			const u = item as UrlValue;
+			return (u.display_name ?? '').trim() || u.url || '';
+		}
+		return String(item);
 	}
 
 	async function load() {
@@ -114,8 +193,14 @@
 			baseValues = editable;
 			formValues = { ...editable };
 			fieldKinds = nextKinds;
+			fieldMeta = parseStoredMeta(rec);
+			missingFiles =
+				rec._missing_files && typeof rec._missing_files === 'object'
+					? (rec._missing_files as Record<string, string>)
+					: {};
 			deletedKeys = new Set();
 			pendingListItem = {};
+			pendingListUrl = {};
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to load globals');
@@ -131,6 +216,9 @@
 		const nextKinds = { ...fieldKinds };
 		delete nextKinds[key];
 		fieldKinds = nextKinds;
+		const nextMeta = { ...fieldMeta };
+		delete nextMeta[key];
+		fieldMeta = nextMeta;
 		if (key in baseValues) {
 			const s = new Set(deletedKeys);
 			s.add(key);
@@ -141,7 +229,7 @@
 	function addField() {
 		const key = addKey.trim();
 		if (!key) return;
-		if (key === 'id' || key === 'last_modified' || key === FIELD_KINDS_KEY) {
+		if (RESERVED.has(key)) {
 			toast.error('This key is reserved');
 			return;
 		}
@@ -150,32 +238,56 @@
 			return;
 		}
 		let val: unknown = '';
+		let meta: FieldMeta = {};
 		try {
 			if (addType === 'number') val = Number(addValue || 0);
 			else if (addType === 'boolean') val = addValue.trim().toLowerCase() === 'true';
 			else if (addType === 'url') {
 				val = normalizeUrlValue({ display_name: '', url: addValue.trim() });
 			} else if (addType === 'list') {
-				val = addValue.trim() ? [addValue.trim()] : [];
+				val = [];
+				meta = { itemType: addItemType };
 			} else if (addType === 'dropdown') {
-				val = addValue;
-			}
-			else val = addValue;
-		} catch {}
+				const options = addOptions
+					.split(',')
+					.map((s) => s.trim())
+					.filter(Boolean);
+				meta = { options, multiselect: addMultiselect };
+				val = addMultiselect ? [] : (options[0] ?? '');
+			} else if (addType === 'file') {
+				val = '';
+			} else val = addValue;
+		} catch {
+			/* fall through with default empty value */
+		}
 		formValues = { ...formValues, [key]: val };
 		fieldKinds = { ...fieldKinds, [key]: addType };
+		if (Object.keys(meta).length > 0) fieldMeta = { ...fieldMeta, [key]: meta };
 		addKey = '';
 		addType = 'string';
 		addValue = '';
+		addOptions = '';
+		addMultiselect = false;
+		addItemType = 'string';
 	}
 
 	function addListItem(key: string) {
-		const next = (pendingListItem[key] ?? '').trim();
-		if (!next) return;
+		const itemType = getMeta(key).itemType ?? 'string';
+		let item: unknown;
+		if (itemType === 'url') {
+			const u = pendingListUrl[key] ?? { display_name: '', url: '' };
+			if (!u.url.trim()) return;
+			item = { display_name: u.display_name.trim(), url: u.url.trim() };
+			pendingListUrl = { ...pendingListUrl, [key]: { display_name: '', url: '' } };
+		} else {
+			const raw = (pendingListItem[key] ?? '').trim();
+			if (!raw) return;
+			item = itemType === 'number' ? Number(raw) : raw;
+			pendingListItem = { ...pendingListItem, [key]: '' };
+		}
 		const arr = Array.isArray(formValues[key]) ? [...(formValues[key] as unknown[])] : [];
-		arr.push(next);
+		arr.push(item);
 		formValues = { ...formValues, [key]: arr };
-		pendingListItem = { ...pendingListItem, [key]: '' };
 	}
 
 	function removeListItem(key: string, idx: number) {
@@ -190,10 +302,16 @@
 			const patch: Record<string, unknown> = {};
 			for (const [k, v] of Object.entries(formValues)) patch[k] = v;
 			for (const k of deletedKeys) patch[k] = null;
-			// Persist per-field type hints so dropdown/string (and other ambiguous) kinds survive reloads.
+			// Persist per-field type + metadata hints so they survive reloads.
 			const kindsToStore: Record<string, ValueKind> = {};
-			for (const k of Object.keys(formValues)) kindsToStore[k] = getFieldKind(k);
-			patch[FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
+			const metaToStore: Record<string, FieldMeta> = {};
+			for (const k of Object.keys(formValues)) {
+				kindsToStore[k] = getFieldKind(k);
+				const m = getMeta(k);
+				if (m.options?.length || m.multiselect || m.itemType) metaToStore[k] = m;
+			}
+			patch[GLOBALS_FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
+			patch[GLOBALS_FIELD_META_KEY] = JSON.stringify(metaToStore);
 			await apiUpdateGlobalsRecord(patch);
 			toast.success('Globals saved');
 			triggerImageListRefresh();
@@ -242,6 +360,7 @@
 											<Select.Item value="dropdown">dropdown</Select.Item>
 											<Select.Item value="list">list</Select.Item>
 											<Select.Item value="url">url</Select.Item>
+											<Select.Item value="file">file</Select.Item>
 										</Select.Content>
 									</Select.Root>
 									<Button variant="ghost" size="icon" onclick={() => removeField(key)}>
@@ -298,12 +417,64 @@
 											})}
 									/>
 								</div>
+							{:else if getFieldKind(key) === 'dropdown'}
+								{@const meta = getMeta(key)}
+								{#if meta.multiselect}
+									<Select.Root
+										type="multiple"
+										value={(formValues[key] ?? []) as string[]}
+										onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? [] })}
+									>
+										<Select.Trigger class="w-full">
+											{((formValues[key] ?? []) as string[]).length === 0
+												? '(none)'
+												: ((formValues[key] ?? []) as string[]).join(', ')}
+										</Select.Trigger>
+										<Select.Content>
+											{#each meta.options ?? [] as opt}
+												<Select.Item value={opt}>{opt}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{:else}
+									<Select.Root
+										type="single"
+										value={String(formValues[key] ?? '')}
+										onValueChange={(v) => (formValues = { ...formValues, [key]: v ?? '' })}
+									>
+										<Select.Trigger class="w-full">
+											{String(formValues[key] ?? '') || 'Select…'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each meta.options ?? [] as opt}
+												<Select.Item value={opt}>{opt}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{/if}
+								<div class="flex items-center gap-2">
+									<Input
+										class="text-xs"
+										placeholder="Options (comma-separated)"
+										value={(meta.options ?? []).join(', ')}
+										oninput={(e) =>
+											setFieldOptions(key, (e.currentTarget as HTMLInputElement).value)}
+									/>
+									<label class="flex items-center gap-1 text-xs whitespace-nowrap">
+										<Checkbox
+											checked={meta.multiselect === true}
+											onCheckedChange={(c) => setFieldMultiselect(key, c === true)}
+										/>
+										Multiple
+									</label>
+								</div>
 							{:else if getFieldKind(key) === 'list'}
+								{@const itemType = getMeta(key).itemType ?? 'string'}
 								<div class="space-y-2">
 									<div class="flex flex-wrap gap-2">
-										{#each (Array.isArray(formValues[key]) ? formValues[key] : []) as item, idx (idx)}
+										{#each Array.isArray(formValues[key]) ? formValues[key] : [] as item, idx (idx)}
 											<span class="inline-flex items-center rounded border px-2 py-1 text-sm">
-												{String(item)}
+												{listItemDisplayText(item)}
 												<button
 													type="button"
 													class="ml-2 text-muted-foreground hover:text-foreground"
@@ -314,25 +485,88 @@
 											</span>
 										{/each}
 									</div>
-									<div class="flex gap-2">
-										<Input
-											type="text"
-											placeholder="Add item"
-											value={pendingListItem[key] ?? ''}
-											oninput={(e) =>
-												(pendingListItem = {
-													...pendingListItem,
-													[key]: (e.currentTarget as HTMLInputElement).value
-												})}
-											onkeydown={(e) => {
-												if (e.key === 'Enter') {
-													e.preventDefault();
-													addListItem(key);
-												}
-											}}
-										/>
+									<div class="flex gap-2 items-end flex-wrap">
+										{#if itemType === 'url'}
+											<Input
+												type="text"
+												placeholder="Display name"
+												class="w-32"
+												value={pendingListUrl[key]?.display_name ?? ''}
+												oninput={(e) =>
+													(pendingListUrl = {
+														...pendingListUrl,
+														[key]: {
+															display_name: (e.currentTarget as HTMLInputElement).value,
+															url: pendingListUrl[key]?.url ?? ''
+														}
+													})}
+											/>
+											<Input
+												type="url"
+												placeholder="https://..."
+												class="flex-1 min-w-0"
+												value={pendingListUrl[key]?.url ?? ''}
+												oninput={(e) =>
+													(pendingListUrl = {
+														...pendingListUrl,
+														[key]: {
+															display_name: pendingListUrl[key]?.display_name ?? '',
+															url: (e.currentTarget as HTMLInputElement).value
+														}
+													})}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') {
+														e.preventDefault();
+														addListItem(key);
+													}
+												}}
+											/>
+										{:else}
+											<Input
+												type={itemType === 'number' ? 'number' : 'text'}
+												placeholder="Add item"
+												class="flex-1 min-w-0"
+												value={pendingListItem[key] ?? ''}
+												oninput={(e) =>
+													(pendingListItem = {
+														...pendingListItem,
+														[key]: (e.currentTarget as HTMLInputElement).value
+													})}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') {
+														e.preventDefault();
+														addListItem(key);
+													}
+												}}
+											/>
+										{/if}
 										<Button variant="outline" onclick={() => addListItem(key)}>Add</Button>
 									</div>
+								</div>
+							{:else if getFieldKind(key) === 'file'}
+								<div class="flex flex-col gap-1 w-full">
+									<FilePicker
+										value={formValues[key] as string}
+										onSelect={(id) => (formValues = { ...formValues, [key]: id })}
+									/>
+									{#if missingFiles[key] !== undefined && formValues[key] === baseValues[key]}
+										<div class="flex items-center justify-between gap-2 mt-1">
+											<span class="text-xs text-destructive flex items-center gap-1">
+												<TriangleAlert class="h-3 w-3 shrink-0" />
+												{missingFiles[key]
+													? `Missing file: ${missingFiles[key]}`
+													: 'File not found on disk'}
+											</span>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="h-6 px-2 text-xs"
+												onclick={() => (formValues = { ...formValues, [key]: '' })}
+											>
+												Clear
+											</Button>
+										</div>
+									{/if}
 								</div>
 							{:else}
 								<textarea
@@ -355,7 +589,11 @@
 						<div class="font-medium">Add field</div>
 						<div class="grid grid-cols-1 md:grid-cols-3 gap-2">
 							<Input placeholder="field_key" bind:value={addKey} />
-							<Select.Root type="single" value={addType} onValueChange={(v) => v && (addType = v as ValueKind)}>
+							<Select.Root
+								type="single"
+								value={addType}
+								onValueChange={(v) => v && (addType = v as ValueKind)}
+							>
 								<Select.Trigger>{addType}</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="string">string</Select.Item>
@@ -364,10 +602,39 @@
 									<Select.Item value="dropdown">dropdown</Select.Item>
 									<Select.Item value="list">list</Select.Item>
 									<Select.Item value="url">url</Select.Item>
+									<Select.Item value="file">file</Select.Item>
 								</Select.Content>
 							</Select.Root>
-							<Input placeholder="initial value" bind:value={addValue} />
+							{#if addType === 'dropdown'}
+								<Input placeholder="Options (comma-separated)" bind:value={addOptions} />
+							{:else if addType === 'list'}
+								<Select.Root
+									type="single"
+									value={addItemType}
+									onValueChange={(v) => v && (addItemType = v as ItemType)}
+								>
+									<Select.Trigger>{addItemType} items</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="string">string</Select.Item>
+										<Select.Item value="number">number</Select.Item>
+										<Select.Item value="url">url</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							{:else if addType === 'boolean' || addType === 'file'}
+								<div></div>
+							{:else}
+								<Input placeholder="initial value" bind:value={addValue} />
+							{/if}
 						</div>
+						{#if addType === 'dropdown'}
+							<label class="flex items-center gap-1 text-xs">
+								<Checkbox
+									checked={addMultiselect}
+									onCheckedChange={(c) => (addMultiselect = c === true)}
+								/>
+								Allow multiple
+							</label>
+						{/if}
 						<div class="flex justify-end">
 							<Button variant="outline" onclick={addField}>Add field</Button>
 						</div>
@@ -376,7 +643,9 @@
 			{/if}
 		</Card.Content>
 		<Card.Footer class="justify-end">
-			<Button onclick={save} disabled={saving || loading}>{saving ? 'Saving…' : 'Save globals'}</Button>
+			<Button onclick={save} disabled={saving || loading}
+				>{saving ? 'Saving…' : 'Save globals'}</Button
+			>
 		</Card.Footer>
 	</Card.Root>
 </div>

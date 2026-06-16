@@ -22,7 +22,8 @@ export const GET: RequestHandler = async ({ params }) => {
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to read schema' });
 	}
 };
@@ -40,14 +41,16 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 		const typeId = params.typeId;
 		const repo = getMediaTypeRepo(typeId);
-		if (!('importSchema' in repo)) throw error(400, 'Schema import not supported for this media type');
+		if (!('importSchema' in repo))
+			throw error(400, 'Schema import not supported for this media type');
 		const result = await repo.importSchema(parsed.data);
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		if (e.message?.includes('not editable')) throw error(400, e.message);
 		throw error(500, { message: 'Failed to import schema' });
 	}
@@ -78,7 +81,8 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to add schema field' });
 	}
 };

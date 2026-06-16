@@ -107,5 +107,3 @@ export function migrateImageDataFile(raw: unknown): { file: ImageDataFile; chang
 
 	return { file: ImageDataFileSchema.parse({ images: migratedImages }), changed };
 }
-
-

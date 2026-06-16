@@ -55,4 +55,3 @@ export async function withFileLock<T>(lockPath: string, fn: () => Promise<T>): P
 	// Unreachable, but keeps TS happy.
 	throw new Error('Failed to acquire file lock');
 }
-

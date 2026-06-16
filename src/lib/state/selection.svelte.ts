@@ -225,4 +225,3 @@ export function useSelection(): SelectionState {
 	}
 	return state;
 }
-

@@ -48,4 +48,3 @@ export async function writeJsonFileAtomic(filePath: string, value: unknown): Pro
 	const text = JSON.stringify(value, null, 2);
 	await writeTextFileAtomic(filePath, text);
 }
-

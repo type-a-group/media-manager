@@ -1,0 +1,56 @@
+{
+	"schema": {
+		"caption": { "type": "string", "removable": true, "defaultValue": "" },
+		"rating": { "type": "number", "removable": true },
+		"favorite": { "type": "boolean", "removable": true, "defaultValue": false },
+		"category": {
+			"type": "dropdown",
+			"removable": true,
+			"options": ["nature", "abstract", "portrait"],
+			"defaultValue": "nature"
+		},
+		"tags": { "type": "list", "removable": true, "itemTypes": ["string"], "defaultValue": [] },
+		"source": {
+			"type": "url",
+			"removable": true,
+			"defaultValue": { "display_name": "", "url": "" }
+		},
+		"related_doc": { "type": "file", "removable": true, "defaultValue": "" }
+	},
+	"config": {
+		"displayName": "Images",
+		"displayField": "caption",
+		"gridSize": "medium"
+	},
+	"records": {
+		"bad5de29-3471-4072-8229-af28c4ae446b": {
+			"id": "bad5de29-3471-4072-8229-af28c4ae446b",
+			"caption": "Warm sunset over the hills",
+			"rating": 5,
+			"favorite": true,
+			"category": "nature",
+			"tags": ["warm", "sky"],
+			"source": { "display_name": "Sample", "url": "https://example.com/sunset" },
+			"related_doc": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75"
+		},
+		"0880c3c5-46dd-4e02-8e11-b0f6634142aa": {
+			"id": "0880c3c5-46dd-4e02-8e11-b0f6634142aa",
+			"caption": "Green forest canopy",
+			"rating": 4,
+			"favorite": false,
+			"category": "nature",
+			"tags": ["green", "trees"],
+			"source": { "display_name": "", "url": "" },
+			"related_doc": "deadbeef-0000-4000-8000-000000000000"
+		},
+		"e3c2cf9d-d01d-480c-b0e4-d1843a7d9dc3": {
+			"id": "e3c2cf9d-d01d-480c-b0e4-d1843a7d9dc3",
+			"caption": "Deep blue ocean",
+			"rating": 3,
+			"favorite": false,
+			"category": "abstract",
+			"tags": ["blue", "water"],
+			"source": { "display_name": "", "url": "" }
+		}
+	}
+}

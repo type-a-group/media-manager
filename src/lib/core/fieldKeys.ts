@@ -5,12 +5,7 @@
  * - Prevent schema editor from overwriting app/system fields.
  * - Used for filtering out non-user fields in the UI.
  */
-export const RESERVED_FIELD_KEYS = new Set([
-	'id',
-	'last_modified',
-	'width',
-	'height'
-]);
+export const RESERVED_FIELD_KEYS = new Set(['id', 'last_modified', 'width', 'height']);
 
 /**
  * Keys that cannot be removed or renamed in the schema editor.
@@ -21,6 +16,17 @@ export const RESERVED_FIELD_KEYS = new Set([
  * - Prevent accidental removal/rename of fields required by the app.
  */
 export const PROTECTED_SCHEMA_KEYS = new Set(['id', 'image_name', 'name']);
+
+/**
+ * Reserved record keys the `globals` singleton uses to emulate a schema (it has none). Field UI
+ * types live in `__field_kinds` (key → ValueKind); extra per-field metadata (dropdown `options`,
+ * `multiselect`, list `itemType`) lives in `__field_meta` (key → object). Both are JSON-encoded
+ * strings stored alongside the data and hidden from the editable field list.
+ */
+export const GLOBALS_FIELD_KINDS_KEY = '__field_kinds';
+export const GLOBALS_FIELD_META_KEY = '__field_meta';
+/** All reserved globals meta keys (excluded from the editable/iterated field set). */
+export const GLOBALS_META_KEYS = new Set([GLOBALS_FIELD_KINDS_KEY, GLOBALS_FIELD_META_KEY]);
 
 /**
  * Returns whether a key is protected from removal/rename in the schema editor.
@@ -75,4 +81,3 @@ export function fieldLabel(key: string): string {
 		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
 		.join(' ');
 }
-

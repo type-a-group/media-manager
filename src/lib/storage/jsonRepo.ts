@@ -6,13 +6,10 @@ import { z } from 'zod';
 import { getMediaTypePaths } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
-import {
-	readMediaTypeSettingsFileSync,
-	writeMediaTypeSettingsFile
-} from './settingsFile.js';
+import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
 import { GLOBALS_RECORD_ID } from './mediaTypes.js';
 import { normalizeFieldKey } from './migrate.js';
-import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
+import { isProtectedSchemaKey, GLOBALS_FIELD_KINDS_KEY } from '$lib/core/fieldKeys.js';
 
 import type { SchemaDefinition, FieldDefinition } from '$lib/core/types.js';
 import {
@@ -25,12 +22,9 @@ import {
 	normalizeUrlValue
 } from '$lib/core/types.js';
 import { newImageId, type ImageId } from '$lib/core/ids.js';
-import {
-	type FilterClause,
-	OPERATORS,
-	VALUE_LESS_OPERATORS
-} from '$lib/core/filters.js';
+import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
+import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
 
 /**
  * JSON media-type repository: read/write records and schema from a single data file and settings.
@@ -48,11 +42,27 @@ function getFieldType(schema: SchemaDefinition, fieldKey: string): FieldType {
 	return 'string';
 }
 
-function evaluateClause(
-	rec: JsonRecord,
-	clause: FilterClause,
-	schema: SchemaDefinition
-): boolean {
+/**
+ * Build a synthetic {@link SchemaDefinition} for the schemaless `globals` record from its reserved
+ * `__field_kinds` hint, so schema-driven read logic (url normalization, missing-file detection)
+ * applies to globals too. Tolerant of a missing/malformed hint (returns `{}`).
+ */
+function globalsSyntheticSchema(rec: Record<string, unknown>): SchemaDefinition {
+	const raw = rec[GLOBALS_FIELD_KINDS_KEY];
+	if (typeof raw !== 'string') return {};
+	try {
+		const kinds = JSON.parse(raw) as Record<string, unknown>;
+		const schema: SchemaDefinition = {};
+		for (const [key, kind] of Object.entries(kinds)) {
+			if (typeof kind === 'string') schema[key] = { type: kind } as FieldDefinition;
+		}
+		return schema;
+	} catch {
+		return {};
+	}
+}
+
+function evaluateClause(rec: JsonRecord, clause: FilterClause, schema: SchemaDefinition): boolean {
 	const { field, operator, value } = clause;
 	const raw = (rec as Record<string, unknown>)[field];
 	const fieldType = getFieldType(schema, field);
@@ -254,11 +264,18 @@ export function createJsonRepoForType(typeId: string) {
 			records = applyFilters(records, params.filters, settings.schema);
 		}
 		const groupBy = params?.groupBy ?? null;
+		// Only touch the global manifest/disk when the schema actually has `file` fields to validate.
+		const hasFileField = Object.values(settings.schema).some((d) => d?.type === 'file');
+		const available = hasFileField ? (await getAvailableFileIds()).available : null;
 		const items: JsonListItem[] = records.map((rec) => {
 			const recAny = rec as Record<string, unknown>;
 			const item: JsonListItem = { id: rec.id };
 			// Include name for list/grid display when present (e.g. default "name" field).
 			if (typeof recAny.name === 'string') item.name = recAny.name;
+			if (available) {
+				const miss = missingFileFields(recAny, settings.schema, available);
+				if (miss.length) item.missing_file_fields = miss;
+			}
 			if (groupBy) {
 				const val = recAny[groupBy];
 				const def = settings.schema[groupBy];
@@ -270,12 +287,16 @@ export function createJsonRepoForType(typeId: string) {
 						.map((item: unknown) =>
 							item != null && typeof item === 'object' && 'url' in (item as object)
 								? ((item as { display_name?: string; url?: string }).display_name ?? '').trim() ||
-								(item as { url: string }).url ||
-								''
+									(item as { url: string }).url ||
+									''
 								: String(item)
 						)
 						.join(', ');
-				} else if (def?.type === 'dropdown' && (def as { multiselect?: boolean }).multiselect && Array.isArray(val)) {
+				} else if (
+					def?.type === 'dropdown' &&
+					(def as { multiselect?: boolean }).multiselect &&
+					Array.isArray(val)
+				) {
 					item.group_by_value = (val as string[]).join(', ');
 				} else if (
 					val === null ||
@@ -302,10 +323,18 @@ export function createJsonRepoForType(typeId: string) {
 		const settings = getSettings();
 		if (!settings) return rec;
 		const out = { ...rec } as Record<string, unknown>;
-		for (const [key, def] of Object.entries(settings.schema)) {
+		// Globals has no schema — its field UI types live in the reserved `__field_kinds` hint. Build a
+		// synthetic schema from it so the same url-normalize + missing-file logic applies.
+		const effectiveSchema = isGlobalsType ? globalsSyntheticSchema(out) : settings.schema;
+		for (const [key, def] of Object.entries(effectiveSchema)) {
 			if (def?.type === 'url' && key in out && out[key] != null) {
 				out[key] = normalizeUrlValue(out[key]);
 			}
+		}
+		if (Object.values(effectiveSchema).some((d) => d?.type === 'file')) {
+			const { manifest, available } = await getAvailableFileIds();
+			const missing = missingFilesMap(out, effectiveSchema, manifest, available);
+			if (missing) out._missing_files = missing;
 		}
 		return out as JsonRecord;
 	}
@@ -481,7 +510,10 @@ export function createJsonRepoForType(typeId: string) {
 			if (newKey !== key && isProtectedSchemaKey(newKey)) throw new Error('Field not modifiable');
 			const type = updates.type ? FieldTypeSchema.parse(updates.type) : def.type;
 			const wasMultiselect = (def as { multiselect?: boolean }).multiselect === true;
-			const multiselect = type === 'dropdown' ? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false) : false;
+			const multiselect =
+				type === 'dropdown'
+					? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false)
+					: false;
 
 			let defaultValue = updates.defaultValue ?? def.defaultValue;
 			if (type === 'url' && typeof defaultValue === 'string') {
@@ -497,11 +529,13 @@ export function createJsonRepoForType(typeId: string) {
 				if (multiselect) {
 					if (Array.isArray(defaultValue)) {
 						for (const v of defaultValue) {
-							if (!options.includes(String(v))) throw new Error('Default value items must be in options');
+							if (!options.includes(String(v)))
+								throw new Error('Default value items must be in options');
 						}
 					}
 				} else {
-					if (!options.includes(String(defaultValue))) throw new Error('Default value must be one of the options');
+					if (!options.includes(String(defaultValue)))
+						throw new Error('Default value must be one of the options');
 				}
 			}
 			if (type === 'list' && defaultValue !== undefined && !Array.isArray(defaultValue)) {
@@ -681,9 +715,10 @@ export function createJsonRepoForType(typeId: string) {
 	 * @param dryRun - When true, only report issues; when false, persist fixes
 	 * @returns Issues found and number of records modified (0 on dry run)
 	 */
-	async function repairRecords(
-		dryRun = true
-	): Promise<{ issues: { id: string; field: string; issue: string; fix?: unknown }[]; fixed: number }> {
+	async function repairRecords(dryRun = true): Promise<{
+		issues: { id: string; field: string; issue: string; fix?: unknown }[];
+		fixed: number;
+	}> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
 		const schema = settings.schema;

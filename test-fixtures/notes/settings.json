@@ -10,11 +10,9 @@
 			"removable": true,
 			"options": ["low", "medium", "high"],
 			"defaultValue": "medium"
-		}
+		},
+		"attachment": { "type": "file", "removable": true, "defaultValue": "" }
 	},
 	"dataFileName": "data.json",
-	"gridSize": "medium",
-	"autoAdvanceToNextUnlinked": false,
-	"autoSaveOnAdvance": false,
-	"excludedFiles": []
+	"gridSize": "medium"
 }

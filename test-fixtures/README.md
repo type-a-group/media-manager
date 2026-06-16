@@ -1,20 +1,22 @@
 # test-fixtures
 
-A **pristine, committed sample data root** for manually testing the built app. It contains
-one media type of every kind so all storage/UI code paths can be exercised:
+A **pristine, committed sample data root** in the **file-first layout**, so all storage/UI
+code paths can be exercised:
 
-| Folder       | Kind         | Notes                                                                  |
-| ------------ | ------------ | ---------------------------------------------------------------------- |
-| `files/`     | `blob_store` | The shared global blob dir; holds all binaries + `manifest.json`       |
-| `images/`    | `images`     | Links the three PNGs (rows keyed by the blob's manifest `id`)          |
-| `documents/` | `generic`    | Links the sample `.txt` by its manifest `id` (any extension allowed)   |
-| `notes/`     | `json`       | Two records, no file attachment                                        |
-| `globals/`   | `json`       | The reserved singleton record                                          |
+| Path                           | What                                                                                      |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `media/files/`                 | The global blob dir: three PNGs + one `.txt`                                              |
+| `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                          |
+| `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken) |
+| `media/classes/documents.json` | Class with the `.txt` as a member (any file type)                                         |
+| `media/settings.json`          | Media-wide prefs (class order, grid size)                                                 |
+| `notes/`                       | `json` type; two records; `attachment` **file** field (one valid, one broken)             |
+| `globals/`                     | The reserved `json` singleton                                                             |
 
-All binaries live in `files/` (the single global blob store, `getGlobalFilesDir()`). Each
-blob is registered in `files/manifest.json` with a stable id, and a file-backed row's `id`
-**is** that manifest id (the filename lives only in the manifest) — see the "Shared global
-blob store + manifest" invariant in `CLAUDE.md` / `docs/FEATURES.md`.
+Every blob lives in `media/files/` (`getGlobalFilesDir()`) and is registered in
+`media/manifest.json` with a stable id; a class is a member-keyed metadata table
+(`media/classes/<id>.json`). The deliberately broken `file` references (`deadbeef-…`) exercise
+the global missing-files warning. See `docs/FILE_FIRST_CLASSES.md` and `CLAUDE.md`.
 
 ## How to use it
 
@@ -33,6 +35,6 @@ the committed seed. `test:serve` always serves a throwaway copy at `test-data/`.
 When you change on-disk structure — `settings.json` / data-file layout, reserved-group
 behavior, or media-kind semantics — **update this seed in the same change** (the same
 discipline as `docs/FEATURES.md`). The reliable way to regenerate it: serve a scratch
-root, recreate the types via the UI/API, then copy the result back here. For a pure
+root, recreate the classes/types via the UI/API, then copy the result back here. For a pure
 on-disk format migration, running `node scripts/upgrade-data.mjs test-fixtures --apply`
-against the seed is also valid (this is how the manifest + `id`-keyed layout was generated).
+against an old-layout seed is also valid (this is how the `media/` layout was generated).

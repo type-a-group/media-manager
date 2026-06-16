@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import ImageEditorPane from '$lib/components/ImageEditorPane.svelte';
 	import JsonEditorPane from '$lib/components/JsonEditorPane.svelte';
-import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
+	import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
 	import { apiGetMediaType } from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { useSelection } from '$lib/state/selection.svelte';

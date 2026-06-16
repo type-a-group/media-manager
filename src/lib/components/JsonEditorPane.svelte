@@ -489,15 +489,32 @@
 											/>
 										</div>
 									{:else if type === 'file'}
+										{@const missingName = (record as Record<string, any>)?._missing_files?.[key]}
+										{@const isMissing =
+											missingName !== undefined &&
+											formValues[key] === (record as Record<string, any>)?.[key]}
 										<div class="flex flex-col gap-1 w-full">
 											<FilePicker
 												value={formValues[key] as string}
 												onSelect={(id) => (formValues[key] = id)}
 											/>
-											{#if (record as any)?._missing_files?.[key] && formValues[key] === (record as any)._missing_files[key]}
-												<span class="text-xs text-destructive flex items-center gap-1 mt-1">
-													<TriangleAlert class="h-3 w-3" /> File not found on disk
-												</span>
+											{#if isMissing}
+												<div class="flex items-center justify-between gap-2 mt-1">
+													<span class="text-xs text-destructive flex items-center gap-1">
+														<TriangleAlert class="h-3 w-3 shrink-0" />
+														{missingName
+															? `Missing file: ${missingName}`
+															: 'File not found on disk'}
+													</span>
+													<Button
+														variant="ghost"
+														size="sm"
+														class="h-6 px-2 text-xs"
+														onclick={() => (formValues[key] = '')}
+													>
+														Clear
+													</Button>
+												</div>
 											{/if}
 										</div>
 									{:else}

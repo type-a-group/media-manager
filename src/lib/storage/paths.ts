@@ -1,68 +1,108 @@
 import path from 'node:path';
 import * as fssync from 'node:fs';
-import {
-	readSettingsFileSync,
-	readMediaTypeSettingsFileSync,
-	type MediaTypeKind
-} from './settingsFile.js';
-
-/** Folder name under {@link getRootDir} where all media blobs are stored (shared by every file-backed catalog). */
-export const GLOBAL_FILES_DIR_NAME = 'files' as const;
+import { readMediaTypeSettingsFileSync, type MediaTypeKind } from './settingsFile.js';
 
 /**
- * Absolute path to the global blob directory (`<root>/files`).
- */
-export function getGlobalFilesDir(): string {
-	return path.join(getRootDir(), GLOBAL_FILES_DIR_NAME);
-}
-
-/**
- * Whether this media type uses {@link createImageRepo} (shared global `files/` dir for blobs).
+ * On-disk layout (file-first classes redesign):
  *
- * @param kind - From settings / {@link getMediaTypePaths}
+ *   <root>/
+ *   ├─ media/
+ *   │  ├─ manifest.json     # blob registry + derived membership index
+ *   │  ├─ files/            # pure blob dir, any type
+ *   │  ├─ classes/<id>.json # { schema, config, records } — source of truth per class
+ *   │  └─ settings.json     # media-wide prefs (views, class ordering, defaults)
+ *   └─ <jsonType>/...       # `json`-kind media types stay top-level (incl. `globals`)
+ *
+ * `media/` is the hub for **all blobs**; a *class* is an opt-in metadata table keyed by `file_id`.
+ * `json`-kind types remain top-level folders (deferred records reorg). The folder name **is** the id.
  */
-export function usesImageRepoKind(kind: MediaTypeKind): boolean {
-	return kind === 'images' || kind === 'generic' || kind === 'blob_store';
-}
+
+/** Folder name under {@link getRootDir} that holds the whole media (blob + classes) subsystem. */
+export const MEDIA_DIR_NAME = 'media' as const;
+/** Folder name under {@link getMediaDir} where all blobs live. */
+export const GLOBAL_FILES_DIR_NAME = 'files' as const;
+/** Folder name under {@link getMediaDir} where per-class metadata files live. */
+export const CLASSES_DIR_NAME = 'classes' as const;
 
 /**
- * Resolve the root directory for all media types (env MEDIA_MANAGER_ROOT).
- * Subdirectories of this root are scanned for valid media-type folders (each with settings.json).
+ * Resolve the root directory for the workspace (env `MEDIA_MANAGER_ROOT`).
  *
  * Use case:
- * - Single source of truth for "where is the data root" for multi-media-type layout.
+ * - Single source of truth for "where is the data root".
  */
 export function getRootDir(): string {
 	const configured = process.env.MEDIA_MANAGER_ROOT?.trim();
 	// Fallback for build: vite build loads server modules but doesn't run them.
-	const rootDir = configured
+	return configured
 		? path.resolve(configured)
 		: path.resolve(process.cwd(), '.media-manager-build');
-	return rootDir;
+}
+
+/** Absolute path to the media subsystem root (`<root>/media`). */
+export function getMediaDir(): string {
+	return path.join(getRootDir(), MEDIA_DIR_NAME);
+}
+
+/** Absolute path to the global blob directory (`<root>/media/files`). */
+export function getGlobalFilesDir(): string {
+	return path.join(getMediaDir(), GLOBAL_FILES_DIR_NAME);
+}
+
+/** Absolute path to the global blob manifest (`<root>/media/manifest.json`). */
+export function getManifestPath(): string {
+	return path.join(getMediaDir(), 'manifest.json');
+}
+
+/** Absolute path to the classes directory (`<root>/media/classes`). */
+export function getClassesDir(): string {
+	return path.join(getMediaDir(), CLASSES_DIR_NAME);
+}
+
+/** Absolute path to a single class file (`<root>/media/classes/<id>.json`). */
+export function getClassFilePath(classId: string): string {
+	return path.join(getClassesDir(), `${classId}.json`);
+}
+
+/** Absolute path to the media-wide settings file (`<root>/media/settings.json`). */
+export function getMediaSettingsPath(): string {
+	return path.join(getMediaDir(), 'settings.json');
 }
 
 /**
- * Result of getMediaTypePaths: paths for a single media-type folder.
+ * List the ids (filename stems) of every class under `<root>/media/classes`.
+ *
+ * @returns Class ids in no guaranteed order (empty when the dir is absent).
+ */
+export function listClassIds(): string[] {
+	let entries: fssync.Dirent[];
+	try {
+		entries = fssync.readdirSync(getClassesDir(), { withFileTypes: true });
+	} catch (err) {
+		const e = err as NodeJS.ErrnoException;
+		if (e.code === 'ENOENT') return [];
+		throw e;
+	}
+	return entries
+		.filter((e) => e.isFile() && e.name.endsWith('.json') && !e.name.endsWith('.lock'))
+		.map((e) => e.name.slice(0, -'.json'.length));
+}
+
+/**
+ * Paths for a single `json`-kind media-type folder (the records side; classes use class paths).
  */
 export interface MediaTypePaths {
 	rootDir: string;
 	baseDir: string;
 	settingsPath: string;
 	dataPath: string;
-	/** Global blob directory (`root/files`) for `images` / `generic`; same for `blob_store` (type folder is that dir). */
-	filesDir?: string;
 	kind: MediaTypeKind;
 }
 
 /**
- * Get filesystem paths for a given media type (by folder name / typeId).
- * Reads settings.json in that folder to resolve dataFileName and filesSubdir.
+ * Get filesystem paths for a `json`-kind media type (by folder name / typeId).
  *
- * @param typeId - Folder name under root (e.g. 'images', 'projects')
+ * @param typeId - Folder name under root (e.g. 'notes', 'globals')
  * @returns Paths object; throws if folder is not a valid media-type folder
- *
- * Concerns / future improvements:
- * - Caller must ensure typeId is safe (no path traversal); validate in API layer.
  */
 export function getMediaTypePaths(typeId: string): MediaTypePaths {
 	const rootDir = getRootDir();
@@ -72,28 +112,14 @@ export function getMediaTypePaths(typeId: string): MediaTypePaths {
 	if (!settings) {
 		throw new Error(`Not a valid media-type folder: ${typeId}`);
 	}
-	const dataFileName =
-		settings.dataFileName ??
-		(settings.kind === 'images' || settings.kind === 'blob_store' ? 'image-data.json' : 'data.json');
+	const dataFileName = settings.dataFileName ?? 'data.json';
 	const dataPath = path.join(baseDir, dataFileName);
-	const globalFiles = getGlobalFilesDir();
-	const result: MediaTypePaths = {
-		rootDir,
-		baseDir,
-		settingsPath,
-		dataPath,
-		kind: settings.kind
-	};
-	if (settings.kind === 'images' || settings.kind === 'generic' || settings.kind === 'blob_store') {
-		// All binaries live under root/files; catalogs live per type under baseDir.
-		result.filesDir = globalFiles;
-	}
-	return result;
+	return { rootDir, baseDir, settingsPath, dataPath, kind: settings.kind };
 }
 
 /**
- * List typeIds of all valid media-type folders under the root.
- * Scans the root directory; each subdirectory that contains a valid settings.json (displayName, kind, schema) is included.
+ * List typeIds of all valid top-level `json`-kind media-type folders under the root. The reserved
+ * `media/` subsystem folder is skipped (it has no media-type `settings.json`).
  *
  * @returns Array of typeIds (folder names), in no guaranteed order
  */
@@ -110,51 +136,9 @@ export function listMediaTypeIds(): string[] {
 	const typeIds: string[] = [];
 	for (const ent of entries) {
 		if (!ent.isDirectory()) continue;
-		const baseDir = path.join(rootDir, ent.name);
-		const settings = readMediaTypeSettingsFileSync(baseDir);
+		if (ent.name === MEDIA_DIR_NAME) continue;
+		const settings = readMediaTypeSettingsFileSync(path.join(rootDir, ent.name));
 		if (settings) typeIds.push(ent.name);
 	}
 	return typeIds;
-}
-
-/**
- * Centralized filesystem paths for the current app storage layout (legacy single-folder).
- *
- * Use case:
- * - Avoid scattered string literals like `image-data.json`.
- * - Resolves paths from MEDIA_MANAGER_ROOT and settings.json.
- *
- * Layout:
- * - baseDir = MEDIA_MANAGER_ROOT
- * - imagesDir = baseDir/images
- * - imageDataPath = baseDir/{settings.imageDataFileName}
- * - schemaPath = baseDir/{settings.schemaFileName}
- * - settingsPath = baseDir/settings.json
- *
- * Concerns / future improvements:
- * - Kept for backward compat during refactor; prefer getRootDir + getMediaTypePaths(typeId) for new code.
- */
-export function getAssetPaths() {
-	const configured = process.env.MEDIA_MANAGER_ROOT?.trim();
-	// Fallback for build: vite build loads server modules but doesn't run them.
-	// At runtime, use the CLI (media-manager /path/to/root) or set MEDIA_MANAGER_ROOT.
-	const baseDir = configured ? path.resolve(configured) : path.resolve(process.cwd(), '.media-manager-build');
-	const settings = readSettingsFileSync(baseDir);
-	const imageDataFileName = settings.imageDataFileName ?? 'image-data.json';
-	const schemaFileName = settings.schemaFileName ?? 'schema.json';
-
-	const imagesDir = path.resolve(baseDir, 'images');
-	const imageDataPath = path.resolve(baseDir, imageDataFileName);
-	const schemaPath = path.resolve(baseDir, schemaFileName);
-	const settingsPath = path.resolve(baseDir, 'settings.json');
-
-	return {
-		root: process.cwd(),
-		baseDir,
-		assetsDir: baseDir,
-		imagesDir,
-		imageDataPath,
-		schemaPath,
-		settingsPath
-	};
 }

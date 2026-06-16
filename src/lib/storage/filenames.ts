@@ -57,4 +57,3 @@ export function assertSafeBasename(filename: string): string {
 	if (base === '.' || base === '..') throw error(400, 'Invalid filename');
 	return base;
 }
-
