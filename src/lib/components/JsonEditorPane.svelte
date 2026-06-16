@@ -237,9 +237,11 @@
 			</Button>
 			<AlertDialog.Root bind:open={deleteOpen}>
 				<AlertDialog.Trigger>
-					<Button variant="destructive" size="icon" aria-label="Delete">
-						<Trash2 class="h-4 w-4" />
-					</Button>
+					{#snippet child({ props })}
+						<Button {...props} variant="destructive" size="icon" aria-label="Delete">
+							<Trash2 class="h-4 w-4" />
+						</Button>
+					{/snippet}
 				</AlertDialog.Trigger>
 				<AlertDialog.Content>
 					<AlertDialog.Title>Delete record</AlertDialog.Title>

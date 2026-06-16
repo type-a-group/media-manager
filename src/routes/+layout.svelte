@@ -28,9 +28,11 @@
 	});
 </script>
 
+<!-- Mounted at the top level so the theme (.dark class on <html>) applies on every
+     route, not just the /media editor. -->
+<ModeWatcher defaultMode="system" />
 {#if isEditor}
 	<Sidebar.Provider>
-		<ModeWatcher defaultMode="system" />
 		<AppSidebar />
 		<main class="w-full relative">
 			<SidebarTriggerOverlay />

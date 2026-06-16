@@ -471,46 +471,55 @@
 							<div class="flex items-center gap-2">
 								<Tooltip.Root>
 									<Tooltip.Trigger>
-										<Button
-											variant={selection.gridViewActive ? 'default' : 'ghost'}
-											size="icon"
-											title="Grid view"
-											onclick={toggleGridView}
-											disabled={loading}
-											class="h-7 w-7"
-										>
-											<LayoutGrid class="h-4 w-4" />
-										</Button>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant={selection.gridViewActive ? 'default' : 'ghost'}
+												size="icon"
+												title="Grid view"
+												onclick={toggleGridView}
+												disabled={loading}
+												class="h-7 w-7"
+											>
+												<LayoutGrid class="h-4 w-4" />
+											</Button>
+										{/snippet}
 									</Tooltip.Trigger>
 									<Tooltip.Content>Grid view</Tooltip.Content>
 								</Tooltip.Root>
 								<Tooltip.Root>
 									<Tooltip.Trigger>
-										<Button
-											variant="ghost"
-											size="icon"
-											title="Reload records"
-											onclick={syncRecords}
-											disabled={loading}
-											class="h-7 w-7"
-										>
-											<RefreshCwIcon class="h-4 w-4" />
-										</Button>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon"
+												title="Reload records"
+												onclick={syncRecords}
+												disabled={loading}
+												class="h-7 w-7"
+											>
+												<RefreshCwIcon class="h-4 w-4" />
+											</Button>
+										{/snippet}
 									</Tooltip.Trigger>
 									<Tooltip.Content>Sync records</Tooltip.Content>
 								</Tooltip.Root>
 								<Tooltip.Root>
 									<Tooltip.Trigger>
-										<Button
-											variant="outline"
-											size="icon"
-											title="New record"
-											onclick={createRecord}
-											disabled={loading}
-											class="h-7 w-7"
-										>
-											<Plus class="h-4 w-4" aria-hidden="true" />
-										</Button>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="outline"
+												size="icon"
+												title="New record"
+												onclick={createRecord}
+												disabled={loading}
+												class="h-7 w-7"
+											>
+												<Plus class="h-4 w-4" aria-hidden="true" />
+											</Button>
+										{/snippet}
 									</Tooltip.Trigger>
 									<Tooltip.Content>New record</Tooltip.Content>
 								</Tooltip.Root>

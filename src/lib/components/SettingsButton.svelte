@@ -126,9 +126,11 @@
 
 <Dialog.Root bind:open={isOpen}>
 	<Dialog.Trigger>
-		<Button variant="outline" size="icon" title="Settings">
-			<SettingsIcon />
-		</Button>
+		{#snippet child({ props })}
+			<Button {...props} variant="outline" size="icon" title="Settings">
+				<SettingsIcon />
+			</Button>
+		{/snippet}
 	</Dialog.Trigger>
 	<Dialog.Content>
 		<Dialog.Title>Settings</Dialog.Title>
@@ -234,7 +236,9 @@
 				{#if activeTab === 'project'}
 					<AlertDialog.Root bind:open={resetToDefaultsOpen}>
 						<AlertDialog.Trigger>
-							<Button variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
+							{#snippet child({ props })}
+								<Button {...props} variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
+							{/snippet}
 						</AlertDialog.Trigger>
 						<AlertDialog.Content>
 							<AlertDialog.Title>Reset to Defaults</AlertDialog.Title>
@@ -329,7 +333,9 @@
 			<Dialog.Footer>
 				<AlertDialog.Root bind:open={resetToDefaultsOpen}>
 					<AlertDialog.Trigger>
-						<Button variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
+						{#snippet child({ props })}
+							<Button {...props} variant="outline" class="btn btn-secondary">Reset to Defaults</Button>
+						{/snippet}
 					</AlertDialog.Trigger>
 					<AlertDialog.Content>
 						<AlertDialog.Title>Reset to Defaults</AlertDialog.Title>

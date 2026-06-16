@@ -22,6 +22,7 @@
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import ClassSchemaDialog from '$lib/components/ClassSchemaDialog.svelte';
 	import ClassSettingsDialog from '$lib/components/ClassSettingsDialog.svelte';
+	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
 	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
 	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
@@ -535,7 +536,7 @@
 					{/snippet}
 				</Popover.Trigger>
 				<Popover.Content align="end" class="w-60">
-					<div class="flex flex-col gap-2">
+					<div class="flex flex-col gap-3">
 						<p class="text-sm font-medium">Settings</p>
 						<div class="flex items-center gap-2">
 							<Checkbox
@@ -547,6 +548,7 @@
 								Autosave on advance
 							</Label>
 						</div>
+						<AppearanceSettings />
 					</div>
 				</Popover.Content>
 			</Popover.Root>

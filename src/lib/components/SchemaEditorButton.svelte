@@ -59,9 +59,11 @@
 
 <Dialog.Root bind:open={isOpen}>
 	<Dialog.Trigger>
-		<Button variant="outline" size="icon" title="Schema">
-			<Database />
-		</Button>
+		{#snippet child({ props })}
+			<Button {...props} variant="outline" size="icon" title="Schema">
+				<Database />
+			</Button>
+		{/snippet}
 	</Dialog.Trigger>
 	<Dialog.Content class="flex max-h-[90vh] max-w-2xl flex-col">
 		<Dialog.Title>Schema</Dialog.Title>
