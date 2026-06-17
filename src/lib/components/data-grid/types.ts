@@ -38,7 +38,11 @@ export interface GridConfig {
 	 * thumbnail — used for json records, which have no blob to preview.
 	 */
 	variant?: 'thumbnail' | 'text';
-	/** Show the per-tile selection checkbox. */
+	/**
+	 * Selection mode is active. When true, clicking a tile toggles its selection (and a selected tile
+	 * is marked with a primary ring) instead of opening it; when false, clicking opens the editor and
+	 * tiles are never selectable. The host owns the mode (toggled by a header button).
+	 */
 	selectable: boolean;
 	/** Highlight the tile whose item is open in an editor. */
 	activeId?: string | null;
@@ -50,9 +54,9 @@ export interface GridConfig {
 
 /** Interaction callbacks. The grid never mutates data or reads a host's selection store directly. */
 export interface GridCallbacks {
-	/** Single click on a tile (open editor / select). */
+	/** Single click on a tile when not in selection mode (open editor). */
 	onOpen: (id: string) => void;
-	/** Toggle the tile's selection checkbox (only used when `config.selectable`). */
+	/** Toggle the tile's selection (the click action while `config.selectable` is true). */
 	onToggleSelect?: (id: string) => void;
 	/** Whether a tile is currently selected. */
 	isSelected?: (id: string) => boolean;

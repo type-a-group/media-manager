@@ -60,6 +60,8 @@
 	let loading = $state(true);
 	let renaming = $state(file.file_name);
 	let addClassId = $state('');
+	/** When true, the image preview is shown full-screen over the whole app (click/Esc to close). */
+	let lightboxOpen = $state(false);
 	/** Per-section serialized snapshot at last save/load, to detect unsaved edits before advancing. */
 	let savedSnapshots: Record<string, string> = {};
 
@@ -111,7 +113,18 @@
 		// reload whenever the selected file changes
 		file.id;
 		renaming = file.file_name;
+		lightboxOpen = false;
 		load();
+	});
+
+	$effect(() => {
+		// Close the full-screen preview on Escape.
+		if (!lightboxOpen) return;
+		function onKey(e: KeyboardEvent) {
+			if (e.key === 'Escape') lightboxOpen = false;
+		}
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
 	});
 
 	$effect(() => {
@@ -173,11 +186,18 @@
 	{/snippet}
 
 	{#if isImage}
-		<img
-			src={apiBlobUrl(file.id)}
-			alt={file.file_name}
-			class="mb-3 max-h-48 w-full rounded object-contain"
-		/>
+		<button
+			type="button"
+			class="mb-3 block w-full cursor-zoom-in rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			title="Click to preview full screen"
+			onclick={() => (lightboxOpen = true)}
+		>
+			<img
+				src={apiBlobUrl(file.id)}
+				alt={file.file_name}
+				class="max-h-48 w-full rounded object-contain"
+			/>
+		</button>
 	{:else}
 		<div
 			class="mb-3 flex flex-col items-center justify-center gap-2 rounded border border-dashed py-8 text-muted-foreground"
@@ -250,3 +270,20 @@
 		{/each}
 	{/if}
 </EditorPanelShell>
+
+{#if lightboxOpen && isImage}
+	<!-- Full-screen preview over the whole app; click anywhere (or Esc) to close. -->
+	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
+		role="button"
+		tabindex="-1"
+		onclick={() => (lightboxOpen = false)}
+	>
+		<img
+			src={apiBlobUrl(file.id)}
+			alt={file.file_name}
+			class="max-h-full max-w-full object-contain"
+		/>
+	</div>
+{/if}

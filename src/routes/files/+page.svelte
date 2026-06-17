@@ -33,7 +33,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Home, MoreVertical, Plus, Upload } from 'lucide-svelte';
+	import { Home, ListChecks, MoreVertical, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
@@ -70,6 +70,8 @@
 	let classSearch = $state('');
 
 	const selectedIds = new SvelteSet<string>();
+	/** Multiselect: off by default; toggled by the header button. Tiles only select while on. */
+	let selectionMode = $state(false);
 	let editorFileId = $state<string | null>(null);
 	let missing = $state<MissingFilesResponse>({ count: 0, files: [] });
 	let showMissing = $state(false);
@@ -283,7 +285,7 @@
 
 	const gridConfig = $derived<GridConfig>({
 		size: gridSize,
-		selectable: true,
+		selectable: selectionMode,
 		activeId: editorFileId,
 		// Solo/cross field groups prefix the (qualified) field name; class-combo keys are self-describing.
 		groupLabel: (k) =>
@@ -364,6 +366,20 @@
 	function toggleSelect(id: string) {
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
+	}
+
+	/**
+	 * Enter or leave multiselect. Entering closes the open editor and clears any prior selection so
+	 * the selection ring can't be confused with the editor's active-tile ring; leaving clears too.
+	 */
+	function toggleSelectionMode() {
+		selectedIds.clear();
+		if (selectionMode) {
+			selectionMode = false;
+		} else {
+			editorFileId = null;
+			selectionMode = true;
+		}
 	}
 
 	async function createClass() {
@@ -661,6 +677,18 @@
 				</Select.Root>
 			</div>
 			<div class="flex-1"></div>
+			<Button
+				variant={selectionMode ? 'secondary' : 'ghost'}
+				size="sm"
+				onclick={toggleSelectionMode}
+				title={selectionMode ? 'Clear selection' : 'Select files'}
+			>
+				{#if selectionMode}
+					<X class="size-4" /> Clear
+				{:else}
+					<ListChecks class="size-4" /> Select
+				{/if}
+			</Button>
 			<SettingsButton />
 			<Button size="sm" onclick={() => fileInput?.click()}>
 				<Upload class="size-4" /> Upload
@@ -668,7 +696,7 @@
 			<input bind:this={fileInput} type="file" multiple class="hidden" onchange={onUpload} />
 		</header>
 
-		{#if selectedIds.size > 0}
+		{#if selectionMode}
 			<div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 p-2 text-sm">
 				<span>{selectedIds.size} selected</span>
 				<Select.Root type="single" value={bulkClassId} onValueChange={(v) => (bulkClassId = v)}>
@@ -679,21 +707,28 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Button size="sm" disabled={!bulkClassId} onclick={bulkAdd}>Add</Button>
+				<Button size="sm" disabled={!bulkClassId || selectedIds.size === 0} onclick={bulkAdd}>
+					Add
+				</Button>
 				{#if soloClass}
-					<Button variant="outline" size="sm" onclick={bulkRemove}>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={selectedIds.size === 0}
+						onclick={bulkRemove}
+					>
 						Remove from {classes.find((c) => c.id === soloClass)?.displayName}
 					</Button>
 				{/if}
-				<Button variant="destructive" size="sm" onclick={() => (deleteFilesOpen = true)}>
+				<Button
+					variant="destructive"
+					size="sm"
+					disabled={selectedIds.size === 0}
+					onclick={() => (deleteFilesOpen = true)}
+				>
 					Delete from disk
 				</Button>
-				<Button
-					variant="ghost"
-					size="sm"
-					class="ml-auto text-xs"
-					onclick={() => selectedIds.clear()}
-				>
+				<Button variant="ghost" size="sm" class="ml-auto text-xs" onclick={toggleSelectionMode}>
 					clear
 				</Button>
 			</div>

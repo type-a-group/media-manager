@@ -70,7 +70,7 @@
 	});
 </script>
 
-<aside class="flex h-full w-[420px] shrink-0 flex-col border-l bg-card">
+<aside class="flex h-screen w-[420px] shrink-0 flex-col border-l bg-card">
 	<header class="flex items-center gap-1 border-b p-3">
 		<Button
 			variant="outline"

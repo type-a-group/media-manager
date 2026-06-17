@@ -335,6 +335,129 @@ A per-class review affordance that helps answer "which files should be in this c
 
 ---
 
+## 23. Video & GIF Media Support
+
+**Priority**: Medium (user-requested)
+**Context**: The app stores arbitrary blobs but only images get a real preview — the Files grid and [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte) gate previews on `hasAllowedImageExtension` ([`images.ts`](../src/lib/core/images.ts)), so videos and GIFs fall back to the generic file icon. Users want first-class handling of motion media.
+
+### What's needed
+
+- Recognize video (`.mp4`, `.webm`, `.mov`, …) and animated `.gif` extensions/MIME types (extend [`images.ts`](../src/lib/core/images.ts) or add a sibling `media.ts` of allowed kinds).
+- Inline preview: render `<video controls>` (and play GIFs as images) in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte) and the full-screen lightbox; show a poster/first-frame thumbnail in the [`DataGrid`](../src/lib/components/data-grid/DataGrid.svelte) tiles.
+- Thumbnail generation for the grid (first frame via `ffmpeg`/`sharp`-equivalent), mirroring the image thumbnail path.
+- Metadata: extend [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts) (exiftool already reads video metadata) for duration, codec, dimensions.
+
+### Considerations
+
+- Asset volume / streaming: large videos shouldn't be loaded eagerly; the `[id]/blob` endpoint should support range requests for seeking.
+- GIFs are images on disk but behave like video in preview — decide whether they're a sub-kind of image or motion.
+
+---
+
+## 24. DOCX Media Support (+ convert-to-PDF)
+
+**Priority**: Medium (user-requested)
+**Context**: PDF storage, serving, and metadata already shipped (Item 21 / [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts)). Users want the same for Word documents (`.docx`), with an easy path to turn them into PDFs (which the app already previews and reads metadata from).
+
+### What's needed
+
+- Recognize `.docx` (and `.doc`) blobs; read basic document metadata (title, author, word count) via exiftool in [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts).
+- A per-file **"Convert to PDF"** action (server-side, e.g. LibreOffice headless / `libreoffice --convert-to pdf`, or a JS docx→pdf library) that writes a new PDF blob into the global store and registers it in the manifest, optionally linking it back to the source.
+- Surface the action in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte); once converted, the existing PDF preview/metadata path (Item 21) applies.
+
+### Considerations
+
+- Conversion fidelity and the dependency footprint (LibreOffice is heavy; a pure-JS converter is lighter but lower fidelity) — decide based on the npx-package distribution goal (Item 27).
+- Whether to keep the source `.docx`, replace it, or store both with a relationship.
+
+---
+
+## 25. Globals Panel Overhaul (previews + nicer layout)
+
+**Priority**: Medium (user-requested)
+**Context**: The reserved `globals` singleton keeps its bespoke free-form editor ([`GlobalsEditorPane.svelte`](../src/lib/components/GlobalsEditorPane.svelte)) rather than the schema-driven grid/panel the rest of the app uses. Per CLAUDE.md it must keep feature parity with `json` records, but its presentation is plain — no previews for `file`/`url` values, a flat form layout. Users want a more useful, better-formatted globals view.
+
+### What's needed
+
+- Rich value previews in the globals editor: image/file thumbnails for `file`-type fields, link previews for `url`-type fields (overlaps with Item 26's file-field preview work — design together).
+- A nicer layout: grouped/sectioned fields, better spacing, possibly a read-vs-edit mode, while preserving the per-field metadata model (`__field_kinds` / `__field_meta`, [`fieldKeys.ts`](../src/lib/core/fieldKeys.ts)).
+- Keep parity: any field type / feature the `json` `RecordEditorPanel` supports must still work here.
+
+### Considerations
+
+- Whether to converge globals onto the shared `FieldInput` + panel chrome more fully (it already feeds `FieldInput` a synthetic `FieldDefinition`) vs. keep a bespoke pane — converging reduces drift (see the UI-consistency guidance).
+
+---
+
+## 26. File-Field UI Overhaul (preview + navigate-to-file)
+
+**Priority**: Medium (user-requested)
+**Context**: A `file`-type field value is a manifest id reference, edited via [`FilePicker.svelte`](../src/lib/components/FilePicker.svelte) inside the shared [`FieldInput.svelte`](../src/lib/components/FieldInput.svelte). Today the selected value shows a small inline thumbnail (images only) + filename + open-in-new-tab + clear. Users want a richer preview and a way to **jump to the referenced file** in the Files hub.
+
+### What's needed
+
+- A larger/expandable preview of the referenced blob (reuse the full-screen lightbox added to [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte); support non-image kinds as those land — Items 23/24).
+- A **"go to file"** affordance that opens the referenced blob in the Files hub editor (deep-link to `/files` with the file's editor open — ties into Item 20 file-based routing, e.g. `/media/file/[id]`).
+- Apply consistently everywhere `FieldInput` renders a `file` field: `FileEditorPanel`, `RecordEditorPanel`, and `GlobalsEditorPane` (overlaps Item 25).
+
+### Considerations
+
+- A stable per-file route makes "navigate to file" clean — sequence with Item 20.
+
+---
+
+## 27. npx Package Distribution (for customers)
+
+**Priority**: Medium (user-requested)
+**Context**: The app ships as a Node server launched via the `media-manager` CLI ([`bin/media-manager.js`](../bin/media-manager.js)) against a local data root. To make it trivial for non-developer customers to run, publish it so they can launch with a single `npx media-manager <root>` (no clone/build step).
+
+### What's needed
+
+- Package the built `build/` output + `bin/media-manager.js` for npm publish: correct `bin`, `files`, and `engines` fields in `package.json`; ensure the CLI runs against the bundled build without a dev checkout.
+- A prepublish build step so the published tarball contains the production server.
+- Document the `npx media-manager <root>` flow (mirrors the existing CLI: sets `MEDIA_MANAGER_ROOT`, defaults `BODY_SIZE_LIMIT`, opens the browser, `PORT`).
+
+### Considerations
+
+- Native/heavy deps (`exiftool-vendored`, `heic-convert`, and any video/docx conversion tooling from Items 23/24) must install/run cleanly via `npx` across platforms — audit the dependency footprint before publishing.
+- Complements (doesn't replace) Item 7's static-site export: this is the **editor** distributed as a package; Item 7 is the **read-only published site**.
+
+---
+
+## 28. Per-Type / Per-Class Icon Picker
+
+**Priority**: Low (nice-to-have; surfaced during the Records Explorer design)
+**Context**: The [Records Explorer](RECORDS_EXPLORER.md) rail shows record types with a **generic glyph** (no per-type icon), and the Files dashboard/class list likewise use fixed icons. Users want to assign a distinct icon per record type **and** per class so the rail / dashboard / class filter are scannable.
+
+### What's needed
+
+- An icon picker in **type settings** (`json` types) and **class settings** (`ClassSettingsDialog.svelte`), storing the chosen icon id alongside the existing `displayName` (in the type `settings.json` / class `config`).
+- A shared icon set (e.g. a curated subset of `lucide-svelte`) + a small picker component reused by both sides.
+- Render the chosen icon in the Records Explorer rail, the dashboard cards (`/+page.svelte`), and the Files class filter list / catalog header.
+
+### Considerations
+
+- Keep the stored value a stable id (not a component), validated against the known set, with a generic fallback when missing/unknown.
+- Persisting per class touches `config`; per `json` type touches `settings.json` — both already carry `displayName`, so this is an additive field, no migration.
+
+---
+
+## 29. Records Explorer — Mobile / Narrow Drill-Down
+
+**Priority**: Low (deferred from the Records Explorer build)
+**Context**: The [Records Explorer](RECORDS_EXPLORER.md) ships as a desktop **three-pane** layout (rail → list → detail). On narrow viewports three columns don't fit.
+
+### What's needed
+
+- A responsive drill-down: show one pane at a time on small widths — rail → (tap type) → list → (tap record) → detail — with back navigation, reusing the `is-mobile.svelte.ts` viewport hook.
+- Decide whether the rail becomes a top type-switcher or an offcanvas drawer on mobile.
+
+### Considerations
+
+- Sequences naturally with Item 20 (file-based routing): per-pane URLs make the drill-down's back/forward behavior fall out of routing rather than bespoke state.
+
+---
+
 ## 22. Group-by-field across multiple classes ("all of" view) — ✅ Shipped
 
 **Status**: **Shipped.** In the multi-class **"all of"** view the Group-by dropdown lists one entry per `(class, field)` across the intersected classes, labelled `Class: field` (so same-named fields disambiguate). [`listAllFiles`](../src/lib/storage/classRepo.ts) accepts `groupBy: { classId, field }` and populates each item's `group_by_value` from that class's record (reusing the same `groupByValue` helper as the solo-class catalog); `GET /api/files` takes `groupByClass` + `groupByField`, and [`files/+page.svelte`](../src/routes/files/+page.svelte) loads each selected class's schema keys lazily to build the options and groups client-side over `group_by_value`. See the "All Files hub" row in [`FEATURES.md`](FEATURES.md).

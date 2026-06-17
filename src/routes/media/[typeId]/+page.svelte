@@ -14,7 +14,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Home, Plus } from 'lucide-svelte';
+	import { Home, ListChecks, Plus, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import {
 		apiGetMediaType,
@@ -46,6 +46,8 @@
 	let gridSize = $state<'small' | 'medium' | 'large'>('medium');
 
 	const selectedIds = new SvelteSet<string>();
+	/** Multiselect: off by default; toggled by the header button. Tiles only select while on. */
+	let selectionMode = $state(false);
 	let selectedRecordId = $state<string | null>(null);
 	/** Bumped to force the open editor panel to reload (e.g. after a schema change). */
 	let editorRefresh = $state(0);
@@ -132,7 +134,7 @@
 	const gridConfig = $derived<GridConfig>({
 		size: gridSize,
 		variant: 'text',
-		selectable: true,
+		selectable: selectionMode,
 		activeId: selectedRecordId,
 		groupLabel: (k) => `${fieldLabel(groupBy)}: ${k}`,
 		emptyText: 'No records.'
@@ -146,6 +148,20 @@
 	function toggleSelect(id: string) {
 		if (selectedIds.has(id)) selectedIds.delete(id);
 		else selectedIds.add(id);
+	}
+
+	/**
+	 * Enter or leave multiselect. Entering closes the open editor and clears any prior selection so
+	 * the selection ring can't be confused with the editor's active-tile ring; leaving clears too.
+	 */
+	function toggleSelectionMode() {
+		selectedIds.clear();
+		if (selectionMode) {
+			selectionMode = false;
+		} else {
+			selectedRecordId = null;
+			selectionMode = true;
+		}
 	}
 
 	/** Build the API filter clauses from the enabled filter rows. */
@@ -217,6 +233,7 @@
 		typeError = null;
 		selectedRecordId = null;
 		selectedIds.clear();
+		selectionMode = false;
 		apiGetMediaType(id)
 			.then(async (info) => {
 				typeInfo = { id: info.id, displayName: info.displayName ?? info.id, kind: info.kind };
@@ -359,6 +376,18 @@
 					</Select.Root>
 				</div>
 				<div class="flex-1"></div>
+				<Button
+					variant={selectionMode ? 'secondary' : 'ghost'}
+					size="sm"
+					onclick={toggleSelectionMode}
+					title={selectionMode ? 'Clear selection' : 'Select records'}
+				>
+					{#if selectionMode}
+						<X class="size-4" /> Clear
+					{:else}
+						<ListChecks class="size-4" /> Select
+					{/if}
+				</Button>
 				<SchemaEditorButton />
 				<SettingsButton />
 				<Button size="sm" onclick={createRecord}>
@@ -366,7 +395,7 @@
 				</Button>
 			</header>
 
-			{#if selectedIds.size > 0}
+			{#if selectionMode}
 				<div class="flex flex-wrap items-center gap-2 border-b bg-muted/40 p-2 text-sm">
 					<RecordBulkActions
 						typeId={typeId!}
@@ -374,12 +403,7 @@
 						selectedIds={[...selectedIds]}
 						onchanged={afterBulk}
 					/>
-					<Button
-						variant="ghost"
-						size="sm"
-						class="ml-auto text-xs"
-						onclick={() => selectedIds.clear()}
-					>
+					<Button variant="ghost" size="sm" class="ml-auto text-xs" onclick={toggleSelectionMode}>
 						clear
 					</Button>
 				</div>

@@ -138,8 +138,15 @@
 </script>
 
 <span class="text-sm text-muted-foreground">{selectedIds.length} selected</span>
-<Button variant="outline" size="sm" onclick={openSetFieldDialog}>Set field…</Button>
-<Button variant="destructive" size="sm" onclick={() => (deleteConfirmOpen = true)}>
+<Button variant="outline" size="sm" disabled={selectedIds.length === 0} onclick={openSetFieldDialog}
+	>Set field…</Button
+>
+<Button
+	variant="destructive"
+	size="sm"
+	disabled={selectedIds.length === 0}
+	onclick={() => (deleteConfirmOpen = true)}
+>
 	<Trash2 class="mr-1 size-4" /> Delete
 </Button>
 

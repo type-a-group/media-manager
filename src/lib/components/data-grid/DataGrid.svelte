@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { FileText, TriangleAlert } from 'lucide-svelte';
 	import { gridColMin, type GridItem, type GridConfig, type GridCallbacks } from './types.js';
 
@@ -43,25 +42,18 @@
 
 {#snippet tile(item: GridItem)}
 	{@const selected = callbacks.isSelected?.(item.id) ?? false}
+	{@const activate = () =>
+		config.selectable ? callbacks.onToggleSelect?.(item.id) : callbacks.onOpen(item.id)}
 	<Card.Root
-		class="group relative cursor-pointer gap-0 overflow-hidden p-0 hover:ring-2 hover:ring-primary {config.activeId ===
-		item.id
+		class="group relative cursor-pointer gap-0 overflow-hidden p-0 hover:ring-2 hover:ring-primary {selected ||
+		config.activeId === item.id
 			? 'ring-2 ring-primary'
 			: ''}"
 		role="button"
 		tabindex={0}
-		onclick={() => callbacks.onOpen(item.id)}
-		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && callbacks.onOpen(item.id)}
+		onclick={activate}
+		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && activate()}
 	>
-		{#if config.selectable}
-			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-			<div
-				class="absolute left-1 top-1 z-10 rounded bg-background/80 p-0.5"
-				onclick={(e) => e.stopPropagation()}
-			>
-				<Checkbox checked={selected} onCheckedChange={() => callbacks.onToggleSelect?.(item.id)} />
-			</div>
-		{/if}
 		{#if item.warning}
 			<div
 				class="absolute right-1 top-1 z-10 rounded bg-background/80 p-0.5 text-amber-500 shadow-sm"
