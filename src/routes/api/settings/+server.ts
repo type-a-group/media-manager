@@ -14,7 +14,8 @@ import { readMediaSettings, writeMediaSettings } from '$lib/storage/mediaSetting
 const PatchSchema = z.object({
 	gridSize: z.enum(['small', 'medium', 'large']).optional(),
 	autoAdvanceToNextUnlinked: z.boolean().optional(),
-	autoSaveOnAdvance: z.boolean().optional()
+	autoSaveOnAdvance: z.boolean().optional(),
+	railCollapsed: z.boolean().optional()
 });
 
 /** GET: current global settings. */
@@ -23,7 +24,8 @@ export const GET: RequestHandler = async () => {
 	return json({
 		gridSize: s.gridSize,
 		autoAdvanceToNextUnlinked: s.autoAdvanceToNextUnlinked,
-		autoSaveOnAdvance: s.autoSaveOnAdvance
+		autoSaveOnAdvance: s.autoSaveOnAdvance,
+		railCollapsed: s.railCollapsed
 	});
 };
 
@@ -38,6 +40,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json({
 		gridSize: updated.gridSize,
 		autoAdvanceToNextUnlinked: updated.autoAdvanceToNextUnlinked,
-		autoSaveOnAdvance: updated.autoSaveOnAdvance
+		autoSaveOnAdvance: updated.autoSaveOnAdvance,
+		railCollapsed: updated.railCollapsed
 	});
 };

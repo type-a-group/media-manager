@@ -69,7 +69,7 @@
 			const created = await apiCreateMediaType({ displayName: name, kind: 'json' });
 			newTypeName = '';
 			newTypeOpen = false;
-			goto(`/media/${created.id}`);
+			goto(`/media?type=${created.id}`);
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to create record type');
@@ -124,7 +124,7 @@
 				<h2 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Records</h2>
 				<div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
 					{#each recordTypes as t (t.id)}
-						<a href={`/media/${t.id}`} class="block">
+						<a href={`/media?type=${t.id}`} class="block">
 							<Card.Root class="h-full transition-colors hover:border-primary hover:bg-muted/40">
 								<Card.Header>
 									<FileJson class="size-6 text-muted-foreground" />

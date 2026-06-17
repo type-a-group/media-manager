@@ -211,6 +211,12 @@ export const JsonListItemSchema = z.object({
 	group_by_value: z
 		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
 		.optional(),
+	/**
+	 * Display title for a record when the list is requested with a `titleField`. Lets the records
+	 * Explorer title rows by a chosen schema field (not just `name`), so types without a `name` field
+	 * no longer fall back to the raw id. Derived (not persisted); absent unless `titleField` was sent.
+	 */
+	title_value: z.string().optional(),
 	missing_file_fields: z.array(z.string()).optional()
 });
 export type JsonListItem = z.infer<typeof JsonListItemSchema>;

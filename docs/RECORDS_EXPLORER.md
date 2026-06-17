@@ -1,8 +1,11 @@
 # Records Explorer — implementation plan
 
-Status: **planned, not started.** This is the agreed redesign of the records side (`/media`). Companion
-visual mockups live in [`records-ui-plan.html`](records-ui-plan.html) (open in a browser). Read this end-to-end
-before starting; it is written to survive a context-window reset.
+Status: **shipped.** Implemented on the `global-files` branch — `/media` is now the three-pane Records
+Explorer (`media/+page.svelte` + `RecordsRail`/`RecordListColumn`/`RecordDetailPane`), `/media/[typeId]`
+307-redirects in, autosave replaces the Save button, the id-instead-of-title bug is fixed via
+`recordDisplay.ts` + the `?titleField=` list param, and `railCollapsed` persists. `FEATURES.md` updated;
+`RecordEditorPanel.svelte` removed (superseded). Companion visual mockups live in
+[`records-ui-plan.html`](records-ui-plan.html). The section below is kept as the design record.
 
 ## 1. Goal & framing
 
@@ -84,18 +87,21 @@ src/routes/media/+page.svelte          ← Explorer shell: owns activeTypeId, se
 ## 4. Components — detail
 
 ### RecordsRail.svelte (NEW)
+
 - Props: `types`, `activeTypeId`, `collapsed`, callbacks `onSelect(id)`, `onToggleCollapse()`, `onNewType()`.
 - Expanded: brand "Records" + collapse `«`, a "Types" label, one row per type (generic glyph + name + count), `＋ New type` (opens the same new-type dialog the dashboard uses — extract or reuse `apiCreateMediaType` flow), footer Home (⌂ → `/`) + Settings (`SettingsButton`).
 - Collapsed: `»` toggle, icon-only rows with `title` tooltips, active row highlighted, `＋` and footer icons.
 - Use shadcn primitives; the rail itself can use `Sidebar`/`Sidebar.Root collapsible` **or** a hand-rolled flex column composed of `Button`s (Sidebar's collapsible has its own offcanvas behavior — evaluate; a simple width-toggled column is acceptable and likely cleaner here). Document the choice.
 
 ### RecordListColumn.svelte (NEW)
+
 - Props: `typeId`, `schema`, `records`, `query`, `groupBy`, `filters`, `sort`, `selectionMode`, `selectedIds`, `selectedRecordId`, plus callbacks (`onOpen`, `onToggleSelect`, `onNewRecord`, `onChangeGroupBy`, `onChangeFilters`, `onChangeQuery`, `onToggleSelectionMode`, `onBulkChanged`).
 - Header: type name, schema editor (`SchemaEditorButton`), `＋ New`, search input; a controls row with **Group by** (existing select), **Filter** (`RecordFilterPanel` in a `Popover` instead of a full sidebar), **Sort** (new, optional — can ship later; relates to backlog Item 9).
 - Body: a scrollable list (not the tile `DataGrid`). Each row: **display-title** (see §5) + a muted subtitle (group value / a couple of fields / `updated`), warning badge if `missing_file_fields`. Group headers when `groupBy` is set (reuse the grouping logic from the current page's `groupedRecords`).
 - Multiselect: when `selectionMode`, rows show a checkbox; the bulk bar renders `RecordBulkActions` (reused) in the header.
 
 ### RecordDetailPane.svelte (NEW — refactor of RecordEditorPanel)
+
 - Render the **body** of today's `RecordEditorPanel` (the schema → `FieldInput` stack) as a pane, not inside `EditorPanelShell`.
 - Header within the pane: display-title, "✓ saved / Saving…" status, prev/next (↑/↓) buttons that move `selectedRecordId` along the current list order, Delete (keep the `AlertDialog`).
 - **Autosave:** replace the explicit Save button with debounced autosave:
@@ -107,23 +113,27 @@ src/routes/media/+page.svelte          ← Explorer shell: owns activeTypeId, se
 - Prefer extracting the shared save/dirty/patch logic so `RecordEditorPanel` (still used? see §7) and the new pane don't drift.
 
 ## 5. Display-title fix (do this regardless)
+
 - Add a **display-field resolver** used by both the list row title and the detail header: record `name` → chosen display field (per-type, see §6) → `group_by_value` → short id. Today's `displayName()` in `/media/[typeId]/+page.svelte` is the starting point; generalize it to accept a configurable display field.
 - A **display-field selector** in the list header (mirrors Group by) lets the user choose which schema field titles a record when there's no `name`. This is the records half of backlog Item 8 — implement the minimum here (single display field), leave verbose multi-field cards to Item 8.
 - Note: `apiListRecordsForType` returns `group_by_value` but not arbitrary field values. If the chosen display field ≠ name/group field, either extend the list response to include it (preferred, see Item 8 pointer) or fall back gracefully. For the first cut, restrict the display-field options to fields already available on the list item (name, group_by_value) to avoid an API change; expand under Item 8.
 
 ## 6. Persistence
+
 - `railCollapsed`: add to the global settings store (`settings.ts` + the `.../settings` API + `settingsFile.ts`), like `gridSize`. Global is fine (it's a layout pref, not per-type).
 - Display field / group-by / sort: **per session** for the first cut (local state in the shell). Per-type persistent defaults are a follow-up (overlaps Item 8/9) — note it, don't block on it.
 
 ## 7. Cleanup / migration
+
 - After the Explorer ships and `/media/[typeId]` is a redirect:
   - `RecordEditorPanel.svelte` + `EditorPanelShell` usage on the records side is replaced by `RecordDetailPane`. Decide whether to delete `RecordEditorPanel` or keep it; if nothing else imports it, remove it (the Files side uses `FileEditorPanel`, not this). Confirm with a grep before deleting.
   - The old `/media/[typeId]/+page.svelte` body (Sidebar + DataGrid + floating panel) is removed; its records-loading logic moves into the shell / list column.
 - Per the repo conventions: **update `docs/FEATURES.md` in the same change** (the records hub row, route changes, the new components, the autosave + display-field behavior). Update `test-fixtures/` only if on-disk structure changes — it does **not** here (no schema/settings-shape change except adding `railCollapsed` to settings; update the fixture's `settings.json` shape if the settings schema gains a required field — prefer making it optional).
 
 ## 8. Build order (incremental, each step shippable)
+
 1. **Display-title fix + display-field selector** on the existing `/media/[typeId]` page (small, immediately fixes the id-instead-of-title bug; no layout change yet).
-2. **Explorer shell + RecordsRail** at `/media` with `?type=` selection; render the *existing* list/detail inside it first (rail navigation working, everything else unchanged). Add `/media/[typeId]` → `/media?type=` redirect; update dashboard links.
+2. **Explorer shell + RecordsRail** at `/media` with `?type=` selection; render the _existing_ list/detail inside it first (rail navigation working, everything else unchanged). Add `/media/[typeId]` → `/media?type=` redirect; update dashboard links.
 3. **RecordListColumn** — replace the tile `DataGrid` with the list column (search/group/filter-in-popover + grouped rows + bulk bar via `RecordBulkActions`).
 4. **RecordDetailPane + autosave** — refactor the editor into the inline pane; remove the explicit Save button; add the saved/saving status + ↑/↓.
 5. **Rail collapse/expand** + persisted `railCollapsed`.
@@ -131,11 +141,13 @@ src/routes/media/+page.svelte          ← Explorer shell: owns activeTypeId, se
 7. **Docs + cleanup:** `FEATURES.md`, remove dead `RecordEditorPanel`/`EditorPanelShell`-on-records if unused, `npm run check` + `npm run lint` + `npm run test`.
 
 ## 9. Testing
+
 - Unit: any extracted pure logic (display-field resolver, patch/dirty) gets a vitest test.
 - Manual end-to-end via the `test-ui-feature` skill (builds + serves `test-fixtures/` → `test-data/`, drives headless Chromium). Verify: rail switches types; record titles show real names (not ids); list group/filter/search; autosave persists across record switches and reload; bulk set-field/delete; collapse persists; globals still opens; `/media/notes` (old URL) redirects.
 - The fixture has types `notes` + `globals` and a dangling file reference (missing-files warning) — exercise the warning badge on a list row.
 
 ## 10. Deferred (added to FUTURE_CHANGES.md)
+
 - **Item 8** — verbose multi-field display / arbitrary display field needing a richer list response.
 - **Item 9** — explicit sort control (the list column leaves room for it).
 - **Item 20** — per-record deep-link routing (`/media/[typeId]/[recordId]`); replaces the `?type=` query approach.

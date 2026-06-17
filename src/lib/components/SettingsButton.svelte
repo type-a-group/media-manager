@@ -19,7 +19,8 @@
 	let settings = $state<AppSettings>({
 		autoAdvanceToNextUnlinked: false,
 		autoSaveOnAdvance: false,
-		gridSize: 'medium'
+		gridSize: 'medium',
+		railCollapsed: false
 	});
 	let resetToDefaultsOpen = $state(false);
 	let isOpen = $state(false);

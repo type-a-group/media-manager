@@ -1,367 +1,985 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Records Explorer — design</title>
-<style>
-  :root {
-    --bg:#ffffff; --fg:#0f172a; --muted:#64748b; --muted-bg:#f1f5f9;
-    --border:#e2e8f0; --border-strong:#cbd5e1; --primary:#0f172a;
-    --secondary:#e2e8f0; --accent:#2563eb; --warn:#d97706; --danger:#dc2626;
-    --radius:10px; --shadow:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.1);
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-         color:var(--fg); background:#f8fafc; }
-  .wrap { max-width:1080px; margin:0 auto; padding:40px 24px 96px; }
-  h1 { font-size:30px; margin:0 0 6px; letter-spacing:-.02em; }
-  h2 { font-size:21px; margin:46px 0 10px; letter-spacing:-.01em; }
-  h3 { font-size:16px; margin:0 0 4px; }
-  .lede { color:var(--muted); font-size:16px; max-width:78ch; }
-  p { max-width:78ch; }
-  code { background:var(--muted-bg); padding:1px 6px; border-radius:6px; font-size:.88em; }
-  .callout { border:1px solid var(--border); background:#fff; border-radius:var(--radius);
-             padding:16px 18px; box-shadow:var(--shadow); margin:18px 0; }
-  .callout.insight { border-left:4px solid var(--accent); }
-  .callout.bug { border-left:4px solid var(--warn); }
-  ul.tight { margin:6px 0 0; padding-left:18px; } ul.tight li { margin:3px 0; }
-  .mockwrap { background:#eef2f7; padding:20px; border:1px solid var(--border); border-radius:14px; margin:18px 0; }
-  .caption { font-size:12.5px; color:var(--muted); margin:10px 2px 0; text-align:center; }
-  .two { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-  @media (max-width:840px){ .two{ grid-template-columns:1fr; } }
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Records Explorer — design</title>
+		<style>
+			:root {
+				--bg: #ffffff;
+				--fg: #0f172a;
+				--muted: #64748b;
+				--muted-bg: #f1f5f9;
+				--border: #e2e8f0;
+				--border-strong: #cbd5e1;
+				--primary: #0f172a;
+				--secondary: #e2e8f0;
+				--accent: #2563eb;
+				--warn: #d97706;
+				--danger: #dc2626;
+				--radius: 10px;
+				--shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.1);
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font:
+					15px/1.55 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+				color: var(--fg);
+				background: #f8fafc;
+			}
+			.wrap {
+				max-width: 1080px;
+				margin: 0 auto;
+				padding: 40px 24px 96px;
+			}
+			h1 {
+				font-size: 30px;
+				margin: 0 0 6px;
+				letter-spacing: -0.02em;
+			}
+			h2 {
+				font-size: 21px;
+				margin: 46px 0 10px;
+				letter-spacing: -0.01em;
+			}
+			h3 {
+				font-size: 16px;
+				margin: 0 0 4px;
+			}
+			.lede {
+				color: var(--muted);
+				font-size: 16px;
+				max-width: 78ch;
+			}
+			p {
+				max-width: 78ch;
+			}
+			code {
+				background: var(--muted-bg);
+				padding: 1px 6px;
+				border-radius: 6px;
+				font-size: 0.88em;
+			}
+			.callout {
+				border: 1px solid var(--border);
+				background: #fff;
+				border-radius: var(--radius);
+				padding: 16px 18px;
+				box-shadow: var(--shadow);
+				margin: 18px 0;
+			}
+			.callout.insight {
+				border-left: 4px solid var(--accent);
+			}
+			.callout.bug {
+				border-left: 4px solid var(--warn);
+			}
+			ul.tight {
+				margin: 6px 0 0;
+				padding-left: 18px;
+			}
+			ul.tight li {
+				margin: 3px 0;
+			}
+			.mockwrap {
+				background: #eef2f7;
+				padding: 20px;
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				margin: 18px 0;
+			}
+			.caption {
+				font-size: 12.5px;
+				color: var(--muted);
+				margin: 10px 2px 0;
+				text-align: center;
+			}
+			.two {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 18px;
+			}
+			@media (max-width: 840px) {
+				.two {
+					grid-template-columns: 1fr;
+				}
+			}
 
-  /* ---- App chrome ---- */
-  .app { display:flex; background:var(--bg); border:1px solid var(--border-strong); border-radius:10px;
-         overflow:hidden; box-shadow:var(--shadow); height:420px; font-size:12px; }
-  .app.short { height:360px; }
+			/* ---- App chrome ---- */
+			.app {
+				display: flex;
+				background: var(--bg);
+				border: 1px solid var(--border-strong);
+				border-radius: 10px;
+				overflow: hidden;
+				box-shadow: var(--shadow);
+				height: 420px;
+				font-size: 12px;
+			}
+			.app.short {
+				height: 360px;
+			}
 
-  /* rail */
-  .rail { border-right:1px solid var(--border); background:#f8fafc; display:flex; flex-direction:column;
-          padding:10px 8px; gap:3px; transition:width .15s; }
-  .rail.exp { width:178px; flex:0 0 178px; }
-  .rail.col { width:56px; flex:0 0 56px; align-items:center; }
-  .rail .railhead { display:flex; align-items:center; gap:8px; padding:2px 4px 8px; }
-  .rail.col .railhead { justify-content:center; }
-  .rail .brand { font-weight:700; font-size:13px; }
-  .rail .toggle { margin-left:auto; color:var(--muted); cursor:pointer; border:1px solid var(--border);
-                  border-radius:6px; width:22px; height:22px; display:flex; align-items:center; justify-content:center; background:#fff; }
-  .rail.col .toggle { margin:0; }
-  .rail .seclbl { font-size:9px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
-                  font-weight:600; padding:6px 6px 2px; }
-  .ti { display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; color:var(--fg); }
-  .ti:hover { background:var(--muted-bg); }
-  .ti.on { background:var(--primary); color:#fff; }
-  .ti .ico { width:18px; text-align:center; font-size:14px; flex:0 0 18px; }
-  .ti .nm { flex:1; white-space:nowrap; overflow:hidden; }
-  .ti .ct { font-size:10px; opacity:.7; }
-  .rail.col .ti { justify-content:center; padding:8px 0; width:38px; }
-  .rail .newt { margin-top:6px; border:1px dashed var(--border-strong); border-radius:7px; padding:6px 8px;
-                color:var(--muted); display:flex; align-items:center; gap:8px; }
-  .rail.col .newt { justify-content:center; width:38px; }
-  .rail .spacer { flex:1; }
-  .rail .foot { display:flex; gap:4px; padding-top:6px; border-top:1px solid var(--border); }
-  .rail.col .foot { flex-direction:column; align-items:center; }
-  .rail .foot .fb { color:var(--muted); padding:5px; border-radius:6px; }
+			/* rail */
+			.rail {
+				border-right: 1px solid var(--border);
+				background: #f8fafc;
+				display: flex;
+				flex-direction: column;
+				padding: 10px 8px;
+				gap: 3px;
+				transition: width 0.15s;
+			}
+			.rail.exp {
+				width: 178px;
+				flex: 0 0 178px;
+			}
+			.rail.col {
+				width: 56px;
+				flex: 0 0 56px;
+				align-items: center;
+			}
+			.rail .railhead {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 2px 4px 8px;
+			}
+			.rail.col .railhead {
+				justify-content: center;
+			}
+			.rail .brand {
+				font-weight: 700;
+				font-size: 13px;
+			}
+			.rail .toggle {
+				margin-left: auto;
+				color: var(--muted);
+				cursor: pointer;
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				width: 22px;
+				height: 22px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background: #fff;
+			}
+			.rail.col .toggle {
+				margin: 0;
+			}
+			.rail .seclbl {
+				font-size: 9px;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: var(--muted);
+				font-weight: 600;
+				padding: 6px 6px 2px;
+			}
+			.ti {
+				display: flex;
+				align-items: center;
+				gap: 9px;
+				padding: 7px 8px;
+				border-radius: 7px;
+				color: var(--fg);
+			}
+			.ti:hover {
+				background: var(--muted-bg);
+			}
+			.ti.on {
+				background: var(--primary);
+				color: #fff;
+			}
+			.ti .ico {
+				width: 18px;
+				text-align: center;
+				font-size: 14px;
+				flex: 0 0 18px;
+			}
+			.ti .nm {
+				flex: 1;
+				white-space: nowrap;
+				overflow: hidden;
+			}
+			.ti .ct {
+				font-size: 10px;
+				opacity: 0.7;
+			}
+			.rail.col .ti {
+				justify-content: center;
+				padding: 8px 0;
+				width: 38px;
+			}
+			.rail .newt {
+				margin-top: 6px;
+				border: 1px dashed var(--border-strong);
+				border-radius: 7px;
+				padding: 6px 8px;
+				color: var(--muted);
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.rail.col .newt {
+				justify-content: center;
+				width: 38px;
+			}
+			.rail .spacer {
+				flex: 1;
+			}
+			.rail .foot {
+				display: flex;
+				gap: 4px;
+				padding-top: 6px;
+				border-top: 1px solid var(--border);
+			}
+			.rail.col .foot {
+				flex-direction: column;
+				align-items: center;
+			}
+			.rail .foot .fb {
+				color: var(--muted);
+				padding: 5px;
+				border-radius: 6px;
+			}
 
-  /* list column */
-  .listcol { width:248px; flex:0 0 248px; border-right:1px solid var(--border); display:flex; flex-direction:column; min-width:0; }
-  .lc-head { padding:10px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px; }
-  .lc-title { display:flex; align-items:center; gap:8px; }
-  .lc-title .h { font-weight:700; font-size:14px; }
-  .lc-title .spacer { flex:1; }
-  .input { border:1px solid var(--border-strong); border-radius:7px; padding:6px 8px; color:var(--muted); background:#fff; }
-  .lc-controls { display:flex; gap:6px; flex-wrap:wrap; }
-  .sel { border:1px solid var(--border-strong); border-radius:7px; padding:3px 7px; background:#fff; color:var(--muted); font-size:11px; }
-  .lc-body { flex:1; overflow:auto; }
-  .grouphdr { font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600;
-              padding:8px 12px 4px; background:#fbfcfe; position:sticky; top:0; }
-  .rec-row { padding:9px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
-  .rec-row:hover { background:var(--muted-bg); }
-  .rec-row.on { background:#e0e7ff; box-shadow:inset 3px 0 0 var(--accent); }
-  .rec-row .t { font-weight:600; display:flex; align-items:center; gap:6px; }
-  .rec-row .s { color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .warn { color:var(--warn); }
-  .pill { display:inline-block; background:var(--secondary); color:#334155; border-radius:5px; padding:0 5px; font-size:10px; }
+			/* list column */
+			.listcol {
+				width: 248px;
+				flex: 0 0 248px;
+				border-right: 1px solid var(--border);
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+			.lc-head {
+				padding: 10px;
+				border-bottom: 1px solid var(--border);
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.lc-title {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.lc-title .h {
+				font-weight: 700;
+				font-size: 14px;
+			}
+			.lc-title .spacer {
+				flex: 1;
+			}
+			.input {
+				border: 1px solid var(--border-strong);
+				border-radius: 7px;
+				padding: 6px 8px;
+				color: var(--muted);
+				background: #fff;
+			}
+			.lc-controls {
+				display: flex;
+				gap: 6px;
+				flex-wrap: wrap;
+			}
+			.sel {
+				border: 1px solid var(--border-strong);
+				border-radius: 7px;
+				padding: 3px 7px;
+				background: #fff;
+				color: var(--muted);
+				font-size: 11px;
+			}
+			.lc-body {
+				flex: 1;
+				overflow: auto;
+			}
+			.grouphdr {
+				font-size: 10px;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				color: var(--muted);
+				font-weight: 600;
+				padding: 8px 12px 4px;
+				background: #fbfcfe;
+				position: sticky;
+				top: 0;
+			}
+			.rec-row {
+				padding: 9px 12px;
+				border-bottom: 1px solid var(--border);
+				cursor: pointer;
+			}
+			.rec-row:hover {
+				background: var(--muted-bg);
+			}
+			.rec-row.on {
+				background: #e0e7ff;
+				box-shadow: inset 3px 0 0 var(--accent);
+			}
+			.rec-row .t {
+				font-weight: 600;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.rec-row .s {
+				color: var(--muted);
+				font-size: 11px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.warn {
+				color: var(--warn);
+			}
+			.pill {
+				display: inline-block;
+				background: var(--secondary);
+				color: #334155;
+				border-radius: 5px;
+				padding: 0 5px;
+				font-size: 10px;
+			}
 
-  /* detail */
-  .detail { flex:1; display:flex; flex-direction:column; min-width:0; }
-  .dt-head { display:flex; align-items:center; gap:8px; padding:11px 16px; border-bottom:1px solid var(--border); }
-  .dt-head .h { font-weight:700; font-size:15px; }
-  .dt-head .spacer { flex:1; }
-  .dt-body { flex:1; overflow:auto; padding:18px 20px; }
-  .btn { border-radius:7px; padding:5px 10px; font-weight:600; border:1px solid var(--border-strong); background:#fff; font-size:12px; }
-  .btn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
-  .btn.ghost { border-color:transparent; }
-  .btn.danger { color:var(--danger); border-color:transparent; }
-  .iconbtn { color:var(--muted); padding:4px 7px; border-radius:6px; border:1px solid var(--border); background:#fff; }
-  .field { margin-bottom:14px; max-width:520px; }
-  .field .fl { font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:600; }
-  .field .fv { border:1px solid var(--border-strong); border-radius:7px; padding:7px 9px; background:#fff; }
-  .field .fv.area { min-height:64px; }
-  .field .chips .pill { margin-right:4px; }
-  .saved { font-size:11px; color:#16a34a; }
+			/* detail */
+			.detail {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+			.dt-head {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 11px 16px;
+				border-bottom: 1px solid var(--border);
+			}
+			.dt-head .h {
+				font-weight: 700;
+				font-size: 15px;
+			}
+			.dt-head .spacer {
+				flex: 1;
+			}
+			.dt-body {
+				flex: 1;
+				overflow: auto;
+				padding: 18px 20px;
+			}
+			.btn {
+				border-radius: 7px;
+				padding: 5px 10px;
+				font-weight: 600;
+				border: 1px solid var(--border-strong);
+				background: #fff;
+				font-size: 12px;
+			}
+			.btn.primary {
+				background: var(--primary);
+				color: #fff;
+				border-color: var(--primary);
+			}
+			.btn.ghost {
+				border-color: transparent;
+			}
+			.btn.danger {
+				color: var(--danger);
+				border-color: transparent;
+			}
+			.iconbtn {
+				color: var(--muted);
+				padding: 4px 7px;
+				border-radius: 6px;
+				border: 1px solid var(--border);
+				background: #fff;
+			}
+			.field {
+				margin-bottom: 14px;
+				max-width: 520px;
+			}
+			.field .fl {
+				font-size: 11px;
+				color: var(--muted);
+				margin-bottom: 4px;
+				font-weight: 600;
+			}
+			.field .fv {
+				border: 1px solid var(--border-strong);
+				border-radius: 7px;
+				padding: 7px 9px;
+				background: #fff;
+			}
+			.field .fv.area {
+				min-height: 64px;
+			}
+			.field .chips .pill {
+				margin-right: 4px;
+			}
+			.saved {
+				font-size: 11px;
+				color: #16a34a;
+			}
 
-  .empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--muted); gap:8px; }
+			.empty {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				color: var(--muted);
+				gap: 8px;
+			}
 
-  .anno { display:flex; gap:10px; align-items:flex-start; margin:4px 0; }
-  .anno .n { flex:0 0 22px; height:22px; border-radius:999px; background:var(--accent); color:#fff;
-             display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
-  .reuse td { padding:6px 10px; border-bottom:1px solid var(--border); font-size:13.5px; vertical-align:top; }
-  .reuse td:first-child { font-weight:600; white-space:nowrap; }
-  table.reuse { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-  .footer { margin-top:40px; color:var(--muted); font-size:13px; }
-</style>
-</head>
-<body>
-<div class="wrap">
+			.anno {
+				display: flex;
+				gap: 10px;
+				align-items: flex-start;
+				margin: 4px 0;
+			}
+			.anno .n {
+				flex: 0 0 22px;
+				height: 22px;
+				border-radius: 999px;
+				background: var(--accent);
+				color: #fff;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 11px;
+				font-weight: 700;
+			}
+			.reuse td {
+				padding: 6px 10px;
+				border-bottom: 1px solid var(--border);
+				font-size: 13.5px;
+				vertical-align: top;
+			}
+			.reuse td:first-child {
+				font-weight: 600;
+				white-space: nowrap;
+			}
+			table.reuse {
+				width: 100%;
+				border-collapse: collapse;
+				background: #fff;
+				border: 1px solid var(--border);
+				border-radius: 10px;
+				overflow: hidden;
+			}
+			.footer {
+				margin-top: 40px;
+				color: var(--muted);
+				font-size: 13px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<h1>Records Explorer</h1>
+			<p class="lede">
+				A dedicated three-pane workspace for <code>/media</code> records —
+				<b>a separate-but-related sub-app</b> inside Media Manager. It deliberately does
+				<i>not</i> mirror the Files hub: records aren't blobs, so they get a layout built for
+				browsing structured rows, not a wall of thumbnails.
+			</p>
 
-  <h1>Records Explorer</h1>
-  <p class="lede">
-    A dedicated three-pane workspace for <code>/media</code> records — <b>a separate-but-related sub-app</b> inside
-    Media Manager. It deliberately does <i>not</i> mirror the Files hub: records aren't blobs, so they get a
-    layout built for browsing structured rows, not a wall of thumbnails.
-  </p>
+			<div class="callout insight">
+				<h3>Mental model</h3>
+				<p style="margin: 6px 0 0">
+					Files and Records are <b>two sibling apps</b> under one roof. Files = blobs + opt-in
+					classes, shown as a thumbnail grid. Records = standalone schema-backed types, shown as an
+					explorer: <b>type rail → record list → inline detail</b>. The rail is the cross-cutting
+					navigator (the thing you liked from <code>/files</code>), but it lives
+					<b>only here</b> and switches the active record type.
+				</p>
+			</div>
 
-  <div class="callout insight">
-    <h3>Mental model</h3>
-    <p style="margin:6px 0 0">
-      Files and Records are <b>two sibling apps</b> under one roof. Files = blobs + opt-in classes, shown as a thumbnail grid.
-      Records = standalone schema-backed types, shown as an explorer:
-      <b>type rail → record list → inline detail</b>. The rail is the cross-cutting navigator (the thing you liked from
-      <code>/files</code>), but it lives <b>only here</b> and switches the active record type.
-    </p>
-  </div>
+			<!-- ===================== HERO: expanded ===================== -->
+			<h2>Anatomy — rail expanded</h2>
+			<div class="mockwrap">
+				<div class="app">
+					<!-- rail expanded -->
+					<div class="rail exp">
+						<div class="railhead">
+							<span class="brand">Records</span>
+							<span class="toggle" title="Collapse">«</span>
+						</div>
+						<div class="seclbl">Types</div>
+						<div class="ti on">
+							<span class="ico">📝</span><span class="nm">Notes</span><span class="ct">12</span>
+						</div>
+						<div class="ti">
+							<span class="ico">👤</span><span class="nm">Contacts</span><span class="ct">34</span>
+						</div>
+						<div class="ti">
+							<span class="ico">📚</span><span class="nm">Books</span><span class="ct">8</span>
+						</div>
+						<div class="ti">
+							<span class="ico">🎬</span><span class="nm">Films</span><span class="ct">51</span>
+						</div>
+						<div class="ti">
+							<span class="ico">✈️</span><span class="nm">Trips</span><span class="ct">6</span>
+						</div>
+						<div class="newt"><span>＋</span><span>New type</span></div>
+						<div class="spacer"></div>
+						<div class="foot">
+							<span class="fb">⌂ Home</span>
+							<span class="fb">⚙ Settings</span>
+						</div>
+					</div>
 
-  <!-- ===================== HERO: expanded ===================== -->
-  <h2>Anatomy — rail expanded</h2>
-  <div class="mockwrap">
-    <div class="app">
-      <!-- rail expanded -->
-      <div class="rail exp">
-        <div class="railhead">
-          <span class="brand">Records</span>
-          <span class="toggle" title="Collapse">«</span>
-        </div>
-        <div class="seclbl">Types</div>
-        <div class="ti on"><span class="ico">📝</span><span class="nm">Notes</span><span class="ct">12</span></div>
-        <div class="ti"><span class="ico">👤</span><span class="nm">Contacts</span><span class="ct">34</span></div>
-        <div class="ti"><span class="ico">📚</span><span class="nm">Books</span><span class="ct">8</span></div>
-        <div class="ti"><span class="ico">🎬</span><span class="nm">Films</span><span class="ct">51</span></div>
-        <div class="ti"><span class="ico">✈️</span><span class="nm">Trips</span><span class="ct">6</span></div>
-        <div class="newt"><span>＋</span><span>New type</span></div>
-        <div class="spacer"></div>
-        <div class="foot">
-          <span class="fb">⌂ Home</span>
-          <span class="fb">⚙ Settings</span>
-        </div>
-      </div>
+					<!-- list column -->
+					<div class="listcol">
+						<div class="lc-head">
+							<div class="lc-title">
+								<span class="h">Notes</span>
+								<span class="spacer"></span>
+								<span class="iconbtn" title="Edit schema">🗄</span>
+								<span class="btn primary">＋ New</span>
+							</div>
+							<div class="input">Search notes…</div>
+							<div class="lc-controls">
+								<span class="sel">Group: Priority ▾</span>
+								<span class="sel">Filter ▾</span>
+								<span class="sel">⇅ Sort ▾</span>
+							</div>
+						</div>
+						<div class="lc-body">
+							<div class="grouphdr">High (2)</div>
+							<div class="rec-row on">
+								<div class="t">Welcome note</div>
+								<div class="s">onboarding · updated 6/14</div>
+							</div>
+							<div class="rec-row">
+								<div class="t">Meeting 6/12 <span class="warn">⚠</span></div>
+								<div class="s">work · missing attachment</div>
+							</div>
+							<div class="grouphdr">Medium (1)</div>
+							<div class="rec-row">
+								<div class="t">Roadmap Q3</div>
+								<div class="s">planning · updated 6/10</div>
+							</div>
+							<div class="grouphdr">Low (2)</div>
+							<div class="rec-row">
+								<div class="t">Grocery list</div>
+								<div class="s">personal · updated 6/09</div>
+							</div>
+							<div class="rec-row">
+								<div class="t">Reading queue</div>
+								<div class="s">personal · updated 6/02</div>
+							</div>
+						</div>
+					</div>
 
-      <!-- list column -->
-      <div class="listcol">
-        <div class="lc-head">
-          <div class="lc-title">
-            <span class="h">Notes</span>
-            <span class="spacer"></span>
-            <span class="iconbtn" title="Edit schema">🗄</span>
-            <span class="btn primary">＋ New</span>
-          </div>
-          <div class="input">Search notes…</div>
-          <div class="lc-controls">
-            <span class="sel">Group: Priority ▾</span>
-            <span class="sel">Filter ▾</span>
-            <span class="sel">⇅ Sort ▾</span>
-          </div>
-        </div>
-        <div class="lc-body">
-          <div class="grouphdr">High (2)</div>
-          <div class="rec-row on"><div class="t">Welcome note</div><div class="s">onboarding · updated 6/14</div></div>
-          <div class="rec-row"><div class="t">Meeting 6/12 <span class="warn">⚠</span></div><div class="s">work · missing attachment</div></div>
-          <div class="grouphdr">Medium (1)</div>
-          <div class="rec-row"><div class="t">Roadmap Q3</div><div class="s">planning · updated 6/10</div></div>
-          <div class="grouphdr">Low (2)</div>
-          <div class="rec-row"><div class="t">Grocery list</div><div class="s">personal · updated 6/09</div></div>
-          <div class="rec-row"><div class="t">Reading queue</div><div class="s">personal · updated 6/02</div></div>
-        </div>
-      </div>
+					<!-- detail -->
+					<div class="detail">
+						<div class="dt-head">
+							<span class="h">Welcome note</span>
+							<span class="saved">✓ saved</span>
+							<span class="spacer"></span>
+							<span class="iconbtn" title="Previous">↑</span>
+							<span class="iconbtn" title="Next">↓</span>
+							<span class="btn danger">🗑 Delete</span>
+						</div>
+						<div class="dt-body">
+							<div class="field">
+								<div class="fl">Title</div>
+								<div class="fv">Welcome note</div>
+							</div>
+							<div class="field">
+								<div class="fl">Priority</div>
+								<div class="fv">High ▾</div>
+							</div>
+							<div class="field">
+								<div class="fl">Tags</div>
+								<div class="fv chips">
+									<span class="pill">onboarding</span><span class="pill">draft</span> +
+								</div>
+							</div>
+							<div class="field">
+								<div class="fl">Body</div>
+								<div class="fv area">Thanks for joining the team — here's how to get started…</div>
+							</div>
+							<div class="field">
+								<div class="fl">Done</div>
+								<div class="fv">☐ not done</div>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="caption">
+					Rail (all types) → record list (search · group · filter · sort) → inline detail editor.
+					Selecting a row edits in place; ↑/↓ walk the list.
+				</div>
+			</div>
 
-      <!-- detail -->
-      <div class="detail">
-        <div class="dt-head">
-          <span class="h">Welcome note</span>
-          <span class="saved">✓ saved</span>
-          <span class="spacer"></span>
-          <span class="iconbtn" title="Previous">↑</span>
-          <span class="iconbtn" title="Next">↓</span>
-          <span class="btn danger">🗑 Delete</span>
-        </div>
-        <div class="dt-body">
-          <div class="field"><div class="fl">Title</div><div class="fv">Welcome note</div></div>
-          <div class="field"><div class="fl">Priority</div><div class="fv">High ▾</div></div>
-          <div class="field"><div class="fl">Tags</div><div class="fv chips"><span class="pill">onboarding</span><span class="pill">draft</span> +</div></div>
-          <div class="field"><div class="fl">Body</div><div class="fv area">Thanks for joining the team — here's how to get started…</div></div>
-          <div class="field"><div class="fl">Done</div><div class="fv">☐ not done</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="caption">Rail (all types) → record list (search · group · filter · sort) → inline detail editor. Selecting a row edits in place; ↑/↓ walk the list.</div>
-  </div>
+			<div class="callout">
+				<div class="anno">
+					<span class="n">1</span>
+					<div>
+						<b>Rail = type navigator.</b> Lists every record type with a count, a
+						<code>＋ New type</code> affordance, and Home/Settings pinned at the bottom. Selecting a
+						type swaps the list + detail. This is the cross-cutting nav you wanted, scoped to
+						records.
+					</div>
+				</div>
+				<div class="anno">
+					<span class="n">2</span>
+					<div>
+						<b>List column = the active type's records.</b> Per-type search, group-by, filter, and
+						sort live here (so they don't fight the rail). Group headers section the list; the
+						warning badge rides on affected rows.
+					</div>
+				</div>
+				<div class="anno">
+					<span class="n">3</span>
+					<div>
+						<b>Detail = inline editor.</b> The existing <code>FieldInput</code> renders every field;
+						autosave with a "✓ saved" hint; ↑/↓ replace the panel's prev/next chevrons. No grid +
+						floating panel — everything is visible at once.
+					</div>
+				</div>
+			</div>
 
-  <div class="callout">
-    <div class="anno"><span class="n">1</span><div><b>Rail = type navigator.</b> Lists every record type with a count, a <code>＋ New type</code> affordance, and Home/Settings pinned at the bottom. Selecting a type swaps the list + detail. This is the cross-cutting nav you wanted, scoped to records.</div></div>
-    <div class="anno"><span class="n">2</span><div><b>List column = the active type's records.</b> Per-type search, group-by, filter, and sort live here (so they don't fight the rail). Group headers section the list; the warning badge rides on affected rows.</div></div>
-    <div class="anno"><span class="n">3</span><div><b>Detail = inline editor.</b> The existing <code>FieldInput</code> renders every field; autosave with a "✓ saved" hint; ↑/↓ replace the panel's prev/next chevrons. No grid + floating panel — everything is visible at once.</div></div>
-  </div>
+			<!-- ===================== Collapsed rail ===================== -->
+			<h2>Rail minimized &amp; expanded</h2>
+			<p>
+				The rail toggles between a labelled list and an icon-only strip (state persisted). Collapsed
+				reclaims width for the list + detail; icons keep tooltips, the active type stays
+				highlighted, and the same <code>«</code>/<code>»</code> control flips it back.
+			</p>
+			<div class="two">
+				<div class="mockwrap">
+					<div class="app short">
+						<div class="rail col">
+							<div class="railhead"><span class="toggle" title="Expand">»</span></div>
+							<div class="ti on" title="Notes"><span class="ico">📝</span></div>
+							<div class="ti" title="Contacts"><span class="ico">👤</span></div>
+							<div class="ti" title="Books"><span class="ico">📚</span></div>
+							<div class="ti" title="Films"><span class="ico">🎬</span></div>
+							<div class="ti" title="Trips"><span class="ico">✈️</span></div>
+							<div class="newt" title="New type"><span>＋</span></div>
+							<div class="spacer"></div>
+							<div class="foot"><span class="fb">⌂</span><span class="fb">⚙</span></div>
+						</div>
+						<div class="listcol" style="flex: 1; width: auto">
+							<div class="lc-head">
+								<div class="lc-title">
+									<span class="h">Notes</span><span class="spacer"></span
+									><span class="btn primary">＋ New</span>
+								</div>
+								<div class="input">Search notes…</div>
+							</div>
+							<div class="lc-body">
+								<div class="rec-row on">
+									<div class="t">Welcome note</div>
+									<div class="s">High · onboarding</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">Roadmap Q3</div>
+									<div class="s">Medium · planning</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">Grocery list</div>
+									<div class="s">Low · personal</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">Meeting 6/12 <span class="warn">⚠</span></div>
+									<div class="s">High · work</div>
+								</div>
+							</div>
+						</div>
+						<div class="detail">
+							<div class="dt-head">
+								<span class="h">Welcome note</span><span class="saved">✓ saved</span
+								><span class="spacer"></span><span class="iconbtn">↑</span
+								><span class="iconbtn">↓</span>
+							</div>
+							<div class="dt-body">
+								<div class="field">
+									<div class="fl">Title</div>
+									<div class="fv">Welcome note</div>
+								</div>
+								<div class="field">
+									<div class="fl">Priority</div>
+									<div class="fv">High ▾</div>
+								</div>
+								<div class="field">
+									<div class="fl">Body</div>
+									<div class="fv area">Thanks for joining…</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="caption">Collapsed — icon-only rail, more room for list + detail.</div>
+				</div>
+				<div class="mockwrap">
+					<div class="app short">
+						<div class="rail exp">
+							<div class="railhead">
+								<span class="brand">Records</span><span class="toggle" title="Collapse">«</span>
+							</div>
+							<div class="seclbl">Types</div>
+							<div class="ti on">
+								<span class="ico">📝</span><span class="nm">Notes</span><span class="ct">12</span>
+							</div>
+							<div class="ti">
+								<span class="ico">👤</span><span class="nm">Contacts</span
+								><span class="ct">34</span>
+							</div>
+							<div class="ti">
+								<span class="ico">📚</span><span class="nm">Books</span><span class="ct">8</span>
+							</div>
+							<div class="newt"><span>＋</span><span>New type</span></div>
+							<div class="spacer"></div>
+							<div class="foot"><span class="fb">⌂ Home</span><span class="fb">⚙</span></div>
+						</div>
+						<div class="listcol" style="flex: 1; width: auto">
+							<div class="lc-head">
+								<div class="lc-title">
+									<span class="h">Notes</span><span class="spacer"></span
+									><span class="btn primary">＋ New</span>
+								</div>
+								<div class="input">Search notes…</div>
+							</div>
+							<div class="lc-body">
+								<div class="rec-row on">
+									<div class="t">Welcome note</div>
+									<div class="s">High · onboarding</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">Roadmap Q3</div>
+									<div class="s">Medium · planning</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">Grocery list</div>
+									<div class="s">Low · personal</div>
+								</div>
+							</div>
+						</div>
+						<div class="detail">
+							<div class="dt-head">
+								<span class="h">Welcome note</span><span class="saved">✓ saved</span
+								><span class="spacer"></span><span class="iconbtn">↑</span
+								><span class="iconbtn">↓</span>
+							</div>
+							<div class="dt-body">
+								<div class="field">
+									<div class="fl">Title</div>
+									<div class="fv">Welcome note</div>
+								</div>
+								<div class="field">
+									<div class="fl">Priority</div>
+									<div class="fv">High ▾</div>
+								</div>
+								<div class="field">
+									<div class="fl">Body</div>
+									<div class="fv area">Thanks for joining…</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="caption">Expanded — labels + counts.</div>
+				</div>
+			</div>
 
-  <!-- ===================== Collapsed rail ===================== -->
-  <h2>Rail minimized &amp; expanded</h2>
-  <p>The rail toggles between a labelled list and an icon-only strip (state persisted). Collapsed reclaims width for the list + detail; icons keep tooltips, the active type stays highlighted, and the same <code>«</code>/<code>»</code> control flips it back.</p>
-  <div class="two">
-    <div class="mockwrap">
-      <div class="app short">
-        <div class="rail col">
-          <div class="railhead"><span class="toggle" title="Expand">»</span></div>
-          <div class="ti on" title="Notes"><span class="ico">📝</span></div>
-          <div class="ti" title="Contacts"><span class="ico">👤</span></div>
-          <div class="ti" title="Books"><span class="ico">📚</span></div>
-          <div class="ti" title="Films"><span class="ico">🎬</span></div>
-          <div class="ti" title="Trips"><span class="ico">✈️</span></div>
-          <div class="newt" title="New type"><span>＋</span></div>
-          <div class="spacer"></div>
-          <div class="foot"><span class="fb">⌂</span><span class="fb">⚙</span></div>
-        </div>
-        <div class="listcol" style="flex:1; width:auto">
-          <div class="lc-head"><div class="lc-title"><span class="h">Notes</span><span class="spacer"></span><span class="btn primary">＋ New</span></div><div class="input">Search notes…</div></div>
-          <div class="lc-body">
-            <div class="rec-row on"><div class="t">Welcome note</div><div class="s">High · onboarding</div></div>
-            <div class="rec-row"><div class="t">Roadmap Q3</div><div class="s">Medium · planning</div></div>
-            <div class="rec-row"><div class="t">Grocery list</div><div class="s">Low · personal</div></div>
-            <div class="rec-row"><div class="t">Meeting 6/12 <span class="warn">⚠</span></div><div class="s">High · work</div></div>
-          </div>
-        </div>
-        <div class="detail">
-          <div class="dt-head"><span class="h">Welcome note</span><span class="saved">✓ saved</span><span class="spacer"></span><span class="iconbtn">↑</span><span class="iconbtn">↓</span></div>
-          <div class="dt-body">
-            <div class="field"><div class="fl">Title</div><div class="fv">Welcome note</div></div>
-            <div class="field"><div class="fl">Priority</div><div class="fv">High ▾</div></div>
-            <div class="field"><div class="fl">Body</div><div class="fv area">Thanks for joining…</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="caption">Collapsed — icon-only rail, more room for list + detail.</div>
-    </div>
-    <div class="mockwrap">
-      <div class="app short">
-        <div class="rail exp">
-          <div class="railhead"><span class="brand">Records</span><span class="toggle" title="Collapse">«</span></div>
-          <div class="seclbl">Types</div>
-          <div class="ti on"><span class="ico">📝</span><span class="nm">Notes</span><span class="ct">12</span></div>
-          <div class="ti"><span class="ico">👤</span><span class="nm">Contacts</span><span class="ct">34</span></div>
-          <div class="ti"><span class="ico">📚</span><span class="nm">Books</span><span class="ct">8</span></div>
-          <div class="newt"><span>＋</span><span>New type</span></div>
-          <div class="spacer"></div>
-          <div class="foot"><span class="fb">⌂ Home</span><span class="fb">⚙</span></div>
-        </div>
-        <div class="listcol" style="flex:1; width:auto">
-          <div class="lc-head"><div class="lc-title"><span class="h">Notes</span><span class="spacer"></span><span class="btn primary">＋ New</span></div><div class="input">Search notes…</div></div>
-          <div class="lc-body">
-            <div class="rec-row on"><div class="t">Welcome note</div><div class="s">High · onboarding</div></div>
-            <div class="rec-row"><div class="t">Roadmap Q3</div><div class="s">Medium · planning</div></div>
-            <div class="rec-row"><div class="t">Grocery list</div><div class="s">Low · personal</div></div>
-          </div>
-        </div>
-        <div class="detail">
-          <div class="dt-head"><span class="h">Welcome note</span><span class="saved">✓ saved</span><span class="spacer"></span><span class="iconbtn">↑</span><span class="iconbtn">↓</span></div>
-          <div class="dt-body">
-            <div class="field"><div class="fl">Title</div><div class="fv">Welcome note</div></div>
-            <div class="field"><div class="fl">Priority</div><div class="fv">High ▾</div></div>
-            <div class="field"><div class="fl">Body</div><div class="fv area">Thanks for joining…</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="caption">Expanded — labels + counts.</div>
-    </div>
-  </div>
+			<!-- ===================== Other states ===================== -->
+			<h2>Key states</h2>
+			<div class="two">
+				<div class="mockwrap">
+					<div class="app short">
+						<div class="rail col">
+							<div class="railhead"><span class="toggle">»</span></div>
+							<div class="ti"><span class="ico">📝</span></div>
+							<div class="ti on"><span class="ico">👤</span></div>
+							<div class="ti"><span class="ico">📚</span></div>
+							<div class="spacer"></div>
+							<div class="foot"><span class="fb">⌂</span></div>
+						</div>
+						<div class="listcol" style="flex: 1; width: auto">
+							<div class="lc-head">
+								<div class="lc-title">
+									<span class="h">Contacts</span><span class="spacer"></span
+									><span class="btn">✕ 3 selected</span>
+								</div>
+								<div class="lc-controls">
+									<span class="btn">Set field…</span><span class="btn danger">Delete</span>
+								</div>
+							</div>
+							<div class="lc-body">
+								<div class="rec-row" style="background: #e0e7ff">
+									<div class="t">☑ Ada Lovelace</div>
+									<div class="s">Acme · Engineer</div>
+								</div>
+								<div class="rec-row" style="background: #e0e7ff">
+									<div class="t">☑ Grace Hopper</div>
+									<div class="s">Acme · Admiral</div>
+								</div>
+								<div class="rec-row">
+									<div class="t">☐ Alan Turing</div>
+									<div class="s">Bletchley</div>
+								</div>
+								<div class="rec-row" style="background: #e0e7ff">
+									<div class="t">☑ Katherine Johnson</div>
+									<div class="s">NASA</div>
+								</div>
+							</div>
+						</div>
+						<div class="detail">
+							<div class="empty">
+								<div style="font-size: 22px">☑</div>
+								<div>3 records selected</div>
+								<div style="font-size: 11px">Bulk-edit a field or delete</div>
+							</div>
+						</div>
+					</div>
+					<div class="caption">
+						Multiselect → bulk actions move into the list header; detail shows the selection
+						summary.
+					</div>
+				</div>
+				<div class="mockwrap">
+					<div class="app short">
+						<div class="rail col">
+							<div class="railhead"><span class="toggle">»</span></div>
+							<div class="ti on"><span class="ico">✈️</span></div>
+							<div class="ti"><span class="ico">📝</span></div>
+							<div class="spacer"></div>
+							<div class="foot"><span class="fb">⌂</span></div>
+						</div>
+						<div class="listcol" style="flex: 1; width: auto">
+							<div class="lc-head">
+								<div class="lc-title">
+									<span class="h">Trips</span><span class="spacer"></span
+									><span class="btn primary">＋ New</span>
+								</div>
+								<div class="input">Search trips…</div>
+							</div>
+							<div class="lc-body">
+								<div class="empty" style="height: 200px">
+									<div style="font-size: 22px">✈️</div>
+									<div>No trips yet</div>
+									<span class="btn primary">＋ New trip</span>
+								</div>
+							</div>
+						</div>
+						<div class="detail">
+							<div class="empty"><div>Select a record to edit</div></div>
+						</div>
+					</div>
+					<div class="caption">
+						Empty type + nothing selected — clear calls to action, no dead grid.
+					</div>
+				</div>
+			</div>
 
-  <!-- ===================== Other states ===================== -->
-  <h2>Key states</h2>
-  <div class="two">
-    <div class="mockwrap">
-      <div class="app short">
-        <div class="rail col">
-          <div class="railhead"><span class="toggle">»</span></div>
-          <div class="ti"><span class="ico">📝</span></div>
-          <div class="ti on"><span class="ico">👤</span></div>
-          <div class="ti"><span class="ico">📚</span></div>
-          <div class="spacer"></div><div class="foot"><span class="fb">⌂</span></div>
-        </div>
-        <div class="listcol" style="flex:1; width:auto">
-          <div class="lc-head">
-            <div class="lc-title"><span class="h">Contacts</span><span class="spacer"></span><span class="btn">✕ 3 selected</span></div>
-            <div class="lc-controls"><span class="btn">Set field…</span><span class="btn danger">Delete</span></div>
-          </div>
-          <div class="lc-body">
-            <div class="rec-row" style="background:#e0e7ff"><div class="t">☑ Ada Lovelace</div><div class="s">Acme · Engineer</div></div>
-            <div class="rec-row" style="background:#e0e7ff"><div class="t">☑ Grace Hopper</div><div class="s">Acme · Admiral</div></div>
-            <div class="rec-row"><div class="t">☐ Alan Turing</div><div class="s">Bletchley</div></div>
-            <div class="rec-row" style="background:#e0e7ff"><div class="t">☑ Katherine Johnson</div><div class="s">NASA</div></div>
-          </div>
-        </div>
-        <div class="detail"><div class="empty"><div style="font-size:22px">☑</div><div>3 records selected</div><div style="font-size:11px">Bulk-edit a field or delete</div></div></div>
-      </div>
-      <div class="caption">Multiselect → bulk actions move into the list header; detail shows the selection summary.</div>
-    </div>
-    <div class="mockwrap">
-      <div class="app short">
-        <div class="rail col">
-          <div class="railhead"><span class="toggle">»</span></div>
-          <div class="ti on"><span class="ico">✈️</span></div>
-          <div class="ti"><span class="ico">📝</span></div>
-          <div class="spacer"></div><div class="foot"><span class="fb">⌂</span></div>
-        </div>
-        <div class="listcol" style="flex:1; width:auto">
-          <div class="lc-head"><div class="lc-title"><span class="h">Trips</span><span class="spacer"></span><span class="btn primary">＋ New</span></div><div class="input">Search trips…</div></div>
-          <div class="lc-body"><div class="empty" style="height:200px"><div style="font-size:22px">✈️</div><div>No trips yet</div><span class="btn primary">＋ New trip</span></div></div>
-        </div>
-        <div class="detail"><div class="empty"><div>Select a record to edit</div></div></div>
-      </div>
-      <div class="caption">Empty type + nothing selected — clear calls to action, no dead grid.</div>
-    </div>
-  </div>
+			<!-- ===================== Reuse / build ===================== -->
+			<h2>What it reuses vs. builds</h2>
+			<table class="reuse">
+				<tr>
+					<td>FieldInput</td>
+					<td>
+						<b>Reused as-is</b> — renders every field type in the detail pane (the shared
+						schema-driven input).
+					</td>
+				</tr>
+				<tr>
+					<td>RecordFilterPanel</td>
+					<td>
+						<b>Reused</b>, relocated into the list-column "Filter ▾" popover instead of a full
+						sidebar.
+					</td>
+				</tr>
+				<tr>
+					<td>SchemaEditorButton · RecordBulkActions</td>
+					<td><b>Reused</b> — schema editor (🗄) and bulk Set-field/Delete in the list header.</td>
+				</tr>
+				<tr>
+					<td>Group-by / search / list response</td>
+					<td>
+						<b>Reused</b> logic from today's <code>/media/[typeId]</code> (group_by_value, name
+						fallback) — plus the display-field/title fix.
+					</td>
+				</tr>
+				<tr>
+					<td>Type rail</td>
+					<td>
+						<b>New</b> — collapsible navigator listing types via the existing
+						<code>apiListMediaTypes</code>; collapse state persisted in settings.
+					</td>
+				</tr>
+				<tr>
+					<td>3-pane shell + record list column</td>
+					<td>
+						<b>New</b> — the explorer layout; replaces the Sidebar + DataGrid + floating EditorPanel
+						composition on the records route only.
+					</td>
+				</tr>
+				<tr>
+					<td>Routing</td>
+					<td>
+						<b>Changed</b> — <code>/media</code> becomes the explorer; the active type/record can
+						live in the URL (<code>/media/notes/&lt;id&gt;</code>) for deep links. Files routes
+						untouched.
+					</td>
+				</tr>
+			</table>
 
-  <!-- ===================== Reuse / build ===================== -->
-  <h2>What it reuses vs. builds</h2>
-  <table class="reuse">
-    <tr><td>FieldInput</td><td><b>Reused as-is</b> — renders every field type in the detail pane (the shared schema-driven input).</td></tr>
-    <tr><td>RecordFilterPanel</td><td><b>Reused</b>, relocated into the list-column "Filter ▾" popover instead of a full sidebar.</td></tr>
-    <tr><td>SchemaEditorButton · RecordBulkActions</td><td><b>Reused</b> — schema editor (🗄) and bulk Set-field/Delete in the list header.</td></tr>
-    <tr><td>Group-by / search / list response</td><td><b>Reused</b> logic from today's <code>/media/[typeId]</code> (group_by_value, name fallback) — plus the display-field/title fix.</td></tr>
-    <tr><td>Type rail</td><td><b>New</b> — collapsible navigator listing types via the existing <code>apiListMediaTypes</code>; collapse state persisted in settings.</td></tr>
-    <tr><td>3-pane shell + record list column</td><td><b>New</b> — the explorer layout; replaces the Sidebar + DataGrid + floating EditorPanel composition on the records route only.</td></tr>
-    <tr><td>Routing</td><td><b>Changed</b> — <code>/media</code> becomes the explorer; the active type/record can live in the URL (<code>/media/notes/&lt;id&gt;</code>) for deep links. Files routes untouched.</td></tr>
-  </table>
+			<div class="callout bug" style="margin-top: 18px">
+				<h3>Carried-over fix</h3>
+				<p style="margin: 6px 0 0">
+					The list still needs a real title — today it shows the raw id (<code>55555555</code>) when
+					there's no <code>name</code> field. The explorer's row title uses the same display-field
+					resolution, so this is fixed as part of the build.
+				</p>
+			</div>
 
-  <div class="callout bug" style="margin-top:18px">
-    <h3>Carried-over fix</h3>
-    <p style="margin:6px 0 0">The list still needs a real title — today it shows the raw id (<code>55555555</code>) when there's no <code>name</code> field. The explorer's row title uses the same display-field resolution, so this is fixed as part of the build.</p>
-  </div>
+			<h2>Open questions for the implementation plan</h2>
+			<ul class="tight">
+				<li>
+					<b>Rail content:</b> just record types, or also a top "⌂ Files" entry that jumps back to
+					the Files app? (Leaning: keep it pure-records; Home button returns to the dashboard.)
+				</li>
+				<li>
+					<b>Type icons:</b> auto/none, or a per-type icon picker in type settings? (Mockups assume
+					optional icons; a generic glyph is the default.)
+				</li>
+				<li>
+					<b>Save model:</b> keep today's explicit Save/Delete, or move to autosave like the Files
+					editor? (Mockup shows autosave + "✓ saved".)
+				</li>
+				<li>
+					<b>Deep-link routing:</b> adopt <code>/media/[typeId]/[recordId]</code> now, or keep
+					in-page selection and defer URLs (Backlog Item 20)?
+				</li>
+				<li>
+					<b>Mobile:</b> on narrow widths, collapse to one pane at a time (rail → list → detail as a
+					drill-down)?
+				</li>
+			</ul>
 
-  <h2>Open questions for the implementation plan</h2>
-  <ul class="tight">
-    <li><b>Rail content:</b> just record types, or also a top "⌂ Files" entry that jumps back to the Files app? (Leaning: keep it pure-records; Home button returns to the dashboard.)</li>
-    <li><b>Type icons:</b> auto/none, or a per-type icon picker in type settings? (Mockups assume optional icons; a generic glyph is the default.)</li>
-    <li><b>Save model:</b> keep today's explicit Save/Delete, or move to autosave like the Files editor? (Mockup shows autosave + "✓ saved".)</li>
-    <li><b>Deep-link routing:</b> adopt <code>/media/[typeId]/[recordId]</code> now, or keep in-page selection and defer URLs (Backlog Item 20)?</li>
-    <li><b>Mobile:</b> on narrow widths, collapse to one pane at a time (rail → list → detail as a drill-down)?</li>
-  </ul>
+			<p>
+				If this captures it, I'll write the concrete implementation plan against these answers. Tell
+				me where you land on the open questions (or just say "your call" on any).
+			</p>
 
-  <p>If this captures it, I'll write the concrete implementation plan against these answers. Tell me where you land on the open questions (or just say "your call" on any).</p>
-
-  <div class="footer">
-    Records-only; Files hub unchanged. · Globals excluded (separate editor, later). · Static HTML approximation of the
-    real shadcn-svelte UI. · Live reference screenshots in <code>.screenshots/</code>.
-  </div>
-
-</div>
-</body>
+			<div class="footer">
+				Records-only; Files hub unchanged. · Globals excluded (separate editor, later). · Static
+				HTML approximation of the real shadcn-svelte UI. · Live reference screenshots in
+				<code>.screenshots/</code>.
+			</div>
+		</div>
+	</body>
 </html>

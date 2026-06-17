@@ -325,6 +325,7 @@ export async function apiListRecordsForType(
 		field?: string;
 		empty?: boolean;
 		groupBy?: string;
+		titleField?: string;
 		filters?: ListImagesFilter[];
 	},
 	fetchFn: typeof fetch = fetch
@@ -341,6 +342,7 @@ export async function apiListRecordsForType(
 		if (params?.empty) url.searchParams.set('empty', 'true');
 	}
 	if (params?.groupBy) url.searchParams.set('groupBy', params.groupBy);
+	if (params?.titleField) url.searchParams.set('titleField', params.titleField);
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();

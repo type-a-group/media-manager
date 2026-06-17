@@ -11,6 +11,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	try {
 		const repo = getMediaTypeRepo(params.typeId);
 		const groupBy = url.searchParams.get('groupBy') || undefined;
+		const titleField = url.searchParams.get('titleField') || undefined;
 
 		const filtersRaw = url.searchParams.get('filters');
 		let filters: z.infer<typeof FiltersParamSchema> | undefined;
@@ -21,7 +22,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				/* invalid filters: ignore */
 			}
 		}
-		return json(await repo.listRecords({ filters, groupBy }));
+		return json(await repo.listRecords({ filters, groupBy, titleField }));
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);

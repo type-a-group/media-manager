@@ -15,12 +15,14 @@ import { writeJsonFileAtomic } from './json.js';
  * @param gridSize - Grid cell size for every grid in the app: `small | medium | large`.
  * @param autoAdvanceToNextUnlinked - After saving, advance to the next item automatically.
  * @param autoSaveOnAdvance - Save pending edits before moving to the previous/next item.
+ * @param railCollapsed - Whether the Records Explorer type rail starts collapsed (layout pref).
  * @param classOrder - Optional persisted class ordering for the hub sidebar (preserved on write).
  */
 export interface MediaSettings {
 	gridSize: 'small' | 'medium' | 'large';
 	autoAdvanceToNextUnlinked: boolean;
 	autoSaveOnAdvance: boolean;
+	railCollapsed: boolean;
 	classOrder?: string[];
 }
 
@@ -28,7 +30,8 @@ export interface MediaSettings {
 export const DEFAULT_MEDIA_SETTINGS: MediaSettings = {
 	gridSize: 'medium',
 	autoAdvanceToNextUnlinked: false,
-	autoSaveOnAdvance: false
+	autoSaveOnAdvance: false,
+	railCollapsed: false
 };
 
 function coerce(raw: Record<string, unknown>): MediaSettings {
@@ -44,6 +47,10 @@ function coerce(raw: Record<string, unknown>): MediaSettings {
 			typeof raw.autoSaveOnAdvance === 'boolean'
 				? raw.autoSaveOnAdvance
 				: DEFAULT_MEDIA_SETTINGS.autoSaveOnAdvance,
+		railCollapsed:
+			typeof raw.railCollapsed === 'boolean'
+				? raw.railCollapsed
+				: DEFAULT_MEDIA_SETTINGS.railCollapsed,
 		classOrder: Array.isArray(raw.classOrder)
 			? (raw.classOrder.filter((x) => typeof x === 'string') as string[])
 			: undefined

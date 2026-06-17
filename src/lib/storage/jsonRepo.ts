@@ -255,6 +255,7 @@ export function createJsonRepoForType(typeId: string) {
 	async function listRecords(params?: {
 		filters?: FilterClause[] | null;
 		groupBy?: string | null;
+		titleField?: string | null;
 	}): Promise<JsonListResponse> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
@@ -264,14 +265,47 @@ export function createJsonRepoForType(typeId: string) {
 			records = applyFilters(records, params.filters, settings.schema);
 		}
 		const groupBy = params?.groupBy ?? null;
+		const titleField = params?.titleField ?? null;
 		// Only touch the global manifest/disk when the schema actually has `file` fields to validate.
 		const hasFileField = Object.values(settings.schema).some((d) => d?.type === 'file');
 		const available = hasFileField ? (await getAvailableFileIds()).available : null;
+
+		/** Render a single field value to a short, human-readable string for row titles. */
+		const stringifyFieldValue = (key: string, val: unknown): string | undefined => {
+			const def = settings.schema[key];
+			if (val == null) return undefined;
+			if (def?.type === 'url') {
+				const urlVal = normalizeUrlValue(val);
+				return (urlVal.display_name ?? '').trim() || urlVal.url || undefined;
+			}
+			if (def?.type === 'list' && Array.isArray(val)) {
+				return (
+					val
+						.map((v: unknown) =>
+							v != null && typeof v === 'object' && 'url' in (v as object)
+								? ((v as { display_name?: string; url?: string }).display_name ?? '').trim() ||
+									(v as { url: string }).url ||
+									''
+								: String(v)
+						)
+						.join(', ') || undefined
+				);
+			}
+			if (Array.isArray(val)) return (val as unknown[]).join(', ') || undefined;
+			return String(val) || undefined;
+		};
+
 		const items: JsonListItem[] = records.map((rec) => {
 			const recAny = rec as Record<string, unknown>;
 			const item: JsonListItem = { id: rec.id };
 			// Include name for list/grid display when present (e.g. default "name" field).
 			if (typeof recAny.name === 'string') item.name = recAny.name;
+			// Title-by a chosen schema field (Explorer list rows). Skipped when it's the name field
+			// (already carried) so we don't duplicate work.
+			if (titleField && titleField !== 'name') {
+				const tv = stringifyFieldValue(titleField, recAny[titleField]);
+				if (tv !== undefined) item.title_value = tv;
+			}
 			if (available) {
 				const miss = missingFileFields(recAny, settings.schema, available);
 				if (miss.length) item.missing_file_fields = miss;

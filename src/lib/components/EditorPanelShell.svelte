@@ -4,8 +4,8 @@
 	import { X, ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	/**
-	 * The shared right-hand editor side panel used by both the files hub ({@link FileEditorPanel}) and
-	 * the json record views ({@link RecordEditorPanel}). It owns only chrome — the fixed-width `<aside>`,
+	 * The right-hand editor side panel used by the files hub ({@link FileEditorPanel}). It owns only
+	 * chrome — the fixed-width `<aside>`,
 	 * the prev/next chevrons + ←/→ key navigation, and the close button — and delegates everything
 	 * type-specific (title, header actions, body) to snippets. The grid behind it stays mounted; this
 	 * panel is a flex sibling of `<main>`, not an overlay.
