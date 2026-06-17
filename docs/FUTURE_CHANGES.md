@@ -330,3 +330,9 @@ A per-class review affordance that helps answer "which files should be in this c
 
 - Render PDFs inline via native browser embed (`<iframe>`/`<embed>`, no new deps) in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte), replacing the icon placeholder.
 - Generate/serve first-page PDF thumbnails so the Files grid shows a preview instead of the icon (`hasAllowedImageExtension` currently gates `thumbnailUrl`).
+
+---
+
+## 22. Group-by-field across multiple classes ("all of" view) — ✅ Shipped
+
+**Status**: **Shipped.** In the multi-class **"all of"** view the Group-by dropdown lists one entry per `(class, field)` across the intersected classes, labelled `Class: field` (so same-named fields disambiguate). [`listAllFiles`](../src/lib/storage/classRepo.ts) accepts `groupBy: { classId, field }` and populates each item's `group_by_value` from that class's record (reusing the same `groupByValue` helper as the solo-class catalog); `GET /api/files` takes `groupByClass` + `groupByField`, and [`files/+page.svelte`](../src/routes/files/+page.svelte) loads each selected class's schema keys lazily to build the options and groups client-side over `group_by_value`. See the "All Files hub" row in [`FEATURES.md`](FEATURES.md).

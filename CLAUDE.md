@@ -15,7 +15,7 @@ npm run dev          # dev server with hot reload — REQUIRES MEDIA_MANAGER_ROO
 npm run build        # production build into build/
 npm run start        # node build (MEDIA_MANAGER_ROOT must be in env)
 npm run check        # svelte-kit sync + svelte-check (type checking)
-npm run lint         # prettier --check + eslint
+npm run lint         # = lint:prettier (prettier --check) + lint:eslint; run either standalone to skip the other
 npm run format       # prettier --write .
 npm run test         # vitest run (one-shot)
 npm run test:watch   # vitest watch
@@ -112,7 +112,7 @@ Only `globals` (auto-created `json` singleton) is reserved (`RESERVED_TYPE_IDS`,
 
 - **`/api/files/...`** — the blob/hub surface: `GET /api/files` (All Files, `?classIds&match&unclassified&query`), `upload`, `[id]/blob`, `[id]/rename`, `delete` (bulk from disk), `[id]/metadata(+/strip)`, `[id]/classes` (per-file editor sections + usage), `missing` (global warning).
 - **`/api/classes/...`** — `GET`/`POST` classes, `[id]` (GET/PATCH config/DELETE), `[id]/members` (GET catalog / POST add / DELETE remove), `[id]/schema` (GET/POST/PATCH/PUT/DELETE), `[id]/records/[fileId]` (GET/PATCH), `[id]/records/bulk-update`, `[id]/field-values`.
-- **`/api/media-types/[typeId]/...`** — `json` types only (records list/CRUD, schema, settings, stats); `globals/record`. Legacy `/api/images`, `/api/schema`, `/api/config` were removed.
+- **`/api/media-types/[typeId]/...`** — `json` types only (records `list`/CRUD + `by-id/[id]`, `bulk-update`, `bulk-delete`, `field-values`, `repair`; `schema`, `settings`, `stats`); `globals/record`. See FEATURES.md for the per-endpoint index. Legacy `/api/images`, `/api/schema`, `/api/config` were removed.
 
 Client wrappers: `src/lib/api/files.ts` (files/classes) + the json-side `*ForType` wrappers in `src/lib/api/client.ts`.
 
@@ -123,7 +123,7 @@ Server-side image handling lives outside the repo layer:
 - **Upload** (`/api/files/upload/+server.ts`) is per-blob (any file type): HEIC/HEIF → JPEG via `heic-convert` before saving; other types written as-is, then registered in the manifest.
 - **EXIF metadata** is read/stripped via `exiftool-vendored` (`fileMetadata.ts`), exposed per-blob through `/api/files/[id]/metadata` and `.../strip` (`mode: 'all' | 'gps'`). ExifTool rejects files whose extension disagrees with content, so `fileMetadata.ts` sniffs **magic bytes** first.
 - `ALLOWED_IMAGE_EXTENSIONS` / `ALLOWED_IMAGE_MIME_TYPES` are defined in `src/lib/core/images.ts` (client+server safe); `src/lib/storage/filenames.ts` re-validates persisted filenames to a safe basename.
-- Note: `sharp` is still a declared dependency but is **not** referenced in `src/` — don't reach for it without checking.
+- Note: `sharp` and `@masonry-grid/svelte` are still declared dependencies but are **not** referenced in `src/` — don't reach for them without checking.
 
 ### Frontend
 
@@ -132,7 +132,7 @@ Server-side image handling lives outside the repo layer:
 - **Shared UI components (use these — don't fork):** `src/lib/components/data-grid/DataGrid.svelte` (+ `types.ts`) is the single presentational tile grid — each host maps its rows to the side-agnostic `GridItem` and injects toolbar/bulk controls via snippets. `FieldInput.svelte` is the single schema-driven value input (all `FieldType`s incl. the rich list/url editor + the `FilePicker` file field), used by `FileEditorPanel`, `JsonEditorPane`, and `GlobalsEditorPane` (globals feeds it a synthetic `FieldDefinition`). `schema-editor/SchemaEditorBody.svelte` is the single add/edit/delete-field UI, driven by an injected `SchemaEditorAdapter`; `ClassSchemaDialog.svelte` (classes) and `SchemaEditorButton.svelte` (json) are thin wrappers. `FilePicker.svelte` lists blobs from `/api/files` (the old `blob_store`-discovery path is gone). `ClassFieldInput.svelte` was removed (superseded by `FieldInput`).
 - `/media/[typeId]` serves **only** `json` types via `JsonEditorPane` / `GlobalsEditorPane`, reachable from the dashboard/hub, behind the slimmed `AppSidebar.svelte` shell (records list + multi-filter panel + search + new-record + schema/settings + nav). The legacy `ImageEditorPane`/`ImageViewGrid` components and the images/blob_store/linked-unlinked-excluded/upload machinery were **removed** with the file-first cleanup (blobs live in `/files`); the `MetadataButton` was kept, repointed to the file-first `/api/files` surface, and now lives in `FileEditorPanel`. The `json` record grid still uses `JsonRecordGrid.svelte` (not yet migrated to `DataGrid`).
 - Core (client+server safe, no Node imports): `src/lib/core/` — Zod DTOs (`types.ts`, incl. `ClassFile`/`FileItem`), `filters.ts`, `ids.ts`, `mediaKinds.ts`, `fieldKeys.ts`.
-- State: `src/lib/state/selection.svelte.ts` (runes) + `src/lib/stores/`.
+- State: `src/lib/state/selection.svelte.ts` (runes) + `src/lib/stores/` (`currentMediaType`, `refreshTrigger`, `settings`). Misc: `src/lib/actions/autogrow.ts` (textarea auto-grow action), `src/lib/hooks/is-mobile.svelte.ts` (viewport hook).
 - UI primitives under `src/lib/components/ui/` are shadcn-svelte (bits-ui) components via `components.json`; prefer composing these.
 
 ## Conventions

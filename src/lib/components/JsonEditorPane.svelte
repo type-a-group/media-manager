@@ -14,10 +14,10 @@
 		apiGetSchemaForType,
 		apiGetRecordByIdForType,
 		apiUpdatePropertiesByIdForType,
-		apiDeleteRecordForType,
-		apiGetSettingsForType
+		apiDeleteRecordForType
 	} from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
+	import { settingsStore } from '$lib/stores/settings.js';
 	import { useSelection } from '$lib/state/selection.svelte';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 
@@ -136,12 +136,7 @@
 	$effect(() => {
 		const unregister = selection.registerBeforeSelectAnother(async () => {
 			if (!typeId) return;
-			try {
-				const s = await apiGetSettingsForType(typeId);
-				if (s.autoSaveOnAdvance && isDirty) await save();
-			} catch {
-				// Proceed without saving if settings fetch fails
-			}
+			if (settingsStore.getCurrentSettings().autoSaveOnAdvance && isDirty) await save();
 		});
 		return () => unregister();
 	});
@@ -186,13 +181,8 @@
 	 * Navigate to previous/next record. If autoSaveOnAdvance is enabled and there are unsaved changes, saves first.
 	 */
 	async function navigate(direction: 'prev' | 'next') {
-		if (typeId && isDirty) {
-			try {
-				const s = await apiGetSettingsForType(typeId);
-				if (s.autoSaveOnAdvance) await save();
-			} catch {
-				// Proceed with navigation even if settings fetch fails
-			}
+		if (typeId && isDirty && settingsStore.getCurrentSettings().autoSaveOnAdvance) {
+			await save();
 		}
 		const ids = selection.visibleImageIds;
 		const idx = ids.indexOf(selection.selectedImageId!);

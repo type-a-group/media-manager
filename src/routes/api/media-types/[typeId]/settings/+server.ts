@@ -9,8 +9,7 @@ import {
 import { z } from 'zod';
 
 const SettingsPatchSchema = z.object({
-	displayName: z.string().min(1).max(256).optional(),
-	gridSize: z.enum(['small', 'medium', 'large']).optional()
+	displayName: z.string().min(1).max(256).optional()
 });
 
 /** GET: Current settings for this `json` media type. */
@@ -24,8 +23,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		return json({
 			displayName: settings.displayName,
 			kind: settings.kind,
-			dataFileName: settings.dataFileName,
-			gridSize: settings.gridSize ?? 'medium'
+			dataFileName: settings.dataFileName
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
@@ -53,12 +51,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (!current) throw error(404, 'Media type not found');
 		const patch: Record<string, unknown> = { kind: paths.kind, schema };
 		if (parsed.data.displayName !== undefined) patch.displayName = parsed.data.displayName;
-		if (parsed.data.gridSize !== undefined) patch.gridSize = parsed.data.gridSize;
 		const updated = await writeMediaTypeSettingsFile(paths.baseDir, patch as never);
 		return json({
 			displayName: updated.displayName,
-			kind: updated.kind,
-			gridSize: updated.gridSize ?? 'medium'
+			kind: updated.kind
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

@@ -40,6 +40,9 @@ export interface ListFilesParams {
 	classIds?: string[];
 	matchAll?: boolean;
 	unclassified?: boolean;
+	/** Group the result by one class's field (the multi-class "all of" view). */
+	groupByClass?: string;
+	groupByField?: string;
 }
 
 /** GET /api/files — the All Files hub listing. */
@@ -52,6 +55,10 @@ export async function apiListFiles(
 	if (params.classIds?.length) q.set('classIds', params.classIds.join(','));
 	if (params.matchAll) q.set('match', 'all');
 	if (params.unclassified) q.set('unclassified', 'true');
+	if (params.groupByClass && params.groupByField) {
+		q.set('groupByClass', params.groupByClass);
+		q.set('groupByField', params.groupByField);
+	}
 	const res = await fetchFn(`/api/files?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list files');
 }

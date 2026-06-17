@@ -19,8 +19,7 @@
 	},
 	"config": {
 		"displayName": "Images",
-		"displayField": "caption",
-		"gridSize": "medium"
+		"displayField": "caption"
 	},
 	"records": {
 		"bad5de29-3471-4072-8229-af28c4ae446b": {

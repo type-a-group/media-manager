@@ -416,23 +416,3 @@ export async function apiCreateRecordForType(typeId: string, fetchFn: typeof fet
 	await assertOk(res, 'Failed to create record');
 	return await res.json();
 }
-
-export async function apiGetSettingsForType(typeId: string, fetchFn: typeof fetch = fetch) {
-	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`);
-	await assertOk(res, 'Failed to fetch settings');
-	return await res.json();
-}
-
-export async function apiUpdateSettingsForType(
-	typeId: string,
-	patch: Record<string, unknown>,
-	fetchFn: typeof fetch = fetch
-) {
-	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(patch)
-	});
-	await assertOk(res, 'Failed to update settings');
-	return await res.json();
-}

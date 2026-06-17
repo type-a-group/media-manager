@@ -12,8 +12,8 @@
 
 	/**
 	 * Class settings dialog: edit a class's config — display name, the field shown as each row's
-	 * label (`displayField`), the catalog group-by field (`gridGroupByField`), and grid size — via
-	 * `apiUpdateClassConfig`.
+	 * label (`displayField`), and the catalog group-by field (`gridGroupByField`) — via
+	 * `apiUpdateClassConfig`. Grid size is a global app preference (Settings), not per-class.
 	 *
 	 * @param classId - The class being configured.
 	 * @param open - Bindable dialog open state.
@@ -29,15 +29,12 @@
 		onchanged?: () => void;
 	} = $props();
 
-	const GRID_SIZES = ['small', 'medium', 'large'] as const;
-
 	let loading = $state(false);
 	let saving = $state(false);
 	let schemaKeys = $state<string[]>([]);
 	let displayName = $state('');
 	let displayField = $state('');
 	let gridGroupByField = $state('');
-	let gridSize = $state<'small' | 'medium' | 'large'>('medium');
 
 	async function load() {
 		loading = true;
@@ -47,7 +44,6 @@
 			displayName = detail.config.displayName ?? '';
 			displayField = detail.config.displayField ?? '';
 			gridGroupByField = detail.config.gridGroupByField ?? '';
-			gridSize = detail.config.gridSize ?? 'medium';
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to load class settings');
@@ -68,8 +64,7 @@
 			const patch: Partial<ClassConfig> = {
 				displayName: name,
 				displayField: displayField || undefined,
-				gridGroupByField: gridGroupByField || undefined,
-				gridSize
+				gridGroupByField: gridGroupByField || undefined
 			};
 			await apiUpdateClassConfig(classId, patch);
 			toast.success('Settings saved');
@@ -134,22 +129,6 @@
 							<Select.Item value="">None</Select.Item>
 							{#each schemaKeys as k (k)}
 								<Select.Item value={k}>{fieldLabel(k)}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-
-				<div class="flex flex-col gap-2">
-					<Label>Grid size</Label>
-					<Select.Root
-						type="single"
-						value={gridSize}
-						onValueChange={(v) => (gridSize = v as typeof gridSize)}
-					>
-						<Select.Trigger class="w-40">{gridSize}</Select.Trigger>
-						<Select.Content>
-							{#each GRID_SIZES as s (s)}
-								<Select.Item value={s}>{s}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>

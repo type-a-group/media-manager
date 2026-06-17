@@ -805,6 +805,12 @@ export async function listAllFiles(params?: {
 	classIds?: string[] | null;
 	matchAll?: boolean;
 	unclassified?: boolean;
+	/**
+	 * Group the result by one class's field (the multi-class "all of" view): each item gets a
+	 * `group_by_value` read from that class's record. The field is qualified by class so callers can
+	 * disambiguate same-named fields across the intersected classes.
+	 */
+	groupBy?: { classId: string; field: string } | null;
 }): Promise<FileListResponse> {
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
@@ -813,6 +819,17 @@ export async function listAllFiles(params?: {
 	const classIds = params?.classIds ?? null;
 	const matchAll = params?.matchAll ?? false;
 	const unclassified = params?.unclassified ?? false;
+	const groupBy = params?.groupBy ?? null;
+
+	// Load the group-by class once so we can read each member's field value (best-effort).
+	let groupByClassFile: ClassFile | null = null;
+	if (groupBy) {
+		try {
+			groupByClassFile = await readClassFile(groupBy.classId);
+		} catch {
+			groupByClassFile = null;
+		}
+	}
 
 	const files: FileItem[] = [];
 	for (const [id, entry] of Object.entries(manifest.files)) {
@@ -826,7 +843,12 @@ export async function listAllFiles(params?: {
 				: classIds.some((c) => entry.classes.includes(c));
 			if (!has) continue;
 		}
-		files.push(fileItemFromEntry(id, manifest));
+		const item = fileItemFromEntry(id, manifest);
+		if (groupByClassFile) {
+			const rec = (groupByClassFile.records[id] ?? {}) as Record<string, unknown>;
+			item.group_by_value = groupByValue(rec, groupByClassFile.schema, groupBy!.field);
+		}
+		files.push(item);
 	}
 	files.sort((a, b) => a.file_name.localeCompare(b.file_name));
 	return { files, healed };

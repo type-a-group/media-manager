@@ -276,8 +276,7 @@ export type ImageListResponse = z.infer<typeof ImageListResponseSchema>;
 export const ClassConfigSchema = z.object({
 	displayName: z.string().default(''),
 	gridGroupByField: z.string().optional(),
-	displayField: z.string().optional(),
-	gridSize: z.enum(['small', 'medium', 'large']).optional()
+	displayField: z.string().optional()
 });
 export type ClassConfig = z.infer<typeof ClassConfigSchema>;
 

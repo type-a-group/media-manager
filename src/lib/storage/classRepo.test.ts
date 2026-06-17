@@ -79,6 +79,32 @@ describe('classRepo — opt-in class membership', () => {
 		expect(files[0].classes).toEqual([]);
 	});
 
+	it('groups the multi-class "all of" listing by a chosen class field', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+
+		const images = await createClass('Images', schema);
+		const docs = await createClass('Documents', {
+			description: { type: 'string', removable: true, defaultValue: '' }
+		} as unknown as SchemaDefinition);
+		await addMembers(images, [fileId]);
+		await addMembers(docs, [fileId]);
+		await updateRecord(docs, fileId, { description: 'Scenic' });
+
+		// Intersection of both classes, grouped by the Documents field.
+		const { files } = await listAllFiles({
+			classIds: [images, docs],
+			matchAll: true,
+			groupBy: { classId: docs, field: 'description' }
+		});
+		expect(files.map((f) => f.id)).toEqual([fileId]);
+		expect(files[0].group_by_value).toBe('Scenic');
+
+		// Without groupBy the value is absent.
+		const plain = await listAllFiles({ classIds: [images, docs], matchAll: true });
+		expect(plain.files[0].group_by_value).toBeUndefined();
+	});
+
 	it('an empty-schema class is a valid pure tag', async () => {
 		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
 		const fileId = (await listAllFiles()).files[0].id;

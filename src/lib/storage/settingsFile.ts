@@ -20,14 +20,15 @@ export type MediaTypeKind = 'json';
  * @param kind - Always `json`
  * @param schema - Field definitions (embedded)
  * @param dataFileName - Filename for the records JSON (default `data.json`)
- * @param gridSize - Grid cell size (app preference)
+ *
+ * Grid size and navigation prefs are **global** app settings (`media/settings.json` via
+ * `mediaSettings.ts`), not per-type — they are intentionally absent here.
  */
 export interface MediaTypeSettingsFile {
 	displayName?: string;
 	kind: MediaTypeKind;
 	schema?: SchemaDefinition;
 	dataFileName?: string;
-	gridSize?: 'small' | 'medium' | 'large';
 }
 
 /**
@@ -52,10 +53,7 @@ export function readMediaTypeSettingsFileSync(baseDir: string): MediaTypeSetting
 			kind: 'json',
 			schema,
 			dataFileName:
-				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON,
-			gridSize: ['small', 'medium', 'large'].includes(parsed.gridSize as string)
-				? (parsed.gridSize as 'small' | 'medium' | 'large')
-				: 'medium'
+				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON
 		};
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException;
@@ -81,8 +79,7 @@ export async function writeMediaTypeSettingsFile(
 				displayName: patch.displayName,
 				kind: patch.kind,
 				schema: patch.schema ?? {},
-				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON,
-				gridSize: patch.gridSize ?? 'medium'
+				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON
 			};
 	const settingsPath = path.join(baseDir, 'settings.json');
 	await fs.mkdir(path.dirname(settingsPath), { recursive: true });

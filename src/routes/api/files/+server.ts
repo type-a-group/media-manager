@@ -10,6 +10,8 @@ import { listAllFiles } from '$lib/storage/classRepo.js';
  * - `classIds`     — comma-separated class ids to filter by.
  * - `match`        — `all` | `any` (default `any`) for multi-class filtering.
  * - `unclassified` — `true` to show only blobs with zero class memberships.
+ * - `groupByClass` + `groupByField` — group the result by one class's field (the "all of" view);
+ *   each item gets a `group_by_value` read from that class's record.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	try {
@@ -23,7 +25,14 @@ export const GET: RequestHandler = async ({ url }) => {
 			: null;
 		const matchAll = url.searchParams.get('match') === 'all';
 		const unclassified = url.searchParams.get('unclassified') === 'true';
-		const data = await listAllFiles({ query, classIds, matchAll, unclassified });
+		const groupByClass = url.searchParams.get('groupByClass');
+		const groupByField = url.searchParams.get('groupByField');
+		const idPattern = /^[a-zA-Z0-9_-]+$/;
+		const groupBy =
+			groupByClass && groupByField && idPattern.test(groupByClass)
+				? { classId: groupByClass, field: groupByField }
+				: null;
+		const data = await listAllFiles({ query, classIds, matchAll, unclassified, groupBy });
 		return json(data);
 	} catch (err) {
 		console.error('List files error:', err);

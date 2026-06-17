@@ -39,7 +39,7 @@ function createSettingsStore() {
 	 */
 	async function fetchSettings(): Promise<void> {
 		try {
-			const res = await fetch('/api/config/settings');
+			const res = await fetch('/api/settings');
 			if (res.ok) {
 				const data = await res.json();
 				set({
@@ -62,7 +62,7 @@ function createSettingsStore() {
 	): Promise<void> {
 		update((s) => ({ ...s, [key]: value }));
 		try {
-			await fetch('/api/config/settings', {
+			await fetch('/api/settings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ [key]: value })
@@ -78,7 +78,7 @@ function createSettingsStore() {
 	async function resetToDefaults(): Promise<void> {
 		set(defaultSettings);
 		try {
-			await fetch('/api/config/settings', {
+			await fetch('/api/settings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(defaultSettings)

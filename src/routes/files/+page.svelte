@@ -22,32 +22,47 @@
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import ClassSchemaDialog from '$lib/components/ClassSchemaDialog.svelte';
 	import ClassSettingsDialog from '$lib/components/ClassSettingsDialog.svelte';
-	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
+	import SettingsButton from '$lib/components/SettingsButton.svelte';
 	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
 	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as Popover from '$lib/components/ui/popover/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Home, MoreVertical, Plus, Upload, Settings } from 'lucide-svelte';
+	import { Home, MoreVertical, Plus, Upload } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
+	import { useSelection } from '$lib/state/selection.svelte';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
+
+	const selection = useSelection();
 
 	let files = $state<FileItem[]>([]);
 	let classes = $state<ClassSummary[]>([]);
 	let loading = $state(true);
 
-	/** Catalog view (single class) config: ad-hoc group-by, grid size, and the class's schema keys. */
+	/** Catalog view (single class) config: ad-hoc group-by and the class's schema keys. */
 	let catalogSchemaKeys = $state<string[]>([]);
 	let catalogGroupBy = $state('');
-	let catalogSize = $state<'small' | 'medium' | 'large'>('medium');
 	let catalogLoadedFor: string | null = null;
+	/**
+	 * Grid size for every view here — a single global app setting (`media/settings.json`), shared
+	 * with the catalog, multi-class, and `json` record grids. Synced from the store; changing it
+	 * persists globally (see {@link setSize}).
+	 */
+	let gridSize = $state<'small' | 'medium' | 'large'>('medium');
+	/** Group the All Files / "any of" views by each file's exact set of classes (flat by default). */
+	let groupByClass = $state(false);
+	/**
+	 * Multi-class "all of" view: group by one class's field, encoded `classId::field` ('' = flat).
+	 * Schema keys per selected class are loaded lazily into `crossSchemas` for the option list.
+	 */
+	let crossGroupBy = $state('');
+	let crossSchemas = $state<Record<string, string[]>>({});
 	/** Bumped to force the open editor panel to reload (e.g. after a class schema change). */
 	let editorRefresh = $state(0);
 
@@ -67,8 +82,6 @@
 	let bulkClassId = $state('');
 	let deleteFilesOpen = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
-	/** Save pending edits before prev/next in the editor panel (persisted app setting). */
-	let autoSave = $state(false);
 
 	// Class management dialogs
 	let schemaOpen = $state(false);
@@ -96,6 +109,23 @@
 	const soloClass = $derived(
 		!unclassified && selectedClasses.size === 1 ? [...selectedClasses][0] : null
 	);
+	/** Multiple classes intersected with "all of" ⇒ offer group-by-field across those classes. */
+	const crossMode = $derived(matchAll && selectedClasses.size > 1 && !unclassified);
+	/** Group-by options for {@link crossMode}: one `classId::field` entry per field, labelled `Class: field`. */
+	const crossOptions = $derived.by(() => {
+		if (!crossMode) return [] as { value: string; label: string }[];
+		const opts: { value: string; label: string }[] = [];
+		for (const cid of [...selectedClasses].sort((a, b) => a.localeCompare(b))) {
+			const name = classLabel(cid);
+			for (const k of crossSchemas[cid] ?? []) {
+				opts.push({ value: `${cid}::${k}`, label: `${name}: ${fieldLabel(k)}` });
+			}
+		}
+		return opts;
+	});
+	const crossGroupByLabel = $derived(
+		crossGroupBy ? (crossOptions.find((o) => o.value === crossGroupBy)?.label ?? 'None') : 'None'
+	);
 	const bulkLabel = $derived(
 		classes.find((c) => c.id === bulkClassId)?.displayName ?? 'Add to class…'
 	);
@@ -106,11 +136,9 @@
 			const detail = await apiGetClass(classId);
 			catalogSchemaKeys = Object.keys(detail.schema).sort((a, b) => a.localeCompare(b));
 			catalogGroupBy = detail.config.gridGroupByField ?? '';
-			catalogSize = detail.config.gridSize ?? 'medium';
 		} catch {
 			catalogSchemaKeys = [];
 			catalogGroupBy = '';
-			catalogSize = 'medium';
 		}
 	}
 
@@ -129,11 +157,14 @@
 				files = data.files;
 			} else {
 				catalogLoadedFor = null;
+				const [gc, gf] = crossMode && crossGroupBy ? crossGroupBy.split('::') : [];
 				const data = await apiListFiles({
 					query: query || undefined,
 					classIds: unclassified ? [] : [...selectedClasses],
 					matchAll,
-					unclassified
+					unclassified,
+					groupByClass: gc,
+					groupByField: gf
 				});
 				files = data.files;
 			}
@@ -145,6 +176,12 @@
 	/** Re-run the catalog member query when the user picks a different group-by field. */
 	async function changeCatalogGroupBy(field: string) {
 		catalogGroupBy = field;
+		await loadFiles();
+	}
+
+	/** Re-run the "all of" listing when the user picks a different cross-class group-by field. */
+	async function changeCrossGroupBy(value: string) {
+		crossGroupBy = value;
 		await loadFiles();
 	}
 
@@ -163,9 +200,13 @@
 		editorRefresh++;
 	}
 
-	/** Files grouped by the catalog group-by value, or null when not grouping. */
-	const groupedFiles = $derived.by(() => {
-		if (!soloClass || !catalogGroupBy) return null;
+	/** Resolve a class id to its display name (falls back to the raw id). */
+	function classLabel(cid: string): string {
+		return classes.find((c) => c.id === cid)?.displayName ?? cid;
+	}
+
+	/** Group files by their server-provided `group_by_value` (solo-class field or cross-class field). */
+	function groupByFieldValue(): [string, FileItem[]][] {
 		const groups: Record<string, FileItem[]> = {};
 		for (const f of files) {
 			const v = f.group_by_value;
@@ -180,6 +221,37 @@
 			(groups[key] ??= []).push(f);
 		}
 		return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+	}
+
+	/**
+	 * Files grouped for the grid, or null when showing a flat list:
+	 * - solo class + a chosen field → server-provided `group_by_value`;
+	 * - multi-class "all of" + a chosen `Class: field` → likewise via `group_by_value`;
+	 * - All Files / "any of" view + Group-by-class → each file's exact set of classes joined as one
+	 *   combo group ("Images + Documents"), with member-less files under "Unclassified".
+	 */
+	const groupedFiles = $derived.by(() => {
+		if (soloClass) {
+			return catalogGroupBy ? groupByFieldValue() : null;
+		}
+		if (crossMode && crossGroupBy) {
+			return groupByFieldValue();
+		}
+		if (groupByClass && !unclassified) {
+			const groups: Record<string, FileItem[]> = {};
+			for (const f of files) {
+				const key =
+					f.classes.length === 0
+						? 'Unclassified'
+						: f.classes
+								.map(classLabel)
+								.sort((a, b) => a.localeCompare(b))
+								.join(' + ');
+				(groups[key] ??= []).push(f);
+			}
+			return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+		}
+		return null;
 	});
 
 	/** Map a blob row to a side-agnostic grid item (chips = class membership, capped at 3 + "+N"). */
@@ -192,7 +264,7 @@
 			chips:
 				f.classes.length === 0
 					? [{ label: 'unclassified', tone: 'muted' }]
-					: shown.map((cid) => ({ label: classes.find((c) => c.id === cid)?.displayName ?? cid })),
+					: shown.map((cid) => ({ label: classLabel(cid) })),
 			extraChips: f.classes.length > 3 ? f.classes.length - 3 : undefined,
 			warning: f.missing_file_fields?.length
 				? `Missing file reference: ${f.missing_file_fields.join(', ')}`
@@ -206,11 +278,24 @@
 			? groupedFiles.map(([k, list]) => [k, list.map(toGridItem)] as [string | null, GridItem[]])
 			: null
 	);
+	/** Persist a new grid size globally (and update the shared selection state for `json` grids). */
+	function setSize(v: 'small' | 'medium' | 'large') {
+		gridSize = v;
+		selection.setGridSize(v);
+		settingsStore.updateSetting('gridSize', v);
+	}
+
 	const gridConfig = $derived<GridConfig>({
-		size: soloClass ? catalogSize : 'medium',
+		size: gridSize,
 		selectable: true,
 		activeId: editorFileId,
-		groupLabel: (k) => `${fieldLabel(catalogGroupBy)}: ${k}`,
+		// Solo/cross field groups prefix the (qualified) field name; class-combo keys are self-describing.
+		groupLabel: (k) =>
+			soloClass
+				? `${fieldLabel(catalogGroupBy)}: ${k}`
+				: crossMode && crossGroupBy
+					? `${crossGroupByLabel}: ${k}`
+					: k,
 		emptyText: 'No files.'
 	});
 	const gridCallbacks: GridCallbacks = {
@@ -219,9 +304,17 @@
 		isSelected: (id) => selectedIds.has(id)
 	};
 
+	// Keep the toolbar size control in sync with the global settings store (so the Settings dialog
+	// on this same page updates it live).
+	$effect(() => {
+		const unsubscribe = settingsStore.subscribe((s) => {
+			gridSize = s.gridSize;
+		});
+		return () => unsubscribe();
+	});
+
 	onMount(async () => {
 		await settingsStore.fetchSettings();
-		autoSave = settingsStore.getCurrentSettings().autoSaveOnAdvance;
 		await loadMeta();
 		// ?class=<id> opens directly in that class's catalog view.
 		const initialClass = $page.url.searchParams.get('class');
@@ -230,11 +323,6 @@
 		}
 		await loadFiles();
 	});
-
-	function toggleAutoSave(v: boolean) {
-		autoSave = v;
-		settingsStore.updateSetting('autoSaveOnAdvance', v);
-	}
 
 	// Reload the grid when filters/search change.
 	$effect(() => {
@@ -245,18 +333,36 @@
 		loadFiles();
 	});
 
+	// In "all of" mode, lazily load each selected class's schema keys for the group-by-field options.
+	$effect(() => {
+		if (!crossMode) return;
+		for (const cid of [...selectedClasses]) {
+			if (crossSchemas[cid]) continue;
+			apiGetClass(cid)
+				.then((d) => {
+					crossSchemas = {
+						...crossSchemas,
+						[cid]: Object.keys(d.schema).sort((a, b) => a.localeCompare(b))
+					};
+				})
+				.catch(() => {});
+		}
+	});
+
 	function toggleClassFilter(id: string) {
 		if (selectedClasses.has(id)) selectedClasses.delete(id);
 		else {
 			selectedClasses.add(id);
 			unclassified = false;
 		}
+		crossGroupBy = ''; // a stale class::field would no longer match the selection
 	}
 
 	function clearFilters() {
 		selectedClasses.clear();
 		unclassified = false;
 		query = '';
+		crossGroupBy = '';
 	}
 
 	function toggleSelect(id: string) {
@@ -453,7 +559,15 @@
 				{#if selectedClasses.size > 1 && !unclassified}
 					<div class="mt-2 flex items-center gap-2">
 						<span class="text-xs text-muted-foreground">Match</span>
-						<Button variant="outline" size="sm" class="h-7" onclick={() => (matchAll = !matchAll)}>
+						<Button
+							variant="outline"
+							size="sm"
+							class="h-7"
+							onclick={() => {
+								matchAll = !matchAll;
+								crossGroupBy = '';
+							}}
+						>
 							{matchAll ? 'all of' : 'any of'}
 						</Button>
 					</div>
@@ -497,8 +611,8 @@
 			<span class="text-sm text-muted-foreground"
 				>{files.length} file{files.length === 1 ? '' : 's'}</span
 			>
-			{#if soloClass}
-				<div class="flex items-center gap-1.5 text-sm">
+			<div class="flex items-center gap-1.5 text-sm">
+				{#if soloClass}
 					<span class="text-muted-foreground">Group by</span>
 					<Select.Root type="single" value={catalogGroupBy} onValueChange={changeCatalogGroupBy}>
 						<Select.Trigger class="h-8 w-36"
@@ -511,47 +625,47 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
-					<span class="text-muted-foreground">Size</span>
-					<Select.Root
-						type="single"
-						value={catalogSize}
-						onValueChange={(v) => (catalogSize = v as typeof catalogSize)}
-					>
-						<Select.Trigger class="h-8 w-28">{catalogSize}</Select.Trigger>
+				{:else if crossMode}
+					<span class="text-muted-foreground">Group by</span>
+					<Select.Root type="single" value={crossGroupBy} onValueChange={changeCrossGroupBy}>
+						<Select.Trigger class="h-8 w-48">{crossGroupByLabel}</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="small">small</Select.Item>
-							<Select.Item value="medium">medium</Select.Item>
-							<Select.Item value="large">large</Select.Item>
+							<Select.Item value="">None</Select.Item>
+							{#each crossOptions as o (o.value)}
+								<Select.Item value={o.value}>{o.label}</Select.Item>
+							{/each}
 						</Select.Content>
 					</Select.Root>
-				</div>
-			{/if}
+				{:else if !unclassified}
+					<span class="text-muted-foreground">Group by</span>
+					<Select.Root
+						type="single"
+						value={groupByClass ? 'class' : ''}
+						onValueChange={(v) => (groupByClass = v === 'class')}
+					>
+						<Select.Trigger class="h-8 w-36">{groupByClass ? 'Class' : 'None'}</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">None</Select.Item>
+							<Select.Item value="class">Class</Select.Item>
+						</Select.Content>
+					</Select.Root>
+				{/if}
+				<span class="text-muted-foreground">Size</span>
+				<Select.Root
+					type="single"
+					value={gridSize}
+					onValueChange={(v) => setSize(v as 'small' | 'medium' | 'large')}
+				>
+					<Select.Trigger class="h-8 w-28">{gridSize}</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="small">small</Select.Item>
+						<Select.Item value="medium">medium</Select.Item>
+						<Select.Item value="large">large</Select.Item>
+					</Select.Content>
+				</Select.Root>
+			</div>
 			<div class="flex-1"></div>
-			<Popover.Root>
-				<Popover.Trigger>
-					{#snippet child({ props })}
-						<Button {...props} variant="ghost" size="icon" title="Settings">
-							<Settings class="size-4" />
-						</Button>
-					{/snippet}
-				</Popover.Trigger>
-				<Popover.Content align="end" class="w-60">
-					<div class="flex flex-col gap-3">
-						<p class="text-sm font-medium">Settings</p>
-						<div class="flex items-center gap-2">
-							<Checkbox
-								id="autosave-advance"
-								checked={autoSave}
-								onCheckedChange={(v) => toggleAutoSave(v === true)}
-							/>
-							<Label for="autosave-advance" class="cursor-pointer text-sm font-normal">
-								Autosave on advance
-							</Label>
-						</div>
-						<AppearanceSettings />
-					</div>
-				</Popover.Content>
-			</Popover.Root>
+			<SettingsButton />
 			<Button size="sm" onclick={() => fileInput?.click()}>
 				<Upload class="size-4" /> Upload
 			</Button>

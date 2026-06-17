@@ -1,4 +1,6 @@
 {
 	"classOrder": ["images", "documents"],
-	"gridSize": "medium"
+	"gridSize": "medium",
+	"autoAdvanceToNextUnlinked": false,
+	"autoSaveOnAdvance": false
 }

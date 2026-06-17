@@ -13,6 +13,5 @@
 		},
 		"attachment": { "type": "file", "removable": true, "defaultValue": "" }
 	},
-	"dataFileName": "data.json",
-	"gridSize": "medium"
+	"dataFileName": "data.json"
 }
