@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Plan — Make the Records UI match the Media UI (grid + side panel)</title>
+		<style>
+			:root {
+				--bg: #0f1115;
+				--card: #171a21;
+				--card2: #1d2129;
+				--line: #2a2f3a;
+				--text: #e6e9ef;
+				--muted: #9aa3b2;
+				--accent: #7aa2ff;
+				--good: #59c47b;
+				--warn: #e0b252;
+				--bad: #e06a6a;
+				--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--text);
+				font:
+					15px/1.6 system-ui,
+					-apple-system,
+					Segoe UI,
+					Roboto,
+					sans-serif;
+				padding: 0 0 80px;
+			}
+			header.top {
+				padding: 28px 32px;
+				border-bottom: 1px solid var(--line);
+				background: linear-gradient(180deg, #181c24, #0f1115);
+			}
+			header.top h1 {
+				margin: 0 0 6px;
+				font-size: 24px;
+			}
+			header.top p {
+				margin: 0;
+				color: var(--muted);
+			}
+			main {
+				max-width: 1100px;
+				margin: 0 auto;
+				padding: 0 32px;
+			}
+			section {
+				margin: 38px 0;
+			}
+			h2 {
+				font-size: 19px;
+				border-left: 3px solid var(--accent);
+				padding-left: 10px;
+				margin: 0 0 14px;
+			}
+			h3 {
+				font-size: 15px;
+				color: var(--accent);
+				margin: 22px 0 8px;
+			}
+			.card {
+				background: var(--card);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 16px 18px;
+				margin: 12px 0;
+			}
+			.grid2 {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 16px;
+			}
+			@media (max-width: 760px) {
+				.grid2 {
+					grid-template-columns: 1fr;
+				}
+			}
+			code,
+			.mono {
+				font-family: var(--mono);
+				font-size: 13px;
+			}
+			code {
+				background: var(--card2);
+				padding: 1px 5px;
+				border-radius: 4px;
+				color: #cfe0ff;
+			}
+			.tag {
+				display: inline-block;
+				font-size: 11px;
+				font-family: var(--mono);
+				padding: 2px 7px;
+				border-radius: 999px;
+				border: 1px solid var(--line);
+				color: var(--muted);
+				margin-right: 6px;
+			}
+			.tag.good {
+				color: var(--good);
+				border-color: #2c4a37;
+			}
+			.tag.warn {
+				color: var(--warn);
+				border-color: #4a3f22;
+			}
+			.tag.bad {
+				color: var(--bad);
+				border-color: #4a2c2c;
+			}
+			ul {
+				margin: 8px 0;
+				padding-left: 20px;
+			}
+			li {
+				margin: 5px 0;
+			}
+			.ascii {
+				font-family: var(--mono);
+				font-size: 12.5px;
+				white-space: pre;
+				background: #0b0d11;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 14px;
+				overflow-x: auto;
+				color: #b9c2d0;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 14px;
+			}
+			th,
+			td {
+				text-align: left;
+				padding: 8px 10px;
+				border-bottom: 1px solid var(--line);
+				vertical-align: top;
+			}
+			th {
+				color: var(--muted);
+				font-weight: 600;
+			}
+			.q {
+				background: var(--card2);
+				border: 1px solid #34405e;
+				border-radius: 10px;
+				padding: 14px 16px;
+				margin: 12px 0;
+			}
+			.q b {
+				color: var(--accent);
+			}
+			.pill {
+				font-size: 12px;
+				color: var(--muted);
+			}
+			.legend span {
+				margin-right: 16px;
+			}
+		</style>
+	</head>
+	<body>
+		<header class="top">
+			<h1>Make the Records UI match the Media (Files) UI</h1>
+			<p>
+				Grid stays open · clicking a record opens a right-hand side panel · maximize shared
+				components
+			</p>
+		</header>
+
+		<main>
+			<section>
+				<h2>1 · The goal</h2>
+				<div class="card">
+					Today the <b>Files hub</b> (<code>/files</code>) shows a grid and, when you click a tile,
+					a <b>side panel</b> slides in on the right while the grid stays visible. The
+					<b>Records views</b> (<code>/media/[typeId]</code>) do <i>not</i> do this: clicking a
+					record <b>replaces</b> the grid with a full-width editor. We want records to behave
+					exactly like files — grid + side panel — and in doing so collapse the two divergent
+					implementations onto <b>shared components</b> so future sessions don't re-fork them.
+				</div>
+			</section>
+
+			<section>
+				<h2>2 · Where the two screens stand today</h2>
+				<div class="grid2">
+					<div class="card">
+						<h3 style="margin-top: 0">Files hub — <span class="tag good">target pattern</span></h3>
+						<div class="ascii">
+							┌ Sidebar ─┬──── main ─────┬ panel ┐ │ class │ DataGrid │ File │ │ filters │ (shared)
+							│ Editor│ │ + search │ [tiles…] │ Panel │ │ │ │ (open │ │ │ stays open ◄──┤ on │ │ │ │
+							click)│ └──────────┴───────────────┴───────┘
+						</div>
+						<ul>
+							<li>Self-contained page; owns its own <code>Sidebar</code>.</li>
+							<li>Uses the shared <code>DataGrid</code>.</li>
+							<li>
+								<code>FileEditorPanel.svelte</code> = right <code>&lt;aside&gt;</code> (420px),
+								prev/next chevrons, autosave-on-advance, close.
+							</li>
+							<li>
+								Editor open-state is <b>local</b> (<code>editorFileId</code>), not the global store.
+							</li>
+						</ul>
+					</div>
+					<div class="card">
+						<h3 style="margin-top: 0">Records views — <span class="tag warn">to change</span></h3>
+						<div class="ascii">
+							┌ AppSidebar ─┬──────── main ────────┐ │ record-name │ EITHER JsonRecordGrid│ │ list │
+							OR full-width editor │ │ + filters │ OR "select a record" │ │ + grid btn │ (they swap,
+							never │ │ + search │ coexist) │ └─────────────┴───────────────────────┘
+						</div>
+						<ul>
+							<li>Shell (<code>AppSidebar</code>) lives in <code>+layout.svelte</code>.</li>
+							<li>
+								<code>JsonRecordGrid.svelte</code> is a <b>hand-rolled</b> tile grid — duplicates
+								<code>DataGrid</code>.
+							</li>
+							<li>
+								Editor is the full-width branch of <code>JsonEditorPane.svelte</code> — replaces the
+								grid.
+							</li>
+							<li>
+								Drives everything through the global <code>selection</code> store
+								(<code>gridViewActive</code>, <code>selectedImageId</code>, …).
+							</li>
+						</ul>
+					</div>
+				</div>
+			</section>
+
+			<section>
+				<h2>3 · Proposed target for <code>/media/[typeId]</code></h2>
+				<div class="card">
+					<div class="ascii">
+						┌ Sidebar ─┬──────── main ────────┬ panel ┐ │ filters │ DataGrid (shared) │ Record│ │ +
+						search │ [record tiles…] │ Editor│ │ │ │ Panel │ │ │ stays open ◄──────────┤ (open │ │ │
+						│ on │ │ │ │ click)│ └──────────┴────────────────────────┴───────┘
+					</div>
+					<ul>
+						<li>
+							<b>DataGrid replaces JsonRecordGrid.</b> Records map to the side-agnostic
+							<code>GridItem</code> (no thumbnail → file-icon fallback; chips can show group value /
+							key fields; warning = missing-file ref). Deletes ~290 lines of duplicate grid +
+							group/section logic.
+						</li>
+						<li>
+							<b>New <code>RecordEditorPanel.svelte</code></b> = right side panel mirroring
+							<code>FileEditorPanel</code>'s shell: prev/next chevrons + ←/→ keys,
+							autosave-on-advance, close button, scrollable body of schema-driven
+							<code>FieldInput</code>s, Save + Delete. The grid stays mounted behind it.
+						</li>
+						<li>
+							<b>Grid is always shown</b> — the grid-view toggle and the "select a record"
+							placeholder go away. Clicking a tile opens the panel; it doesn't swap the main area.
+						</li>
+						<li>
+							<b>Bulk actions</b> (current "Select" mode, Set field…, Delete) move into the grid's
+							<code>bulkBar</code> snippet, exactly like the files hub's bulk bar.
+						</li>
+					</ul>
+				</div>
+			</section>
+
+			<section>
+				<h2>4 · Reuse / dead-code reduction (your stated priority)</h2>
+				<table>
+					<tr>
+						<th>Component</th>
+						<th>Today</th>
+						<th>Plan</th>
+					</tr>
+					<tr>
+						<td><code>DataGrid</code></td>
+						<td>Used by files only; records fork it as <code>JsonRecordGrid</code>.</td>
+						<td>
+							<span class="tag good">Reuse</span> for records too. Retire
+							<code>JsonRecordGrid.svelte</code>.
+						</td>
+					</tr>
+					<tr>
+						<td>Editor side-panel shell</td>
+						<td>
+							Only <code>FileEditorPanel</code> has the chevron/close/autosave-advance header.
+						</td>
+						<td>
+							<span class="tag good">Extract</span> a shared
+							<code>EditorPanelShell.svelte</code> (header: prev/next, title slot, close; body slot;
+							←/→ key + autosave-advance plumbing). Both <code>FileEditorPanel</code> and the new
+							<code>RecordEditorPanel</code> compose it.
+						</td>
+					</tr>
+					<tr>
+						<td>Group-by + Size toolbar</td>
+						<td>Re-implemented in the files header <i>and</i> in <code>JsonRecordGrid</code>.</td>
+						<td>
+							<span class="tag warn">Optional</span> small
+							<code>GridToolbarControls.svelte</code> (group-by Select + size Select) shared by
+							both. Low risk, kills a 3rd copy.
+						</td>
+					</tr>
+					<tr>
+						<td><code>FieldInput</code></td>
+						<td>Already shared (files panel, json editor, globals).</td>
+						<td><span class="tag good">No change</span> — keep using it in the new panel.</td>
+					</tr>
+					<tr>
+						<td>Left sidebar</td>
+						<td>
+							Files brings its own; records use <code>AppSidebar</code>. Different filter models
+							(class membership vs schema-field operators).
+						</td>
+						<td>
+							<span class="tag warn">Discuss</span> — see Q1. Full unification is a larger lift; the
+							filter semantics genuinely differ.
+						</td>
+					</tr>
+				</table>
+			</section>
+
+			<section>
+				<h2>5 · Other optimizations worth folding in</h2>
+				<div class="card">
+					<ul>
+						<li>
+							<b>Collapse the <code>selection</code> store's dead legacy.</b>
+							<code>viewMode: 'linked' | 'unlinked' | 'excluded'</code> and
+							<code>gridViewActive</code> are leftovers from the retired image model. Once records
+							use a side panel, several of these become unused — a clean spot to delete them and the
+							<code>ImageListItem</code>-era naming (<code>selectImage</code>,
+							<code>visibleImageIds</code>) in favor of record-neutral names.
+						</li>
+						<li>
+							<b>Unify how the editor open-state is tracked.</b> Files use a local
+							<code>editorFileId</code>; records use the global store. Pick one model for both
+							(local per-page state reads cleanest and matches files) so the two screens stay
+							structurally identical.
+						</li>
+						<li>
+							<b>Consistent empty/loading states</b> via <code>DataGrid</code>'s built-in
+							<code>emptyText</code> rather than bespoke "No records to display." markup.
+						</li>
+						<li>
+							<b>Globals stays special-cased.</b> <code>globals</code> is a single-record json
+							singleton with no grid; it keeps <code>GlobalsEditorPane</code> as-is (called out so
+							we don't accidentally break parity — see CLAUDE.md).
+						</li>
+						<li>
+							<b>Docs in the same change:</b> update <code>docs/FEATURES.md</code> (records now
+							grid+panel; <code>JsonRecordGrid</code> retired) and the
+							<code>test-fixtures</code> note if any on-disk behavior shifts (it shouldn't — this is
+							UI-only).
+						</li>
+					</ul>
+				</div>
+			</section>
+
+			<section>
+				<h2>6 · Rollout (so we can stop at a known-good point)</h2>
+				<div class="card">
+					<ol>
+						<li>
+							<b>Extract <code>EditorPanelShell</code></b> from <code>FileEditorPanel</code> (pure
+							refactor; files behaves identically). Verify files still work.
+						</li>
+						<li>
+							<b>Build <code>RecordEditorPanel</code></b> on the shell; render it as a side panel
+							from the records page while keeping the old grid temporarily.
+						</li>
+						<li>
+							<b>Swap <code>JsonRecordGrid</code> → <code>DataGrid</code></b> on the records page;
+							move bulk actions into the bulk bar.
+						</li>
+						<li>
+							<b>Restructure the records sidebar</b> per Q1 (drop record-list + grid toggle, or
+							keep).
+						</li>
+						<li>
+							<b>Delete dead code</b> (<code>JsonRecordGrid</code>, unused
+							<code>selection</code> fields), update docs, run
+							<code>check</code>/<code>lint</code>/<code>test</code> + a manual serve.
+						</li>
+					</ol>
+				</div>
+			</section>
+
+			<section>
+				<h2>7 · Open questions (let's decide these before I build)</h2>
+				<div class="q">
+					<b>Q1 — The left sidebar's record list.</b> Records currently appear as a clickable
+					name-list in the sidebar <i>and</i> can be shown as a grid. If the grid is always visible
+					(like files), that list is redundant. Drop it so the sidebar is filters+search only
+					(matches <code>/files</code> exactly), or keep it as an alternate navigator?
+				</div>
+				<div class="q">
+					<b>Q2 — Shared panel shell.</b> OK to extract <code>EditorPanelShell</code> and refactor
+					<code>FileEditorPanel</code> onto it (touches a working screen, but removes the
+					duplication you want gone)? Or build <code>RecordEditorPanel</code> standalone and leave
+					files untouched for now?
+				</div>
+				<div class="q">
+					<b>Q3 — Tile contents for records.</b> Records have no thumbnail. Show the file-icon
+					fallback + name (like a non-image file), and use chips for the group-by value / a key
+					field? Or something denser (a couple of field values as text)?
+				</div>
+				<div class="q">
+					<b>Q4 — Scope of this pass.</b> Do the full migration now (DataGrid + shared shell +
+					sidebar cleanup + dead-code removal), or land the minimal behavior change first
+					(grid+panel) and schedule the refactors separately?
+				</div>
+			</section>
+		</main>
+	</body>
+</html>

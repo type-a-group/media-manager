@@ -6,6 +6,8 @@ Planned improvements and features that were identified during the codebase audit
 
 ---
 
+## 0. Make URL fields editable
+
 ## 1. File Field Picker UI — ✅ Shipped
 
 **Status**: **Shipped.** `file`-type fields render [`FilePicker.svelte`](../src/lib/components/FilePicker.svelte) in [`ImageEditorPane.svelte`](../src/lib/components/ImageEditorPane.svelte) and [`JsonEditorPane.svelte`](../src/lib/components/JsonEditorPane.svelte): a dialog over the global blob store with debounced search and image thumbnails, storing the chosen blob's `file_id`. The selected value shows an inline thumbnail (for images) + filename + open-in-new-tab link + clear, and can be re-picked. See the "File field picker" row in [`FEATURES.md`](FEATURES.md).

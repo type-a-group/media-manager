@@ -32,6 +32,12 @@ export interface GridItem {
 /** Presentational configuration injected by the host. */
 export interface GridConfig {
 	size: GridSize;
+	/**
+	 * Tile presentation. `thumbnail` (default) renders an image/file-icon square with a small label
+	 * beneath it (the files hub). `text` is name-forward: the `primaryLabel` fills the square, with no
+	 * thumbnail — used for json records, which have no blob to preview.
+	 */
+	variant?: 'thumbnail' | 'text';
 	/** Show the per-tile selection checkbox. */
 	selectable: boolean;
 	/** Highlight the tile whose item is open in an editor. */

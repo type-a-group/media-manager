@@ -74,31 +74,31 @@
 	<Dialog.Root bind:open>
 		<Dialog.Trigger class="min-w-0 flex-1">
 			{#snippet child({ props })}
-			<Button
-				{...props}
-				variant="outline"
-				class="h-auto w-full min-w-0 flex-1 justify-start gap-2 py-1.5 text-left font-normal"
-			>
-				{#if value}
-					<span
-						class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
-					>
-						{#if selectedIsImage && selectedUrl}
-							<img
-								src={selectedUrl}
-								alt={selectedName}
-								class="h-full w-full object-cover"
-								loading="lazy"
-							/>
-						{:else}
-							<File class="size-5 text-muted-foreground" />
-						{/if}
-					</span>
-					<span class="flex-1 truncate">{selectedName || 'Selected file'}</span>
-				{:else}
-					<span class="text-muted-foreground">Select file…</span>
-				{/if}
-			</Button>
+				<Button
+					{...props}
+					variant="outline"
+					class="h-auto w-full min-w-0 flex-1 justify-start gap-2 py-1.5 text-left font-normal"
+				>
+					{#if value}
+						<span
+							class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded bg-muted"
+						>
+							{#if selectedIsImage && selectedUrl}
+								<img
+									src={selectedUrl}
+									alt={selectedName}
+									class="h-full w-full object-cover"
+									loading="lazy"
+								/>
+							{:else}
+								<File class="size-5 text-muted-foreground" />
+							{/if}
+						</span>
+						<span class="flex-1 truncate">{selectedName || 'Selected file'}</span>
+					{:else}
+						<span class="text-muted-foreground">Select file…</span>
+					{/if}
+				</Button>
 			{/snippet}
 		</Dialog.Trigger>
 		<Dialog.Content class="flex max-h-[80vh] max-w-2xl flex-col">

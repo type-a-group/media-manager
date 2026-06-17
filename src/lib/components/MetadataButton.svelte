@@ -554,53 +554,53 @@
 							<!-- Image Properties -->
 							<div>
 								<h3 class="text-lg font-semibold text-foreground mb-3">Image Properties</h3>
-							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-								{#each ['width', 'height', 'format', 'aspectRatio', 'megapixels', 'channels', 'depth', 'density'] as key}
-									{#if metadata[key] !== undefined}
-										<div class="rounded-md p-3 bg-muted">
-											<dt class="text-sm font-medium text-muted-foreground">
-												{getDisplayLabel(key)}
-											</dt>
-											<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
-										</div>
-									{/if}
-								{/each}
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+									{#each ['width', 'height', 'format', 'aspectRatio', 'megapixels', 'channels', 'depth', 'density'] as key}
+										{#if metadata[key] !== undefined}
+											<div class="rounded-md p-3 bg-muted">
+												<dt class="text-sm font-medium text-muted-foreground">
+													{getDisplayLabel(key)}
+												</dt>
+												<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
+											</div>
+										{/if}
+									{/each}
+								</div>
 							</div>
-						</div>
 
-						<!-- Color Information -->
-						<div>
-							<h3 class="text-lg font-semibold text-foreground mb-3">Color Information</h3>
-							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-								{#each ['space', 'hasAlpha', 'hasProfile', 'orientation'] as key}
-									{#if metadata[key] !== undefined}
-										<div class="rounded-md p-3 bg-muted">
-											<dt class="text-sm font-medium text-muted-foreground">
-												{getDisplayLabel(key)}
-											</dt>
-											<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
-										</div>
-									{/if}
-								{/each}
+							<!-- Color Information -->
+							<div>
+								<h3 class="text-lg font-semibold text-foreground mb-3">Color Information</h3>
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+									{#each ['space', 'hasAlpha', 'hasProfile', 'orientation'] as key}
+										{#if metadata[key] !== undefined}
+											<div class="rounded-md p-3 bg-muted">
+												<dt class="text-sm font-medium text-muted-foreground">
+													{getDisplayLabel(key)}
+												</dt>
+												<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
+											</div>
+										{/if}
+									{/each}
+								</div>
 							</div>
-						</div>
 
-						<!-- Technical Details -->
-						<div>
-							<h3 class="text-lg font-semibold text-foreground mb-3">Technical Details</h3>
-							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-								{#each ['compression', 'resolutionUnit', 'isProgressive', 'pages', 'pageHeight', 'loop', 'delay'] as key}
-									{#if metadata[key] !== undefined}
-										<div class="rounded-md p-3 bg-muted">
-											<dt class="text-sm font-medium text-muted-foreground">
-												{getDisplayLabel(key)}
-											</dt>
-											<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
-										</div>
-									{/if}
-								{/each}
+							<!-- Technical Details -->
+							<div>
+								<h3 class="text-lg font-semibold text-foreground mb-3">Technical Details</h3>
+								<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+									{#each ['compression', 'resolutionUnit', 'isProgressive', 'pages', 'pageHeight', 'loop', 'delay'] as key}
+										{#if metadata[key] !== undefined}
+											<div class="rounded-md p-3 bg-muted">
+												<dt class="text-sm font-medium text-muted-foreground">
+													{getDisplayLabel(key)}
+												</dt>
+												<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
+											</div>
+										{/if}
+									{/each}
+								</div>
 							</div>
-						</div>
 						{/if}
 
 						<!-- EXIF Data -->

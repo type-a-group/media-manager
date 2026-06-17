@@ -70,37 +70,50 @@
 				<TriangleAlert class="size-4" />
 			</div>
 		{/if}
-		<div class="flex aspect-square items-center justify-center bg-muted">
-			{#if item.thumbnailUrl}
-				<img
-					src={item.thumbnailUrl}
-					alt={item.primaryLabel}
-					class="h-full w-full object-cover"
-					loading="lazy"
-				/>
-			{:else}
-				<FileText class="size-8 text-muted-foreground" />
-			{/if}
-		</div>
-		<div class="p-1.5">
-			<div class="truncate text-xs" title={item.primaryLabel}>{item.primaryLabel}</div>
-			{#if item.chips.length > 0 || item.extraChips}
-				<div class="mt-0.5 flex flex-wrap gap-0.5">
-					{#each item.chips as chip (chip.label)}
-						{#if chip.tone === 'muted'}
-							<span class="text-[10px] text-muted-foreground">{chip.label}</span>
-						{:else}
-							<span class="rounded bg-secondary px-1 text-[10px] text-secondary-foreground"
-								>{chip.label}</span
-							>
+		{#if config.variant === 'text'}
+			<!-- Name-forward: records have no blob to preview, so the label fills the square. -->
+			<div class="flex aspect-square items-center justify-center bg-muted p-2">
+				<span class="line-clamp-4 text-center text-sm font-medium" title={item.primaryLabel}>
+					{item.primaryLabel}
+				</span>
+			</div>
+		{:else}
+			<div class="flex aspect-square items-center justify-center bg-muted">
+				{#if item.thumbnailUrl}
+					<img
+						src={item.thumbnailUrl}
+						alt={item.primaryLabel}
+						class="h-full w-full object-cover"
+						loading="lazy"
+					/>
+				{:else}
+					<FileText class="size-8 text-muted-foreground" />
+				{/if}
+			</div>
+		{/if}
+		{#if config.variant !== 'text' || item.chips.length > 0 || item.extraChips}
+			<div class="p-1.5">
+				{#if config.variant !== 'text'}
+					<div class="truncate text-xs" title={item.primaryLabel}>{item.primaryLabel}</div>
+				{/if}
+				{#if item.chips.length > 0 || item.extraChips}
+					<div class="mt-0.5 flex flex-wrap gap-0.5">
+						{#each item.chips as chip (chip.label)}
+							{#if chip.tone === 'muted'}
+								<span class="text-[10px] text-muted-foreground">{chip.label}</span>
+							{:else}
+								<span class="rounded bg-secondary px-1 text-[10px] text-secondary-foreground"
+									>{chip.label}</span
+								>
+							{/if}
+						{/each}
+						{#if item.extraChips}
+							<span class="text-[10px] text-muted-foreground">+{item.extraChips}</span>
 						{/if}
-					{/each}
-					{#if item.extraChips}
-						<span class="text-[10px] text-muted-foreground">+{item.extraChips}</span>
-					{/if}
-				</div>
-			{/if}
-		</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</Card.Root>
 {/snippet}
 

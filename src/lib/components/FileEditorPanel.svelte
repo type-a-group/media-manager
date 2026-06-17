@@ -10,10 +10,11 @@
 	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
+	import EditorPanelShell from './EditorPanelShell.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { X, ChevronLeft, ChevronRight, FileText } from 'lucide-svelte';
+	import { FileText } from 'lucide-svelte';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
 
@@ -107,30 +108,6 @@
 	}
 
 	$effect(() => {
-		// ←/→ walk the filtered grid order, unless focus is in a form control.
-		function onKey(e: KeyboardEvent) {
-			const el = document.activeElement as HTMLElement | null;
-			if (
-				el &&
-				(el instanceof HTMLInputElement ||
-					el instanceof HTMLTextAreaElement ||
-					el instanceof HTMLSelectElement ||
-					el.isContentEditable)
-			)
-				return;
-			if (e.key === 'ArrowLeft' && index > 0) {
-				e.preventDefault();
-				advance(onPrev);
-			} else if (e.key === 'ArrowRight' && index < total - 1) {
-				e.preventDefault();
-				advance(onNext);
-			}
-		}
-		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
-	});
-
-	$effect(() => {
 		// reload whenever the selected file changes
 		file.id;
 		renaming = file.file_name;
@@ -176,117 +153,100 @@
 	}
 </script>
 
-<aside class="flex h-full w-[420px] shrink-0 flex-col border-l bg-card">
-	<header class="flex items-center gap-1 border-b p-3">
-		<Button
-			variant="outline"
-			size="icon"
-			title="Previous (←)"
-			disabled={index <= 0}
-			onclick={() => advance(onPrev)}
-		>
-			<ChevronLeft class="size-4" />
-		</Button>
-		<Button
-			variant="outline"
-			size="icon"
-			title="Next (→)"
-			disabled={index < 0 || index >= total - 1}
-			onclick={() => advance(onNext)}
-		>
-			<ChevronRight class="size-4" />
-		</Button>
+<EditorPanelShell
+	{index}
+	{total}
+	onPrev={() => advance(onPrev)}
+	onNext={() => advance(onNext)}
+	{onclose}
+>
+	{#snippet titleArea()}
 		<Input
 			class="min-w-0 flex-1 text-sm font-medium"
 			bind:value={renaming}
 			onblur={rename}
 			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 		/>
+	{/snippet}
+	{#snippet actions()}
 		<MetadataButton id={file.id} filename={file.file_name} {onchanged} />
-		<Button variant="ghost" size="icon" title="Close" onclick={onclose}>
-			<X class="size-4" />
-		</Button>
-	</header>
+	{/snippet}
 
-	<div class="flex-1 overflow-y-auto p-3">
-		{#if isImage}
-			<img
-				src={apiBlobUrl(file.id)}
-				alt={file.file_name}
-				class="mb-3 max-h-48 w-full rounded object-contain"
-			/>
-		{:else}
-			<div
-				class="mb-3 flex flex-col items-center justify-center gap-2 rounded border border-dashed py-8 text-muted-foreground"
-			>
-				<FileText class="h-10 w-10" />
-				{#if isPdfFile}
-					<a
-						href={apiBlobUrl(file.id)}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-sm text-primary hover:underline"
-					>
-						Open PDF in new tab
-					</a>
-				{/if}
-			</div>
-		{/if}
-
-		<div class="mb-3 flex items-center gap-2">
-			<Select.Root type="single" value={addClassId} onValueChange={(v) => (addClassId = v)}>
-				<Select.Trigger class="flex-1">{addLabel}</Select.Trigger>
-				<Select.Content>
-					{#each addable as c (c.id)}
-						<Select.Item value={c.id}>{c.displayName}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<Button size="sm" disabled={!addClassId} onclick={addToClass}>Add</Button>
+	{#if isImage}
+		<img
+			src={apiBlobUrl(file.id)}
+			alt={file.file_name}
+			class="mb-3 max-h-48 w-full rounded object-contain"
+		/>
+	{:else}
+		<div
+			class="mb-3 flex flex-col items-center justify-center gap-2 rounded border border-dashed py-8 text-muted-foreground"
+		>
+			<FileText class="h-10 w-10" />
+			{#if isPdfFile}
+				<a
+					href={apiBlobUrl(file.id)}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-sm text-primary hover:underline"
+				>
+					Open PDF in new tab
+				</a>
+			{/if}
 		</div>
+	{/if}
 
-		{#if loading}
-			<p class="text-sm text-muted-foreground">Loading…</p>
-		{:else if sections.length === 0}
-			<p class="text-sm text-muted-foreground">
-				Not a member of any class yet. Add it to one above.
-			</p>
-		{:else}
-			{#each sections as section (section.id)}
-				<section class="mb-4 rounded border">
-					<div class="flex items-center justify-between border-b bg-muted/50 px-2 py-1">
-						<span class="text-sm font-semibold">{section.displayName}</span>
-						<Button
-							variant="link"
-							size="sm"
-							class="h-auto p-0 text-destructive"
-							onclick={() => removeFromClass(section.id)}>remove</Button
-						>
-					</div>
-					<div class="space-y-2 p-2">
-						{#if Object.keys(section.schema).length === 0}
-							<p class="text-xs text-muted-foreground">Pure tag (no fields).</p>
-						{/if}
-						{#each Object.entries(section.schema) as [key, def] (key)}
-							<div class="space-y-0.5">
-								<span class="mb-0.5 block text-xs font-medium text-muted-foreground">{key}</span>
-								<FieldInput
-									{def}
-									bind:value={section.record[key]}
-									missing={isMissing(section, key)}
-									missingName={(
-										section.record._missing_files as Record<string, string> | undefined
-									)?.[key]}
-									onEnterSave={() => saveSection(section)}
-								/>
-							</div>
-						{/each}
-						<Button variant="secondary" size="sm" onclick={() => saveSection(section)}
-							>Save {section.displayName}</Button
-						>
-					</div>
-				</section>
-			{/each}
-		{/if}
+	<div class="mb-3 flex items-center gap-2">
+		<Select.Root type="single" value={addClassId} onValueChange={(v) => (addClassId = v)}>
+			<Select.Trigger class="flex-1">{addLabel}</Select.Trigger>
+			<Select.Content>
+				{#each addable as c (c.id)}
+					<Select.Item value={c.id}>{c.displayName}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+		<Button size="sm" disabled={!addClassId} onclick={addToClass}>Add</Button>
 	</div>
-</aside>
+
+	{#if loading}
+		<p class="text-sm text-muted-foreground">Loading…</p>
+	{:else if sections.length === 0}
+		<p class="text-sm text-muted-foreground">Not a member of any class yet. Add it to one above.</p>
+	{:else}
+		{#each sections as section (section.id)}
+			<section class="mb-4 rounded border">
+				<div class="flex items-center justify-between border-b bg-muted/50 px-2 py-1">
+					<span class="text-sm font-semibold">{section.displayName}</span>
+					<Button
+						variant="link"
+						size="sm"
+						class="h-auto p-0 text-destructive"
+						onclick={() => removeFromClass(section.id)}>remove</Button
+					>
+				</div>
+				<div class="space-y-2 p-2">
+					{#if Object.keys(section.schema).length === 0}
+						<p class="text-xs text-muted-foreground">Pure tag (no fields).</p>
+					{/if}
+					{#each Object.entries(section.schema) as [key, def] (key)}
+						<div class="space-y-0.5">
+							<span class="mb-0.5 block text-xs font-medium text-muted-foreground">{key}</span>
+							<FieldInput
+								{def}
+								bind:value={section.record[key]}
+								missing={isMissing(section, key)}
+								missingName={(
+									section.record._missing_files as Record<string, string> | undefined
+								)?.[key]}
+								onEnterSave={() => saveSection(section)}
+							/>
+						</div>
+					{/each}
+					<Button variant="secondary" size="sm" onclick={() => saveSection(section)}
+						>Save {section.displayName}</Button
+					>
+				</div>
+			</section>
+		{/each}
+	{/if}
+</EditorPanelShell>

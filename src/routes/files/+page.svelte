@@ -36,10 +36,7 @@
 	import { Home, MoreVertical, Plus, Upload } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
-	import { useSelection } from '$lib/state/selection.svelte';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
-
-	const selection = useSelection();
 
 	let files = $state<FileItem[]>([]);
 	let classes = $state<ClassSummary[]>([]);
@@ -278,10 +275,9 @@
 			? groupedFiles.map(([k, list]) => [k, list.map(toGridItem)] as [string | null, GridItem[]])
 			: null
 	);
-	/** Persist a new grid size globally (and update the shared selection state for `json` grids). */
+	/** Persist a new grid size globally (every grid view subscribes to the settings store). */
 	function setSize(v: 'small' | 'medium' | 'large') {
 		gridSize = v;
-		selection.setGridSize(v);
 		settingsStore.updateSetting('gridSize', v);
 	}
 

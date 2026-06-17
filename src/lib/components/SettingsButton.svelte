@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { settingsStore, type AppSettings } from '$lib/stores/settings';
-	import { useSelection } from '$lib/state/selection.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -14,10 +13,9 @@
 	/**
 	 * The single, global Settings dialog used everywhere (dashboard, the All Files hub, and every
 	 * `json` record editor). All preferences are app-wide (stored in `media/settings.json` via
-	 * `/api/settings`): there are no per-class or per-type overrides.
+	 * `/api/settings`): there are no per-class or per-type overrides. Grid views subscribe to the
+	 * settings store directly, so updating `gridSize` here propagates live without any extra plumbing.
 	 */
-	const selection = useSelection();
-
 	let settings = $state<AppSettings>({
 		autoAdvanceToNextUnlinked: false,
 		autoSaveOnAdvance: false,
@@ -46,13 +44,11 @@
 		settingsStore.updateSetting('autoSaveOnAdvance', enabled);
 	}
 	function setGridSize(value: 'small' | 'medium' | 'large') {
-		selection.setGridSize(value); // live update for grids reading selection state
 		settingsStore.updateSetting('gridSize', value);
 	}
 
 	async function handleResetToDefaults() {
 		await settingsStore.resetToDefaults();
-		selection.setGridSize('medium');
 		resetToDefaultsOpen = false;
 	}
 

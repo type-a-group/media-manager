@@ -7,7 +7,7 @@ import type { Action } from 'svelte/action';
  * editor without a manual resize handle or a per-field "long" toggle.
  *
  * Use case: applied to the string-value `<textarea>` in the shared `FieldInput`
- * (used by `FileEditorPanel`, `JsonEditorPane`, `GlobalsEditorPane`). Pass the field's
+ * (used by `FileEditorPanel`, `RecordEditorPanel`, `GlobalsEditorPane`). Pass the field's
  * current value as the action argument (`use:autogrow={value}`) so the height is
  * re-fitted whenever the bound value changes externally — e.g. when the editor
  * switches to a different record and the same textarea node is reused.
