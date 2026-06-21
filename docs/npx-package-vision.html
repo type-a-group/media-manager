@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>media-manager — npx package & host integration vision</title>
+		<style>
+			:root {
+				--bg: #ffffff;
+				--fg: #0f172a;
+				--muted: #64748b;
+				--muted-bg: #f1f5f9;
+				--border: #e2e8f0;
+				--border-strong: #cbd5e1;
+				--primary: #0f172a;
+				--accent: #2563eb;
+				--accent-bg: #eff6ff;
+				--warn: #d97706;
+				--warn-bg: #fffbeb;
+				--danger: #dc2626;
+				--ok: #059669;
+				--ok-bg: #ecfdf5;
+				--radius: 10px;
+				--shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.1);
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+				color: var(--fg);
+				background: #f8fafc;
+			}
+			.wrap {
+				max-width: 1080px;
+				margin: 0 auto;
+				padding: 40px 24px 96px;
+			}
+			h1 {
+				font-size: 30px;
+				margin: 0 0 6px;
+				letter-spacing: -0.02em;
+			}
+			h2 {
+				font-size: 21px;
+				margin: 46px 0 14px;
+				letter-spacing: -0.01em;
+			}
+			.lede {
+				color: var(--muted);
+				font-size: 16px;
+				max-width: 78ch;
+				margin: 0 0 8px;
+			}
+			code,
+			.mono {
+				font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+				font-size: 0.86em;
+			}
+			.tag {
+				display: inline-block;
+				font-size: 11px;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				padding: 2px 8px;
+				border-radius: 999px;
+				vertical-align: middle;
+			}
+			.tag.a {
+				background: var(--accent-bg);
+				color: var(--accent);
+			}
+			.tag.b {
+				background: var(--ok-bg);
+				color: var(--ok);
+			}
+			.tag.warn {
+				background: var(--warn-bg);
+				color: var(--warn);
+			}
+			.cols {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 18px;
+			}
+			.card {
+				background: var(--bg);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				box-shadow: var(--shadow);
+				padding: 18px 18px 16px;
+			}
+			.card h3 {
+				margin: 0 0 4px;
+				font-size: 16px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.card.accent {
+				border-color: #bfdbfe;
+			}
+			.card.ok {
+				border-color: #a7f3d0;
+			}
+			.sub {
+				color: var(--muted);
+				font-size: 13px;
+				margin: 0 0 10px;
+			}
+			ul {
+				margin: 6px 0 0;
+				padding-left: 18px;
+			}
+			li {
+				margin: 4px 0;
+			}
+			.flow {
+				display: flex;
+				flex-wrap: wrap;
+				align-items: stretch;
+				gap: 10px;
+				margin-top: 8px;
+			}
+			.node {
+				background: var(--muted-bg);
+				border: 1px solid var(--border-strong);
+				border-radius: 8px;
+				padding: 10px 12px;
+				font-size: 13px;
+				flex: 1 1 0;
+				min-width: 130px;
+			}
+			.node b {
+				display: block;
+				font-size: 13px;
+				margin-bottom: 2px;
+			}
+			.node small {
+				color: var(--muted);
+			}
+			.arrow {
+				align-self: center;
+				color: var(--muted);
+				font-size: 20px;
+			}
+			.chain {
+				counter-reset: step;
+				margin: 8px 0 0;
+				padding: 0;
+				list-style: none;
+			}
+			.chain li {
+				position: relative;
+				padding: 8px 10px 8px 40px;
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				margin-bottom: 6px;
+				background: var(--bg);
+			}
+			.chain li::before {
+				counter-increment: step;
+				content: counter(step);
+				position: absolute;
+				left: 10px;
+				top: 50%;
+				transform: translateY(-50%);
+				width: 20px;
+				height: 20px;
+				border-radius: 999px;
+				background: var(--primary);
+				color: #fff;
+				font-size: 12px;
+				font-weight: 700;
+				display: grid;
+				place-items: center;
+			}
+			pre {
+				background: #0f172a;
+				color: #e2e8f0;
+				border-radius: 8px;
+				padding: 14px 16px;
+				overflow-x: auto;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+			.tree {
+				background: var(--muted-bg);
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 14px 16px;
+				white-space: pre;
+				font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+				font-size: 13px;
+				overflow-x: auto;
+			}
+			.callout {
+				border-left: 3px solid var(--warn);
+				background: var(--warn-bg);
+				border-radius: 0 8px 8px 0;
+				padding: 10px 14px;
+				margin-top: 12px;
+				font-size: 14px;
+			}
+			.footer {
+				margin-top: 40px;
+				color: var(--muted);
+				font-size: 13px;
+				border-top: 1px solid var(--border);
+				padding-top: 14px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<h1>media-manager as an npx package</h1>
+			<p class="lede">
+				Vision diagram — run <code>npx media-manager</code> inside a host repo (e.g.
+				<code>nicb.at</code>) and have it find the right folder, plus a read-only path for the host
+				build to consume the on-disk format. Companion to
+				<code>docs/plans/npx-package-vision.md</code>. <strong>No code yet.</strong>
+			</p>
+
+			<h2>The two modes (don't conflate them)</h2>
+			<div class="cols">
+				<div class="card accent">
+					<h3><span class="tag a">Mode A</span> Editor</h3>
+					<p class="sub"><code>npx media-manager</code> → Node server + browser</p>
+					<ul>
+						<li><b>Mutates</b> the root: heals manifest, can rename/strip blobs</li>
+						<li>Interactive curation of files &amp; metadata</li>
+						<li>Launching on committed data can produce git diffs</li>
+					</ul>
+				</div>
+				<div class="card ok">
+					<h3><span class="tag b">Mode B</span> Reader</h3>
+					<p class="sub"><code>import 'media-manager/fs'</code> · <code>media-manager export</code></p>
+					<ul>
+						<li><b>Never writes</b>, never heals — frozen contract</li>
+						<li>Host build renders galleries/pages from the same files</li>
+						<li>Reports staleness; does not "fix" it</li>
+					</ul>
+				</div>
+			</div>
+
+			<h2>Mode A — zero-config root resolution</h2>
+			<p class="lede">First match wins. Today only steps 1–2 exist; 3–5 are the vision.</p>
+			<ol class="chain">
+				<li><b>Explicit arg</b> — <code>media-manager ./root</code> <small>(current)</small></li>
+				<li><b>Env</b> — <code>MEDIA_MANAGER_ROOT</code> <small>(current)</small></li>
+				<li>
+					<b>Config file</b> — nearest <code>media-manager.config.json</code> /
+					<code>.media-managerrc</code> / <code>"mediaManager"</code> key in
+					<code>package.json</code>, found by walking up
+				</li>
+				<li>
+					<b>Convention auto-detect</b> — find a folder with <code>media/manifest.json</code>; probe
+					<code>./media_manager</code>, <code>./src/assets/media_manager</code>, <code>./media</code>
+				</li>
+				<li><b>Friendly error</b> — print the chain tried + suggest <code>media-manager init</code></li>
+			</ol>
+
+			<h2>Mode B — host reads the format at build time</h2>
+			<div class="flow">
+				<div class="node">
+					<b>media/ workspace</b><small>manifest.json · files/ · classes/ · settings.json</small>
+				</div>
+				<div class="arrow">→</div>
+				<div class="node">
+					<b>Reader</b><small><code>openWorkspace(root)</code> — pure, root-explicit, no env</small>
+				</div>
+				<div class="arrow">→</div>
+				<div class="node">
+					<b>Host build</b><small>galleries, pages, content-hashed assets</small>
+				</div>
+			</div>
+			<div class="cols" style="margin-top: 16px">
+				<div class="card">
+					<h3>Library (Node hosts)</h3>
+					<pre>import { openWorkspace } from 'media-manager/fs';
+
+const ws = openWorkspace('src/assets/media_manager');
+await ws.listFiles({ classIds: ['photos'] });
+await ws.listMembers('photos');
+ws.resolveBlobPath(id); // abs path on disk
+await ws.getGlobals();</pre>
+				</div>
+				<div class="card">
+					<h3>Export (any host)</h3>
+					<pre>media-manager export --class photos \
+  --out photos.json
+
+media-manager export --all \
+  &gt; workspace.json</pre>
+					<p class="sub" style="margin-top: 10px">
+						Denormalized snapshot → host reads with plain <code>JSON.parse</code>.
+					</p>
+				</div>
+			</div>
+			<div class="callout">
+				<b>Refactor that gates Mode B:</b> the storage layer resolves the root from
+				<code>getRootDir()</code> (the <code>MEDIA_MANAGER_ROOT</code> env global). A library API must
+				thread an <em>explicit</em> root instead of mutating <code>process.env</code>.
+			</div>
+
+			<h2>North-star layout in nicb.at</h2>
+			<div class="tree">~/Projects/nicb.at/
+├─ media-manager.config.json      { root: "src/assets/media_manager" }  (port is ephemeral)
+├─ src/assets/media_manager/      the workspace (committed)
+│  └─ media/{manifest.json, files/, classes/, settings.json}
+└─ src/lib/media.ts               imports media-manager/fs → renders at build</div>
+
+			<h2>Packaging gotchas <span class="tag warn">measure first</span></h2>
+			<div class="cols">
+				<div class="card">
+					<h3>Install size</h3>
+					<ul>
+						<li><code>exiftool-vendored</code> bundles platform Perl (tens of MB) → maybe optional/lazy</li>
+						<li>Drop <code>sharp</code> + <code>@masonry-grid/svelte</code> (unreferenced in <code>src/</code>)</li>
+						<li><code>npx</code> refetches the whole tarball on a cold cache</li>
+					</ul>
+				</div>
+				<div class="card">
+					<h3>Distribution</h3>
+					<ul>
+						<li><code>build/</code> must ship (it does; <code>prepublishOnly</code> builds it)</li>
+						<li>Name likely taken → <code>@nicbat/media-manager</code></li>
+						<li>Add <code>engines.node</code>; <code>npm link</code> for local bare bin</li>
+					</ul>
+				</div>
+			</div>
+
+			<p class="footer">
+				media-manager · npx-package vision · diagram companion to
+				<code>docs/plans/npx-package-vision.md</code>
+			</p>
+		</div>
+	</body>
+</html>

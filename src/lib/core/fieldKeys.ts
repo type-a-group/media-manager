@@ -1,3 +1,5 @@
+import type { SchemaDefinition } from './types.js';
+
 /**
  * Keys that are reserved for system/internal use and should not be created as schema fields.
  *
@@ -80,4 +82,36 @@ export function fieldLabel(key: string): string {
 		.filter(Boolean)
 		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
 		.join(' ');
+}
+
+/**
+ * Canonical ordered list of a schema's **user-facing** field keys: keeps user fields plus the
+ * reserved `name` field, dropping all other system keys, sorted with `name` first then alpha.
+ *
+ * This is the single source of truth for "which fields does this entity expose to the UI" — the
+ * Records list group-by, the record filter panel, the detail-pane field order, the title/subtitle
+ * selects, and (Phase 1) the search-field picker all consume it. Previously each of those
+ * re-derived the same filter+sort inline.
+ *
+ * @param schema - The entity's schema definition (key → field definition)
+ * @returns Field keys, `name`-first then alphabetical, system keys excluded
+ *
+ * Concerns / future improvements:
+ * - Files **classes** intentionally expose *all* schema keys (no `name`/system filtering); they use
+ *   their own enumeration, not this helper.
+ */
+export function schemaUserFieldKeys(schema: SchemaDefinition): string[] {
+	return Object.keys(schema)
+		.filter((k) => isUserFieldKey(k) || k === 'name')
+		.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)));
+}
+
+/**
+ * Same ordering as {@link schemaUserFieldKeys}, mapped to `{ key, label }` for select/dropdown UIs.
+ *
+ * @param schema - The entity's schema definition
+ * @returns `{ key, label }` entries in `name`-first then alphabetical order
+ */
+export function schemaUserFields(schema: SchemaDefinition): { key: string; label: string }[] {
+	return schemaUserFieldKeys(schema).map((k) => ({ key: k, label: fieldLabel(k) }));
 }

@@ -12,6 +12,8 @@ import { listAllFiles } from '$lib/storage/classRepo.js';
  * - `unclassified` — `true` to show only blobs with zero class memberships.
  * - `groupByClass` + `groupByField` — group the result by one class's field (the "all of" view);
  *   each item gets a `group_by_value` read from that class's record.
+ * - `searchField` — scope `query`: empty = filename (or All fields in an intersection);
+ *   `<classId>::<field>` = one field of one intersected class.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	try {
@@ -27,12 +29,20 @@ export const GET: RequestHandler = async ({ url }) => {
 		const unclassified = url.searchParams.get('unclassified') === 'true';
 		const groupByClass = url.searchParams.get('groupByClass');
 		const groupByField = url.searchParams.get('groupByField');
+		const searchField = url.searchParams.get('searchField');
 		const idPattern = /^[a-zA-Z0-9_-]+$/;
 		const groupBy =
 			groupByClass && groupByField && idPattern.test(groupByClass)
 				? { classId: groupByClass, field: groupByField }
 				: null;
-		const data = await listAllFiles({ query, classIds, matchAll, unclassified, groupBy });
+		const data = await listAllFiles({
+			query,
+			classIds,
+			matchAll,
+			unclassified,
+			groupBy,
+			searchField
+		});
 		return json(data);
 	} catch (err) {
 		console.error('List files error:', err);

@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import RecordFilterPanel, { type FilterRow } from '$lib/components/RecordFilterPanel.svelte';
 	import RecordBulkActions from '$lib/components/RecordBulkActions.svelte';
-	import SchemaEditorButton from '$lib/components/SchemaEditorButton.svelte';
+	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import { ListChecks, Plus, X, Filter, AlertTriangle } from 'lucide-svelte';
-	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
-	import { recordListTitle } from '$lib/core/recordDisplay.js';
+	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
+	import { recordListTitle, recordListSubtitle } from '$lib/core/recordDisplay.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
 	/**
@@ -24,9 +23,12 @@
 	 * @param schema - The type's schema (drives group/title/filter field lists).
 	 * @param records - The records to show (already loaded by the host for the active filters/group).
 	 * @param loading - Show a loading hint instead of the list.
-	 * @param query / groupBy / titleField / filters - Bindable list controls (host reloads on change).
+	 * @param query / groupBy / filters - Bindable list controls (host reloads on change). "Title by" is
+	 *   no longer here — it's a persisted per-type setting in the ⋮ → Settings dialog.
 	 * @param selectionMode / selectedIds / selectedRecordId - Multiselect + active-row state.
 	 * @param onOpen / onToggleSelect / onNewRecord / onToggleSelectionMode / onBulkChanged - Callbacks.
+	 * @param onOpenSettings / onDeleteType - Open the active type's settings dialog / delete confirm
+	 *   from the content-header ⋮ (always reachable, even when the rail is collapsed).
 	 */
 	let {
 		typeName,
@@ -34,9 +36,7 @@
 		schema,
 		records,
 		loading,
-		query = $bindable(''),
 		groupBy = $bindable(''),
-		titleField = $bindable(''),
 		filters = $bindable<FilterRow[]>([]),
 		selectionMode,
 		selectedIds,
@@ -45,16 +45,16 @@
 		onToggleSelect,
 		onNewRecord,
 		onToggleSelectionMode,
-		onBulkChanged
+		onBulkChanged,
+		onOpenSettings,
+		onDeleteType
 	}: {
 		typeName: string;
 		typeId: string;
 		schema: SchemaDefinition | null;
 		records: JsonListItem[];
 		loading: boolean;
-		query?: string;
 		groupBy?: string;
-		titleField?: string;
 		filters?: FilterRow[];
 		selectionMode: boolean;
 		selectedIds: Set<string>;
@@ -64,33 +64,22 @@
 		onNewRecord: () => void;
 		onToggleSelectionMode: () => void;
 		onBulkChanged: () => void;
+		onOpenSettings: () => void;
+		onDeleteType: () => void;
 	} = $props();
 
 	/** Schema field keys eligible for group-by / title (name first). */
-	const schemaFieldKeys = $derived(
-		schema
-			? Object.keys(schema)
-					.filter((k) => isUserFieldKey(k) || k === 'name')
-					.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)))
-			: []
-	);
+	const schemaFieldKeys = $derived(schema ? schemaUserFieldKeys(schema) : []);
 
 	const activeFilterCount = $derived(
 		filters.filter((r) => r.enabled !== false && r.field && r.operator).length
-	);
-
-	/** Local title-substring filter over the resolved row titles. */
-	const filteredRecords = $derived(
-		query.trim()
-			? records.filter((r) => recordListTitle(r).toLowerCase().includes(query.toLowerCase().trim()))
-			: records
 	);
 
 	/** Records grouped by the server-provided `group_by_value`, or null when flat. */
 	const groupedRecords = $derived.by<[string, JsonListItem[]][] | null>(() => {
 		if (!groupBy) return null;
 		const groups: Record<string, JsonListItem[]> = {};
-		for (const item of filteredRecords) {
+		for (const item of records) {
 			const v = item.group_by_value;
 			const key =
 				v == null || v === ''
@@ -109,24 +98,24 @@
 		});
 	});
 
-	/** Subtitle for a row: the group value when grouped (and it isn't already the title). */
+	/**
+	 * Subtitle for a row: the type's configured "subtitle by" field (resolved server-side into
+	 * `subtitle_value`), independent of grouping. Group values live only in the sticky group headers.
+	 */
 	function rowSubtitle(item: JsonListItem): string | null {
-		if (!groupBy) return null;
-		const v = item.group_by_value;
-		const s = v == null || v === '' ? null : Array.isArray(v) ? v.join(', ') : String(v);
+		const s = recordListSubtitle(item);
 		return s && s !== recordListTitle(item) ? s : null;
 	}
 </script>
 
-<div class="flex h-screen min-w-0 flex-col">
+<div class="flex h-screen min-w-0 flex-1 flex-col">
 	<!-- Header: name + actions -->
 	<header class="flex items-center gap-2 border-b p-3">
 		<h1 class="truncate text-base font-semibold">{typeName}</h1>
 		<span class="shrink-0 text-xs text-muted-foreground">
-			{filteredRecords.length} record{filteredRecords.length === 1 ? '' : 's'}
+			{records.length} record{records.length === 1 ? '' : 's'}
 		</span>
 		<div class="flex-1"></div>
-		<Input class="h-8 w-44 text-sm" placeholder="Search…" bind:value={query} />
 		<Button
 			variant={selectionMode ? 'secondary' : 'ghost'}
 			size="sm"
@@ -139,10 +128,15 @@
 				<ListChecks class="size-4" /> Select
 			{/if}
 		</Button>
-		<SchemaEditorButton />
 		<Button size="sm" onclick={onNewRecord}>
 			<Plus class="size-4" /> New
 		</Button>
+		<EntityRowMenu
+			noun="record type"
+			onSettings={onOpenSettings}
+			onDelete={onDeleteType}
+			triggerClass="size-8"
+		/>
 	</header>
 
 	<!-- Controls: group / title / filter -->
@@ -153,20 +147,6 @@
 				<Select.Trigger class="h-8 w-32">{groupBy ? fieldLabel(groupBy) : 'None'}</Select.Trigger>
 				<Select.Content>
 					<Select.Item value="">None</Select.Item>
-					{#each schemaFieldKeys as k (k)}
-						<Select.Item value={k}>{fieldLabel(k)}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-		</div>
-		<div class="flex items-center gap-1.5">
-			<span class="text-muted-foreground">Title by</span>
-			<Select.Root type="single" value={titleField} onValueChange={(v) => (titleField = v ?? '')}>
-				<Select.Trigger class="h-8 w-32"
-					>{titleField ? fieldLabel(titleField) : 'Default'}</Select.Trigger
-				>
-				<Select.Content>
-					<Select.Item value="">Default (name)</Select.Item>
 					{#each schemaFieldKeys as k (k)}
 						<Select.Item value={k}>{fieldLabel(k)}</Select.Item>
 					{/each}
@@ -206,12 +186,10 @@
 	<div class="min-h-0 flex-1 overflow-y-auto">
 		{#if loading}
 			<p class="p-4 text-sm text-muted-foreground">Loading…</p>
-		{:else if filteredRecords.length === 0}
+		{:else if records.length === 0}
 			<div class="flex flex-col items-center gap-3 p-8 text-center text-sm text-muted-foreground">
-				<p>{query.trim() ? 'No records match your search.' : 'No records yet.'}</p>
-				{#if !query.trim()}
-					<Button size="sm" onclick={onNewRecord}><Plus class="size-4" /> New record</Button>
-				{/if}
+				<p>No records found.</p>
+				<Button size="sm" onclick={onNewRecord}><Plus class="size-4" /> New record</Button>
 			</div>
 		{:else}
 			{#snippet row(item: JsonListItem)}
@@ -244,7 +222,7 @@
 							{/if}
 						</span>
 						{#if subtitle}
-							<span class="truncate text-xs text-muted-foreground">{subtitle}</span>
+							<span class="w-full min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>
 						{/if}
 					</button>
 				</div>
@@ -262,7 +240,7 @@
 					{/each}
 				{/each}
 			{:else}
-				{#each filteredRecords as item (item.id)}
+				{#each records as item (item.id)}
 					{@render row(item)}
 				{/each}
 			{/if}

@@ -20,6 +20,11 @@ export type MediaTypeKind = 'json';
  * @param kind - Always `json`
  * @param schema - Field definitions (embedded)
  * @param dataFileName - Filename for the records JSON (default `data.json`)
+ * @param displayField - The schema field used to title each record row in the Records Explorer list
+ *   ("title by"). Persisted so the choice sticks across type switches — the records-side analogue of
+ *   {@link ClassConfig.displayField}. Absent ⇒ fall back to the `name` field / first string field.
+ * @param subtitleField - Optional schema field rendered as the muted secondary line under each record
+ *   row ("subtitle by"). Persisted like {@link displayField}; absent ⇒ no subtitle (single-line rows).
  *
  * Grid size and navigation prefs are **global** app settings (`media/settings.json` via
  * `mediaSettings.ts`), not per-type — they are intentionally absent here.
@@ -29,6 +34,8 @@ export interface MediaTypeSettingsFile {
 	kind: MediaTypeKind;
 	schema?: SchemaDefinition;
 	dataFileName?: string;
+	displayField?: string;
+	subtitleField?: string;
 }
 
 /**
@@ -53,7 +60,9 @@ export function readMediaTypeSettingsFileSync(baseDir: string): MediaTypeSetting
 			kind: 'json',
 			schema,
 			dataFileName:
-				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON
+				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON,
+			displayField: typeof parsed.displayField === 'string' ? parsed.displayField : undefined,
+			subtitleField: typeof parsed.subtitleField === 'string' ? parsed.subtitleField : undefined
 		};
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException;
@@ -79,7 +88,9 @@ export async function writeMediaTypeSettingsFile(
 				displayName: patch.displayName,
 				kind: patch.kind,
 				schema: patch.schema ?? {},
-				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON
+				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON,
+				displayField: patch.displayField,
+				subtitleField: patch.subtitleField
 			};
 	const settingsPath = path.join(baseDir, 'settings.json');
 	await fs.mkdir(path.dirname(settingsPath), { recursive: true });

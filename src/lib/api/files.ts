@@ -43,6 +43,8 @@ export interface ListFilesParams {
 	/** Group the result by one class's field (the multi-class "all of" view). */
 	groupByClass?: string;
 	groupByField?: string;
+	/** Scope `query`: empty = filename/All-fields; `<classId>::<field>` = one intersected field. */
+	searchField?: string;
 }
 
 /** GET /api/files — the All Files hub listing. */
@@ -59,6 +61,7 @@ export async function apiListFiles(
 		q.set('groupByClass', params.groupByClass);
 		q.set('groupByField', params.groupByField);
 	}
+	if (params.searchField) q.set('searchField', params.searchField);
 	const res = await fetchFn(`/api/files?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list files');
 }
@@ -246,12 +249,13 @@ export async function apiDeleteClass(id: string, fetchFn: typeof fetch = fetch):
 /** GET /api/classes/[id]/members — the one-class catalog view. */
 export async function apiListClassMembers(
 	id: string,
-	opts: { groupBy?: string; query?: string } = {},
+	opts: { groupBy?: string; query?: string; searchField?: string } = {},
 	fetchFn: typeof fetch = fetch
 ): Promise<FileListResponse> {
 	const q = new URLSearchParams();
 	if (opts.groupBy) q.set('groupBy', opts.groupBy);
 	if (opts.query) q.set('query', opts.query);
+	if (opts.searchField) q.set('searchField', opts.searchField);
 	const res = await fetchFn(`/api/classes/${id}/members?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list members');
 }

@@ -9,7 +9,11 @@ import {
 import { z } from 'zod';
 
 const SettingsPatchSchema = z.object({
-	displayName: z.string().min(1).max(256).optional()
+	displayName: z.string().min(1).max(256).optional(),
+	// The "title by" field for the Records Explorer list. Empty string clears it (back to default).
+	displayField: z.string().max(256).optional(),
+	// The optional "subtitle by" field. Empty string clears it (no subtitle line).
+	subtitleField: z.string().max(256).optional()
 });
 
 /** GET: Current settings for this `json` media type. */
@@ -23,7 +27,9 @@ export const GET: RequestHandler = async ({ params }) => {
 		return json({
 			displayName: settings.displayName,
 			kind: settings.kind,
-			dataFileName: settings.dataFileName
+			dataFileName: settings.dataFileName,
+			displayField: settings.displayField ?? '',
+			subtitleField: settings.subtitleField ?? ''
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
@@ -51,10 +57,18 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (!current) throw error(404, 'Media type not found');
 		const patch: Record<string, unknown> = { kind: paths.kind, schema };
 		if (parsed.data.displayName !== undefined) patch.displayName = parsed.data.displayName;
+		// Empty string clears the title-by override; any other value persists it.
+		if (parsed.data.displayField !== undefined)
+			patch.displayField = parsed.data.displayField || undefined;
+		// Empty string clears the subtitle field; any other value persists it.
+		if (parsed.data.subtitleField !== undefined)
+			patch.subtitleField = parsed.data.subtitleField || undefined;
 		const updated = await writeMediaTypeSettingsFile(paths.baseDir, patch as never);
 		return json({
 			displayName: updated.displayName,
-			kind: updated.kind
+			kind: updated.kind,
+			displayField: updated.displayField ?? '',
+			subtitleField: updated.subtitleField ?? ''
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

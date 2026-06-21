@@ -217,6 +217,11 @@ export const JsonListItemSchema = z.object({
 	 * no longer fall back to the raw id. Derived (not persisted); absent unless `titleField` was sent.
 	 */
 	title_value: z.string().optional(),
+	/**
+	 * Optional muted secondary line for a record row, derived from the type's persisted `subtitleField`.
+	 * Absent unless a subtitle field is configured (or sent) and the record's value is non-empty.
+	 */
+	subtitle_value: z.string().optional(),
 	missing_file_fields: z.array(z.string()).optional()
 });
 export type JsonListItem = z.infer<typeof JsonListItemSchema>;

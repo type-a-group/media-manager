@@ -158,6 +158,47 @@ export async function apiRenameMediaType(
 }
 
 /**
+ * Read a `json` media type's per-type settings (display name + the persisted "title by" field).
+ * Used by the unified entity-settings dialog.
+ */
+export async function apiGetTypeSettings(
+	typeId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<{ displayName: string; displayField: string; subtitleField: string }> {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`);
+	await assertOk(res, 'Failed to read type settings');
+	const data = await res.json();
+	return {
+		displayName: typeof data.displayName === 'string' ? data.displayName : typeId,
+		displayField: typeof data.displayField === 'string' ? data.displayField : '',
+		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : ''
+	};
+}
+
+/**
+ * Update a `json` media type's per-type settings. `displayField: ''` clears the title-by override;
+ * `subtitleField: ''` clears the subtitle line.
+ */
+export async function apiUpdateTypeSettings(
+	typeId: string,
+	patch: { displayName?: string; displayField?: string; subtitleField?: string },
+	fetchFn: typeof fetch = fetch
+): Promise<{ displayName: string; displayField: string; subtitleField: string }> {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(patch)
+	});
+	await assertOk(res, 'Failed to update type settings');
+	const data = await res.json();
+	return {
+		displayName: typeof data.displayName === 'string' ? data.displayName : typeId,
+		displayField: typeof data.displayField === 'string' ? data.displayField : '',
+		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : ''
+	};
+}
+
+/**
  * Delete media type folder and all contents.
  */
 export async function apiDeleteMediaType(typeId: string, fetchFn: typeof fetch = fetch) {
@@ -326,7 +367,12 @@ export async function apiListRecordsForType(
 		empty?: boolean;
 		groupBy?: string;
 		titleField?: string;
+		subtitleField?: string;
 		filters?: ListImagesFilter[];
+		/** Free-text search query (server-side, case-insensitive substring). */
+		searchQuery?: string;
+		/** Scope `searchQuery` to one field key; empty = All fields. */
+		searchField?: string;
 	},
 	fetchFn: typeof fetch = fetch
 ): Promise<ListRecordsResponse> {
@@ -343,6 +389,9 @@ export async function apiListRecordsForType(
 	}
 	if (params?.groupBy) url.searchParams.set('groupBy', params.groupBy);
 	if (params?.titleField) url.searchParams.set('titleField', params.titleField);
+	if (params?.subtitleField) url.searchParams.set('subtitleField', params.subtitleField);
+	if (params?.searchQuery) url.searchParams.set('searchQuery', params.searchQuery);
+	if (params?.searchField) url.searchParams.set('searchField', params.searchField);
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();

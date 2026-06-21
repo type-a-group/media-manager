@@ -8,8 +8,11 @@
 	import RecordListColumn from '$lib/components/records/RecordListColumn.svelte';
 	import RecordDetailPane from '$lib/components/records/RecordDetailPane.svelte';
 	import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
+	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
+	import { typeSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
 	import { type FilterRow } from '$lib/components/RecordFilterPanel.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -18,16 +21,17 @@
 	import {
 		apiListMediaTypes,
 		apiGetSchemaForType,
+		apiGetTypeSettings,
 		apiListRecordsForType,
 		apiCreateRecordForType,
 		apiCreateMediaType,
+		apiDeleteMediaType,
 		type MediaTypeSummary
 	} from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
-	import { recordListTitle } from '$lib/core/recordDisplay.js';
-	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
+	import { isUserFieldKey, schemaUserFields } from '$lib/core/fieldKeys.js';
 	import { VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
@@ -49,9 +53,20 @@
 	let records = $state<JsonListItem[]>([]);
 	let loading = $state(true);
 	let query = $state('');
+	/** Field to scope the search to (`''` = All fields). Lives in the rail, like the Files hub. */
+	let searchField = $state('');
 	let filters = $state<FilterRow[]>([]);
 	let groupBy = $state('');
 	let titleField = $state('');
+	let subtitleField = $state('');
+
+	/** User fields of the active type offered by the rail's search-field picker. */
+	const searchFields = $derived(schema ? schemaUserFields(schema) : []);
+
+	// Drop a stale scoped search field if it's no longer in the active type's schema.
+	$effect(() => {
+		if (searchField && !searchFields.some((f) => f.key === searchField)) searchField = '';
+	});
 
 	const selectedIds = new SvelteSet<string>();
 	let selectionMode = $state(false);
@@ -62,15 +77,28 @@
 	let newTypeOpen = $state(false);
 	let newTypeName = $state('');
 
+	// Unified per-type settings dialog (⋮ → Settings) + delete confirm.
+	let settingsOpen = $state(false);
+	let settingsTargetId = $state<string | null>(null);
+	let deleteOpen = $state(false);
+	let deleteTargetId = $state<string | null>(null);
+	const settingsTargetName = $derived(
+		types.find((t) => t.id === settingsTargetId)?.displayName ?? settingsTargetId ?? ''
+	);
+	const deleteTargetName = $derived(
+		types.find((t) => t.id === deleteTargetId)?.displayName ?? deleteTargetId ?? ''
+	);
+
 	const isGlobals = $derived(activeTypeId === 'globals');
 	const activeType = $derived(types.find((t) => t.id === activeTypeId) ?? null);
 	const typeName = $derived(activeType?.displayName ?? activeTypeId ?? '');
 
-	/** The visible record order (query-filtered, grouped) — drives prev/next in the detail pane. */
+	/**
+	 * The visible record order (grouped) — drives prev/next in the detail pane. Search is now applied
+	 * server-side (the list is already filtered), so this only mirrors the group ordering.
+	 */
 	const orderedIds = $derived.by<string[]>(() => {
-		const filtered = query.trim()
-			? records.filter((r) => recordListTitle(r).toLowerCase().includes(query.toLowerCase().trim()))
-			: records;
+		const filtered = records;
 		if (!groupBy) return filtered.map((r) => r.id);
 		const groups: Record<string, JsonListItem[]> = {};
 		for (const item of filtered) {
@@ -110,11 +138,20 @@
 	async function loadSchema() {
 		if (!activeTypeId || isGlobals) return;
 		try {
-			schema = await apiGetSchemaForType(activeTypeId);
-			// Fix the id-instead-of-title bug out of the box: when a type has no `name` field, auto-pick
-			// a sensible field to title rows by (first string field, else first user field). The user can
-			// still override via the list column's "Title by" control.
-			if (!titleField && schema && !('name' in schema)) {
+			const [s, settings] = await Promise.all([
+				apiGetSchemaForType(activeTypeId),
+				apiGetTypeSettings(activeTypeId).catch(() => ({ displayField: '', subtitleField: '' }))
+			]);
+			schema = s;
+			// The persisted subtitle field (⋮ → Settings → General) is sticky like the title field.
+			subtitleField = settings.subtitleField || '';
+			// The persisted "title by" (settings.displayField, set in the ⋮ → Settings dialog) wins and
+			// makes the choice sticky across type switches. Otherwise fix the id-instead-of-title bug out
+			// of the box: when a type has no `name` field, auto-pick a sensible field (first string, else
+			// first user field).
+			if (settings.displayField) {
+				titleField = settings.displayField;
+			} else if (!titleField && schema && !('name' in schema)) {
 				const keys = Object.keys(schema).filter((k) => isUserFieldKey(k));
 				const firstString = keys.find((k) => schema?.[k]?.type === 'string');
 				titleField = firstString ?? keys[0] ?? '';
@@ -132,7 +169,10 @@
 			const data = await apiListRecordsForType(activeTypeId, {
 				...(clauses.length > 0 ? { filters: clauses } : {}),
 				groupBy: groupBy || undefined,
-				titleField: titleField || undefined
+				titleField: titleField || undefined,
+				subtitleField: subtitleField || undefined,
+				searchQuery: query || undefined,
+				searchField: searchField || undefined
 			});
 			records = 'records' in data ? (data.records as JsonListItem[]) : [];
 		} catch (e) {
@@ -151,9 +191,11 @@
 		selectedIds.clear();
 		selectionMode = false;
 		query = '';
+		searchField = '';
 		filters = [];
 		groupBy = '';
 		titleField = '';
+		subtitleField = '';
 		try {
 			replaceState(`/media?type=${encodeURIComponent(id)}`, {});
 		} catch {
@@ -208,6 +250,51 @@
 		settingsStore.updateSetting('railCollapsed', railCollapsed);
 	}
 
+	function openTypeSettings(id: string) {
+		settingsTargetId = id;
+		settingsOpen = true;
+	}
+
+	function askDeleteType(id: string) {
+		deleteTargetId = id;
+		deleteOpen = true;
+	}
+
+	/** After a rename / title-by / schema change in the settings dialog: refresh names + the active view. */
+	async function afterTypeSettingsChange() {
+		types = await apiListMediaTypes().catch(() => types);
+		if (activeTypeId && !isGlobals) {
+			await loadSchema();
+			await loadRecords();
+			editorRefresh++;
+		}
+	}
+
+	async function doDeleteType() {
+		const id = deleteTargetId;
+		if (!id) return;
+		try {
+			await apiDeleteMediaType(id);
+			toast.success('Record type deleted');
+			deleteOpen = false;
+			settingsOpen = false;
+			types = await apiListMediaTypes().catch(() => types);
+			if (activeTypeId === id) {
+				selectedRecordId = null;
+				const next = types[0]?.id ?? null;
+				activeTypeId = next;
+				try {
+					replaceState(next ? `/media?type=${encodeURIComponent(next)}` : '/media', {});
+				} catch {
+					/* router not ready */
+				}
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to delete record type');
+		}
+	}
+
 	async function afterBulk() {
 		selectedIds.clear();
 		await loadRecords();
@@ -249,11 +336,14 @@
 		}
 	});
 
-	// Reload when filters / group-by / title-field change.
+	// Reload when filters / group-by / title-field / search change (search is server-side now).
 	$effect(() => {
 		filters;
 		groupBy;
 		titleField;
+		subtitleField;
+		query;
+		searchField;
 		if (activeTypeId && !isGlobals) loadRecords();
 	});
 
@@ -292,6 +382,11 @@
 		onSelect={selectType}
 		onToggleCollapse={toggleRail}
 		onNewType={() => (newTypeOpen = true)}
+		onOpenSettings={openTypeSettings}
+		onDeleteType={askDeleteType}
+		bind:query
+		bind:searchField
+		{searchFields}
 	/>
 
 	{#if loadingTypes}
@@ -315,9 +410,7 @@
 			{schema}
 			{records}
 			{loading}
-			bind:query
 			bind:groupBy
-			bind:titleField
 			bind:filters
 			{selectionMode}
 			{selectedIds}
@@ -327,6 +420,8 @@
 			onNewRecord={createRecord}
 			onToggleSelectionMode={toggleSelectionMode}
 			onBulkChanged={afterBulk}
+			onOpenSettings={() => activeTypeId && openTypeSettings(activeTypeId)}
+			onDeleteType={() => activeTypeId && askDeleteType(activeTypeId)}
 		/>
 
 		{#if selectedRecordId}
@@ -346,12 +441,6 @@
 					await loadRecords();
 				}}
 			/>
-		{:else}
-			<aside
-				class="hidden w-[440px] shrink-0 flex-col items-center justify-center border-l p-8 text-center text-sm text-muted-foreground lg:flex"
-			>
-				<p>Select a record to view and edit it.</p>
-			</aside>
 		{/if}
 	{/if}
 </div>
@@ -376,3 +465,36 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+{#if settingsTargetId}
+	{#key settingsTargetId}
+		<EntitySettingsDialog
+			adapter={typeSettingsAdapter(settingsTargetId)}
+			name={settingsTargetName}
+			bind:open={settingsOpen}
+			onchanged={afterTypeSettingsChange}
+			ondeleted={async () => {
+				const id = settingsTargetId;
+				settingsOpen = false;
+				types = await apiListMediaTypes().catch(() => types);
+				if (activeTypeId === id) {
+					selectedRecordId = null;
+					activeTypeId = types[0]?.id ?? null;
+				}
+			}}
+		/>
+	{/key}
+{/if}
+
+<AlertDialog.Root bind:open={deleteOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Title>Delete record type</AlertDialog.Title>
+		<AlertDialog.Description>
+			Delete the record type “{deleteTargetName}” and all its records? This cannot be undone.
+		</AlertDialog.Description>
+		<div class="mt-4 flex justify-end gap-2">
+			<AlertDialog.Cancel type="button">Cancel</AlertDialog.Cancel>
+			<Button variant="destructive" type="button" onclick={doDeleteType}>Delete record type</Button>
+		</div>
+	</AlertDialog.Content>
+</AlertDialog.Root>

@@ -61,14 +61,16 @@
 <Dialog.Root bind:open={isOpen}>
 	<Dialog.Trigger>
 		{#snippet child({ props })}
-			<Button {...props} variant="outline" size="icon" title="Settings">
+			<Button {...props} variant="outline" size="icon" title="App settings">
 				<SettingsIcon />
 			</Button>
 		{/snippet}
 	</Dialog.Trigger>
 	<Dialog.Content>
-		<Dialog.Title>Settings</Dialog.Title>
-		<Dialog.Description>App-wide preferences. Stored in your data folder.</Dialog.Description>
+		<Dialog.Title>App settings</Dialog.Title>
+		<Dialog.Description>
+			Global, app-wide preferences. Per-class / per-type settings live in each entity's ⋮ menu.
+		</Dialog.Description>
 
 		<div class="flex flex-col gap-4 py-4">
 			<div class="flex flex-col gap-2">

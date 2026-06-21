@@ -83,10 +83,15 @@
 				{/if}
 			</div>
 		{/if}
-		{#if config.variant !== 'text' || item.chips.length > 0 || item.extraChips}
+		{#if config.variant !== 'text' || item.chips.length > 0 || item.extraChips || item.secondaryLabel}
 			<div class="p-1.5">
 				{#if config.variant !== 'text'}
 					<div class="truncate text-xs" title={item.primaryLabel}>{item.primaryLabel}</div>
+				{/if}
+				{#if item.secondaryLabel}
+					<div class="truncate text-[11px] text-muted-foreground" title={item.secondaryLabel}>
+						{item.secondaryLabel}
+					</div>
 				{/if}
 				{#if item.chips.length > 0 || item.extraChips}
 					<div class="mt-0.5 flex flex-wrap gap-0.5">

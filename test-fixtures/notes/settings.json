@@ -13,5 +13,7 @@
 		},
 		"attachment": { "type": "file", "removable": true, "defaultValue": "" }
 	},
-	"dataFileName": "data.json"
+	"dataFileName": "data.json",
+	"displayField": "title",
+	"subtitleField": "priority"
 }

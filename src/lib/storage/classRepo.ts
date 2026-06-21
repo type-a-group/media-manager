@@ -14,7 +14,7 @@ import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
-import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
+import { isProtectedSchemaKey, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 import { readImageDimensions } from '$lib/server/fileMetadata.js';
 import {
 	readManifest,
@@ -699,6 +699,20 @@ function groupByValue(
 	return val as string | number | boolean | string[];
 }
 
+/**
+ * Lowercased searchable text for one field of a class record, reusing {@link groupByValue} so
+ * url/list/dropdown values are matched the same way they group/render. Empty string when absent.
+ */
+function fieldSearchText(
+	rec: Record<string, unknown>,
+	schema: SchemaDefinition,
+	field: string
+): string {
+	const v = groupByValue(rec, schema, field);
+	if (v == null) return '';
+	return (Array.isArray(v) ? v.join(', ') : String(v)).toLowerCase();
+}
+
 // ---------------------------------------------------------------------------
 // Reconcile + dimension backfill helpers (shared by both listings)
 // ---------------------------------------------------------------------------
@@ -811,6 +825,15 @@ export async function listAllFiles(params?: {
 	 * disambiguate same-named fields across the intersected classes.
 	 */
 	groupBy?: { classId: string; field: string } | null;
+	/**
+	 * Scope {@link query}. Encodings:
+	 * - `null`/empty in a plain All-Files / "any of" view → **filename only**.
+	 * - `null`/empty in an intersection ("all of", 2+ classes) → **All fields**: filename + every user
+	 *   field of every intersected class.
+	 * - `"<classId>::<field>"` → one specific field of one intersected class (mirrors the cross
+	 *   group-by encoding).
+	 */
+	searchField?: string | null;
 }): Promise<FileListResponse> {
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
@@ -820,6 +843,8 @@ export async function listAllFiles(params?: {
 	const matchAll = params?.matchAll ?? false;
 	const unclassified = params?.unclassified ?? false;
 	const groupBy = params?.groupBy ?? null;
+	const searchField = params?.searchField || null;
+	const crossMode = matchAll && !unclassified && !!classIds && classIds.length > 1;
 
 	// Load the group-by class once so we can read each member's field value (best-effort).
 	let groupByClassFile: ClassFile | null = null;
@@ -831,10 +856,49 @@ export async function listAllFiles(params?: {
 		}
 	}
 
+	// Load the class file(s) needed to evaluate a field-scoped search (intersection only). A specific
+	// `classId::field` loads that one class; an All-fields search in cross mode loads every intersected
+	// class. Outside an intersection there is no single field context, so search stays filename-only.
+	const [sfClassId, sfField] =
+		searchField && searchField.includes('::') ? searchField.split('::') : [null, null];
+	const searchClassFiles: { schema: SchemaDefinition; records: Record<string, unknown> }[] = [];
+	if (q) {
+		const idsToLoad = sfClassId ? [sfClassId] : crossMode ? (classIds ?? []) : [];
+		for (const cid of idsToLoad) {
+			const cf = await readClassFile(cid).catch(() => null);
+			if (cf)
+				searchClassFiles.push({
+					schema: cf.schema,
+					records: cf.records as Record<string, unknown>
+				});
+		}
+	}
+
+	/** Whether a blob matches the active text query given the (possibly field-scoped) search mode. */
+	const matchesSearch = (id: string, fileName: string): boolean => {
+		if (!q) return true;
+		if (sfField) {
+			const cf = searchClassFiles[0];
+			if (!cf) return false;
+			const rec = (cf.records[id] ?? {}) as Record<string, unknown>;
+			return fieldSearchText(rec, cf.schema, sfField).includes(q);
+		}
+		if (searchClassFiles.length > 0) {
+			// All-fields (intersection): filename or any user field of any intersected class.
+			if (fileName.toLowerCase().includes(q)) return true;
+			return searchClassFiles.some((cf) => {
+				const rec = (cf.records[id] ?? {}) as Record<string, unknown>;
+				return schemaUserFieldKeys(cf.schema).some((k) =>
+					fieldSearchText(rec, cf.schema, k).includes(q)
+				);
+			});
+		}
+		return fileName.toLowerCase().includes(q); // filename only
+	};
+
 	const files: FileItem[] = [];
 	for (const [id, entry] of Object.entries(manifest.files)) {
 		if (!diskNames.has(entry.file_name)) continue; // hide blobs missing from disk in the grid
-		if (q && !entry.file_name.toLowerCase().includes(q)) continue;
 		if (unclassified) {
 			if (entry.classes.length > 0) continue;
 		} else if (classIds && classIds.length > 0) {
@@ -843,6 +907,7 @@ export async function listAllFiles(params?: {
 				: classIds.some((c) => entry.classes.includes(c));
 			if (!has) continue;
 		}
+		if (!matchesSearch(id, entry.file_name)) continue;
 		const item = fileItemFromEntry(id, manifest);
 		if (groupByClassFile) {
 			const rec = (groupByClassFile.records[id] ?? {}) as Record<string, unknown>;
@@ -864,6 +929,11 @@ export async function listClassMembers(
 		query?: string | null;
 		groupBy?: string | null;
 		filters?: FilterClause[] | null;
+		/**
+		 * Scope {@link query} to one field key. `null`/empty = **All fields** (filename + every user
+		 * field). A field key restricts the match to that class field only.
+		 */
+		searchField?: string | null;
 	}
 ): Promise<FileListResponse> {
 	const file = await readClassFile(id);
@@ -874,13 +944,22 @@ export async function listClassMembers(
 	const groupBy = params?.groupBy ?? null;
 	const filters = params?.filters ?? null;
 	const q = params?.query ? params.query.toLowerCase() : null;
+	const searchField = params?.searchField || null;
 
 	const files: FileItem[] = [];
 	for (const [fileId, rec] of Object.entries(file.records)) {
 		const entry = manifest.files[fileId];
 		const fileName = entry?.file_name ?? '';
-		if (q && !fileName.toLowerCase().includes(q)) continue;
 		const recObj = rec as Record<string, unknown>;
+		if (q) {
+			const match = searchField
+				? fieldSearchText(recObj, file.schema, searchField).includes(q)
+				: fileName.toLowerCase().includes(q) ||
+					schemaUserFieldKeys(file.schema).some((k) =>
+						fieldSearchText(recObj, file.schema, k).includes(q)
+					);
+			if (!match) continue;
+		}
 		if (filters && filters.length > 0) {
 			if (!filters.every((c) => evaluateClause(recObj, c, file.schema))) continue;
 		}

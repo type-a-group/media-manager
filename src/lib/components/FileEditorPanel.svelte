@@ -14,8 +14,8 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { FileText } from 'lucide-svelte';
-	import { settingsStore } from '$lib/stores/settings.js';
+	import { FileText, Loader2, Check } from 'lucide-svelte';
+	import { toast } from 'svelte-sonner';
 	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
 
 	/** One editable class section: schema/config plus the blob's (always-present) record. */
@@ -29,7 +29,9 @@
 
 	/**
 	 * Per-file editor: one collapsible section per class the blob belongs to, each rendering that
-	 * class's schema. Plus rename, intrinsic info, and add/remove-to-class.
+	 * class's schema. Plus rename, intrinsic info, and add/remove-to-class. Edits **autosave** (debounced,
+	 * mirroring the Records detail pane) — flushed on field blur/Enter, prev/next, file switch, close,
+	 * and unload, with a "Saving…/Saved" status in the header. No explicit per-section Save button.
 	 */
 	let {
 		file,
@@ -62,8 +64,12 @@
 	let addClassId = $state('');
 	/** When true, the image preview is shown full-screen over the whole app (click/Esc to close). */
 	let lightboxOpen = $state(false);
-	/** Per-section serialized snapshot at last save/load, to detect unsaved edits before advancing. */
-	let savedSnapshots: Record<string, string> = {};
+	/** Per-section serialized snapshot at last save/load, to detect unsaved edits. */
+	let savedSnapshots = $state<Record<string, string>>({});
+	/** Debounced-autosave bookkeeping (mirrors the Records detail pane). */
+	let saving = $state(false);
+	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
@@ -80,6 +86,8 @@
 		return patch;
 	}
 	const snapshotOf = (section: Section) => JSON.stringify(patchFor(section));
+	/** Any section with edits not yet persisted. */
+	const dirty = $derived(sections.some((s) => snapshotOf(s) !== savedSnapshots[s.id]));
 
 	async function load() {
 		loading = true;
@@ -95,26 +103,103 @@
 		}
 	}
 
-	/** Save any sections with unsaved edits (used by autosave-on-advance). */
+	/** Persist every section with unsaved edits, tracking a single save status for the panel header. */
 	async function saveDirtySections() {
-		for (const s of sections) {
-			if (snapshotOf(s) !== savedSnapshots[s.id]) await saveSection(s);
+		if (saving || !dirty) return;
+		saving = true;
+		saveStatus = 'saving';
+		try {
+			for (const s of sections) {
+				if (snapshotOf(s) !== savedSnapshots[s.id]) {
+					await apiUpdateClassRecord(s.id, file.id, patchFor(s));
+					savedSnapshots[s.id] = snapshotOf(s);
+				}
+			}
+			saveStatus = 'saved';
+			onchanged();
+		} catch (e) {
+			console.error(e);
+			saveStatus = 'error';
+			toast.error('Failed to save');
+		} finally {
+			saving = false;
 		}
 	}
 
-	/** Run a prev/next navigation, first autosaving dirty edits if the setting is enabled. */
+	/** Cancel any pending debounce and persist immediately. */
+	async function flush() {
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
+		await saveDirtySections();
+	}
+
+	/**
+	 * Fire-and-forget flush for the file we're leaving (effect cleanup can't be async, and
+	 * `beforeunload`). `fid` is captured so a mid-load file switch saves the OUTGOING blob's edits.
+	 */
+	function flushLeavingSync(fid: string) {
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
+		if (saving || !dirty) return;
+		for (const s of sections) {
+			if (snapshotOf(s) !== savedSnapshots[s.id]) {
+				const snap = snapshotOf(s);
+				void apiUpdateClassRecord(s.id, fid, patchFor(s))
+					.then(() => {
+						savedSnapshots[s.id] = snap;
+						onchanged();
+					})
+					.catch((e) => console.error('Autosave on leave failed', e));
+			}
+		}
+	}
+
+	/** Flush pending edits, then run a prev/next navigation. */
 	async function advance(go: (() => void) | undefined) {
 		if (!go) return;
-		if (settingsStore.getCurrentSettings().autoSaveOnAdvance) await saveDirtySections();
+		await flush();
 		go();
 	}
 
+	async function handleClose() {
+		await flush();
+		onclose();
+	}
+
+	// Debounced autosave: whenever a section drifts from its last saved snapshot, schedule a write.
 	$effect(() => {
-		// reload whenever the selected file changes
-		file.id;
+		if (!dirty) return;
+		if (debounceTimer) clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => {
+			debounceTimer = null;
+			void saveDirtySections();
+		}, 600);
+		return () => {
+			if (debounceTimer) {
+				clearTimeout(debounceTimer);
+				debounceTimer = null;
+			}
+		};
+	});
+
+	$effect(() => {
+		// reload whenever the selected file changes; flush the outgoing blob's edits first
+		const fid = file.id;
 		renaming = file.file_name;
 		lightboxOpen = false;
 		load();
+		return () => flushLeavingSync(fid);
+	});
+
+	// Best-effort flush if the tab is closed mid-edit.
+	$effect(() => {
+		const handler = () => flushLeavingSync(file.id);
+		window.addEventListener('beforeunload', handler);
+		return () => window.removeEventListener('beforeunload', handler);
 	});
 
 	$effect(() => {
@@ -136,12 +221,6 @@
 	function isMissing(section: Section, key: string): boolean {
 		const mf = section.record._missing_files as Record<string, string> | undefined;
 		return !!mf && key in mf;
-	}
-
-	async function saveSection(section: Section) {
-		await apiUpdateClassRecord(section.id, file.id, patchFor(section));
-		savedSnapshots[section.id] = snapshotOf(section);
-		onchanged();
 	}
 
 	async function rename() {
@@ -171,7 +250,7 @@
 	{total}
 	onPrev={() => advance(onPrev)}
 	onNext={() => advance(onNext)}
-	{onclose}
+	onclose={handleClose}
 >
 	{#snippet titleArea()}
 		<Input
@@ -180,6 +259,15 @@
 			onblur={rename}
 			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 		/>
+		<span class="shrink-0 text-xs text-muted-foreground">
+			{#if saveStatus === 'saving'}
+				<Loader2 class="inline size-3 animate-spin" /> Saving…
+			{:else if saveStatus === 'saved' && !dirty}
+				<Check class="inline size-3 text-green-600" /> Saved
+			{:else if saveStatus === 'error'}
+				<span class="text-destructive">Save failed</span>
+			{/if}
+		</span>
 	{/snippet}
 	{#snippet actions()}
 		<MetadataButton id={file.id} filename={file.file_name} {onchanged} />
@@ -258,13 +346,10 @@
 								missingName={(
 									section.record._missing_files as Record<string, string> | undefined
 								)?.[key]}
-								onEnterSave={() => saveSection(section)}
+								onEnterSave={flush}
 							/>
 						</div>
 					{/each}
-					<Button variant="secondary" size="sm" onclick={() => saveSection(section)}
-						>Save {section.displayName}</Button
-					>
 				</div>
 			</section>
 		{/each}

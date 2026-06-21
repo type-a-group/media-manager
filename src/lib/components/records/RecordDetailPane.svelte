@@ -3,10 +3,11 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { Trash2, ChevronUp, ChevronDown, X, Check, Loader2 } from 'lucide-svelte';
+	import { Trash2, Check, Loader2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import EditorPanelShell from '$lib/components/EditorPanelShell.svelte';
 	import FieldInput from '$lib/components/FieldInput.svelte';
-	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
+	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { recordDetailTitle } from '$lib/core/recordDisplay.js';
@@ -19,10 +20,11 @@
 
 	/**
 	 * The Records Explorer's right-hand detail pane: an inline, **autosaving** editor for a single
-	 * record. It renders the type's schema as a stack of {@link FieldInput}s as a fixed column in the
-	 * three-pane Explorer (not a floating aside) and drops the explicit Save button —
-	 * edits are debounced and flushed on field blur, prev/next, record switch, close, and unload, with
-	 * a "Saving…/Saved" status hint. Delete is kept (confirmed).
+	 * record. It composes the shared {@link EditorPanelShell} (the same chrome the Files hub uses —
+	 * fixed-width aside, prev/next chevrons + ←/→ keys, close) and renders the type's schema as a stack
+	 * of {@link FieldInput}s. There is no explicit Save button — edits are debounced and flushed on
+	 * field blur, prev/next, record switch, close, and unload, with a "Saving…/Saved" status hint.
+	 * Delete is kept (confirmed). Only renders when a record is selected (no reserved space).
 	 *
 	 * @param typeId - The `json` media type id.
 	 * @param recordId - The open record (reloads when it changes).
@@ -73,11 +75,8 @@
 	let loaded = $state<{ typeId: string; recordId: string } | null>(null);
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-	/** Ordered editable keys (name first for display). */
-	function getOrderedEditableKeys(s: SchemaDefinition): string[] {
-		const keys = Object.keys(s).filter((k) => isUserFieldKey(k) || k === 'name');
-		return keys.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)));
-	}
+	/** Ordered editable keys (name first for display) — shared helper. */
+	const getOrderedEditableKeys = schemaUserFieldKeys;
 
 	function initFormValues(s: SchemaDefinition, rec: Record<string, unknown> | null) {
 		const next: Record<string, unknown> = {};
@@ -283,28 +282,14 @@
 	}
 </script>
 
-<aside class="flex h-screen w-[440px] shrink-0 flex-col border-l bg-background">
-	<header class="flex items-center gap-1.5 border-b p-3">
-		<div class="flex shrink-0 items-center">
-			<Button
-				variant="ghost"
-				size="icon"
-				disabled={index <= 0}
-				onclick={() => advance(onPrev)}
-				title="Previous (saves first)"
-			>
-				<ChevronUp class="size-4" />
-			</Button>
-			<Button
-				variant="ghost"
-				size="icon"
-				disabled={index < 0 || index >= total - 1}
-				onclick={() => advance(onNext)}
-				title="Next (saves first)"
-			>
-				<ChevronDown class="size-4" />
-			</Button>
-		</div>
+<EditorPanelShell
+	{index}
+	{total}
+	onPrev={() => advance(onPrev)}
+	onNext={() => advance(onNext)}
+	onclose={handleClose}
+>
+	{#snippet titleArea()}
 		<span class="min-w-0 flex-1 truncate text-sm font-medium" {title}>{title}</span>
 		<span class="shrink-0 text-xs text-muted-foreground">
 			{#if saveStatus === 'saving'}
@@ -315,6 +300,9 @@
 				<span class="text-destructive">Save failed</span>
 			{/if}
 		</span>
+	{/snippet}
+
+	{#snippet actions()}
 		<AlertDialog.Root bind:open={deleteOpen}>
 			<AlertDialog.Trigger>
 				{#snippet child({ props })}
@@ -333,41 +321,36 @@
 				</div>
 			</AlertDialog.Content>
 		</AlertDialog.Root>
-		<Button variant="ghost" size="icon" aria-label="Close" onclick={handleClose}>
-			<X class="size-4" />
-		</Button>
-	</header>
+	{/snippet}
 
-	<div class="min-h-0 flex-1 overflow-y-auto p-3">
-		{#if loading}
-			<p class="text-sm text-muted-foreground">Loading…</p>
-		{:else if schema}
-			<Card.Root>
-				<Card.Content class="pt-4">
-					<div class="flex flex-col gap-4">
-						{#each getOrderedEditableKeys(schema) as key (key)}
-							{@const def = schema[key]}
-							{@const rec = record as Record<string, unknown> | null}
-							{@const mf = (rec?._missing_files ?? undefined) as Record<string, string> | undefined}
-							{@const isMissing =
-								def?.type === 'file' && mf?.[key] !== undefined && formValues[key] === rec?.[key]}
-							<div class="flex flex-col gap-2">
-								<Label for={key}>{fieldLabel(key)}</Label>
-								{#if def}
-									<FieldInput
-										{def}
-										id={key}
-										bind:value={formValues[key]}
-										missing={isMissing}
-										missingName={mf?.[key]}
-										onEnterSave={flush}
-									/>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				</Card.Content>
-			</Card.Root>
-		{/if}
-	</div>
-</aside>
+	{#if loading}
+		<p class="text-sm text-muted-foreground">Loading…</p>
+	{:else if schema}
+		<Card.Root>
+			<Card.Content class="pt-4">
+				<div class="flex flex-col gap-4">
+					{#each getOrderedEditableKeys(schema) as key (key)}
+						{@const def = schema[key]}
+						{@const rec = record as Record<string, unknown> | null}
+						{@const mf = (rec?._missing_files ?? undefined) as Record<string, string> | undefined}
+						{@const isMissing =
+							def?.type === 'file' && mf?.[key] !== undefined && formValues[key] === rec?.[key]}
+						<div class="flex flex-col gap-2">
+							<Label for={key}>{fieldLabel(key)}</Label>
+							{#if def}
+								<FieldInput
+									{def}
+									id={key}
+									bind:value={formValues[key]}
+									missing={isMissing}
+									missingName={mf?.[key]}
+									onEnterSave={flush}
+								/>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			</Card.Content>
+		</Card.Root>
+	{/if}
+</EditorPanelShell>

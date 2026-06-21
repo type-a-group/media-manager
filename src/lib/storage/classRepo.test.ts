@@ -114,4 +114,56 @@ describe('classRepo — opt-in class membership', () => {
 		expect(rec).not.toBeNull();
 		expect((await listAllFiles()).files[0].classes).toEqual(['favorites']);
 	});
+
+	it('searches a single class by field value, by All-fields, and respects field scope', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');
+		const files0 = (await listAllFiles()).files;
+		const aId = files0.find((f) => f.file_name === 'a.png')!.id;
+		const bId = files0.find((f) => f.file_name === 'b.png')!.id;
+		const id = await createClass('Gallery', schema);
+		await addMembers(id, [aId, bId]);
+		await updateRecord(id, aId, { caption: 'sunset' });
+		await updateRecord(id, bId, { caption: 'mountain' });
+
+		// Field-scoped: only the caption field is matched.
+		expect(
+			(await listClassMembers(id, { query: 'sun', searchField: 'caption' })).files.map((f) => f.id)
+		).toEqual([aId]);
+		// All-fields (no searchField) also matches the filename.
+		expect((await listClassMembers(id, { query: 'b.png' })).files.map((f) => f.id)).toEqual([bId]);
+		// A field-scoped query ignores the filename: 'a.png' won't match the caption field.
+		expect(
+			(await listClassMembers(id, { query: 'a.png', searchField: 'caption' })).files
+		).toHaveLength(0);
+	});
+
+	it('searches an intersection by classId::field and by All-fields', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');
+		const files0 = (await listAllFiles()).files;
+		const aId = files0.find((f) => f.file_name === 'a.png')!.id;
+		const bId = files0.find((f) => f.file_name === 'b.png')!.id;
+		const images = await createClass('Images', schema);
+		const docs = await createClass('Documents', {
+			description: { type: 'string', removable: true, defaultValue: '' }
+		} as unknown as SchemaDefinition);
+		await addMembers(images, [aId, bId]);
+		await addMembers(docs, [aId, bId]);
+		await updateRecord(docs, aId, { description: 'invoice' });
+		await updateRecord(docs, bId, { description: 'receipt' });
+
+		// Specific field of the docs class via the classId::field encoding.
+		const byField = await listAllFiles({
+			classIds: [images, docs],
+			matchAll: true,
+			query: 'invo',
+			searchField: `${docs}::description`
+		});
+		expect(byField.files.map((f) => f.id)).toEqual([aId]);
+
+		// All-fields intersection search reaches the docs field too.
+		const all = await listAllFiles({ classIds: [images, docs], matchAll: true, query: 'receipt' });
+		expect(all.files.map((f) => f.id)).toEqual([bId]);
+	});
 });

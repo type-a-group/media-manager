@@ -9,7 +9,11 @@ import { withFileLock } from './lock.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
 import { GLOBALS_RECORD_ID } from './mediaTypes.js';
 import { normalizeFieldKey } from './migrate.js';
-import { isProtectedSchemaKey, GLOBALS_FIELD_KINDS_KEY } from '$lib/core/fieldKeys.js';
+import {
+	isProtectedSchemaKey,
+	GLOBALS_FIELD_KINDS_KEY,
+	schemaUserFieldKeys
+} from '$lib/core/fieldKeys.js';
 
 import type { SchemaDefinition, FieldDefinition } from '$lib/core/types.js';
 import {
@@ -256,6 +260,14 @@ export function createJsonRepoForType(typeId: string) {
 		filters?: FilterClause[] | null;
 		groupBy?: string | null;
 		titleField?: string | null;
+		subtitleField?: string | null;
+		/** Free-text search query (case-insensitive substring). */
+		searchQuery?: string | null;
+		/**
+		 * Field to scope {@link searchQuery} to. `null`/empty = **All fields** (match if any user field's
+		 * rendered value contains the query). A field key restricts the match to that one field.
+		 */
+		searchField?: string | null;
 	}): Promise<JsonListResponse> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
@@ -265,7 +277,19 @@ export function createJsonRepoForType(typeId: string) {
 			records = applyFilters(records, params.filters, settings.schema);
 		}
 		const groupBy = params?.groupBy ?? null;
-		const titleField = params?.titleField ?? null;
+		// Resolve the effective title field so list rows ALWAYS get a `title_value` and never fall back
+		// to a raw id. Precedence: explicit query param → persisted `displayField` → a sensible default
+		// (`name` if present, else the first string field, else the first field). The client then trusts
+		// `title_value` first — fixing the bug where a present `name` field shadowed the chosen field.
+		const defaultTitleField = (() => {
+			const keys = Object.keys(settings.schema);
+			if (keys.includes('name')) return 'name';
+			const firstString = keys.find((k) => settings.schema[k]?.type === 'string');
+			return firstString ?? keys[0] ?? null;
+		})();
+		const titleField = params?.titleField ?? settings.displayField ?? defaultTitleField;
+		// Optional persisted subtitle (muted secondary line); explicit query param wins. No default.
+		const subtitleField = params?.subtitleField ?? settings.subtitleField ?? null;
 		// Only touch the global manifest/disk when the schema actually has `file` fields to validate.
 		const hasFileField = Object.values(settings.schema).some((d) => d?.type === 'file');
 		const available = hasFileField ? (await getAvailableFileIds()).available : null;
@@ -295,16 +319,35 @@ export function createJsonRepoForType(typeId: string) {
 			return String(val) || undefined;
 		};
 
+		// Field-scoped (or all-field) text search, applied server-side because list rows carry only
+		// derived display values, not raw field data. Reuses `stringifyFieldValue` so url/list/dropdown
+		// values match the same way they render.
+		const searchQuery = params?.searchQuery?.trim().toLowerCase() ?? '';
+		if (searchQuery) {
+			const searchField = params?.searchField || null;
+			const fieldsToSearch = searchField ? [searchField] : schemaUserFieldKeys(settings.schema);
+			records = records.filter((rec) => {
+				const recAny = rec as Record<string, unknown>;
+				return fieldsToSearch.some((k) =>
+					(stringifyFieldValue(k, recAny[k]) ?? '').toLowerCase().includes(searchQuery)
+				);
+			});
+		}
+
 		const items: JsonListItem[] = records.map((rec) => {
 			const recAny = rec as Record<string, unknown>;
 			const item: JsonListItem = { id: rec.id };
 			// Include name for list/grid display when present (e.g. default "name" field).
 			if (typeof recAny.name === 'string') item.name = recAny.name;
-			// Title-by a chosen schema field (Explorer list rows). Skipped when it's the name field
-			// (already carried) so we don't duplicate work.
-			if (titleField && titleField !== 'name') {
+			// Always resolve the title from the effective title field so the client never needs to guess.
+			if (titleField) {
 				const tv = stringifyFieldValue(titleField, recAny[titleField]);
-				if (tv !== undefined) item.title_value = tv;
+				if (tv !== undefined && tv !== '') item.title_value = tv;
+			}
+			// Optional subtitle from a distinct field (skip when it duplicates the title).
+			if (subtitleField && subtitleField !== titleField) {
+				const sv = stringifyFieldValue(subtitleField, recAny[subtitleField]);
+				if (sv !== undefined && sv !== '') item.subtitle_value = sv;
 			}
 			if (available) {
 				const miss = missingFileFields(recAny, settings.schema, available);

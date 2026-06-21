@@ -7,7 +7,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { ChevronsUpDownIcon } from 'lucide-svelte';
 	import type { SchemaDefinition } from '$lib/core/types.js';
-	import { isUserFieldKey } from '$lib/core/fieldKeys.js';
+	import { schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import {
 		getOperatorsForFieldType,
 		OPERATOR_LABELS,
@@ -41,9 +41,7 @@
 		filters?: FilterRow[];
 	} = $props();
 
-	const schemaFields = $derived(
-		schema ? Object.keys(schema).filter((k) => isUserFieldKey(k) || k === 'name') : []
-	);
+	const schemaFields = $derived(schema ? schemaUserFieldKeys(schema) : []);
 
 	/** Resolve a field's schema type (unknown keys default to string). */
 	function getFieldTypeForField(

@@ -20,6 +20,11 @@ export interface GridItem {
 	id: string;
 	/** Filename / record name / id fallback — already resolved by the host adapter. */
 	primaryLabel: string;
+	/**
+	 * Optional muted secondary line under the primary label (e.g. a record subtitle). Currently
+	 * unused by the Files tiles; wired in for hosts that want a subtitle under each tile.
+	 */
+	secondaryLabel?: string;
 	/** Blob bytes URL for an image thumbnail; omit to render the file-icon fallback. */
 	thumbnailUrl?: string;
 	chips: GridChip[];

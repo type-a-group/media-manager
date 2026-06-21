@@ -4,22 +4,37 @@ import type { JsonListItem } from './types.js';
  * Resolve the display title for a record list row in the Records Explorer.
  *
  * Records types don't always have a `name` field; before this resolver such rows fell back to the
- * raw id (e.g. `55555555`). Resolution order: explicit `name` → the chosen `title_value` (populated
- * when the list was requested with a `titleField`) → the `group_by_value` (when grouped) → a short
- * id as a last resort. Pure and side-effect-free so it can be unit-tested and shared by the row list
- * and the detail-pane header.
+ * raw id (e.g. `55555555`). The server now resolves an effective title field (the chosen "title by",
+ * else a sensible default) and returns it as `title_value`, so we trust that FIRST — otherwise a type
+ * with a `name` field would shadow the chosen title field. Resolution order: `title_value` → `name` →
+ * the `group_by_value` (when grouped) → a short id as a last resort. Pure and side-effect-free so it
+ * can be unit-tested and shared by the row list and the detail-pane header.
  *
  * @param item - A record list item from `apiListRecordsForType`.
  * @returns A non-empty human-readable title.
  */
 export function recordListTitle(item: JsonListItem): string {
-	const name = item.name?.trim();
-	if (name) return name;
 	const title = item.title_value?.trim();
 	if (title) return title;
+	const name = item.name?.trim();
+	if (name) return name;
 	const g = item.group_by_value;
 	if (g != null && g !== '') return Array.isArray(g) ? g.join(', ') : String(g);
 	return item.id.slice(0, 8);
+}
+
+/**
+ * Resolve the optional muted subtitle for a record list row, derived server-side from the type's
+ * persisted `subtitleField`. Returns null when no subtitle is configured or the record's value is
+ * empty (single-line row). The configured subtitle is independent of grouping — group values live in
+ * the list's group headers, not the row subtitle.
+ *
+ * @param item - A record list item from `apiListRecordsForType`.
+ * @returns The subtitle string, or null when there is none.
+ */
+export function recordListSubtitle(item: JsonListItem): string | null {
+	const s = item.subtitle_value?.trim();
+	return s ? s : null;
 }
 
 /**

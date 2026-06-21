@@ -20,20 +20,22 @@
 	import { fieldLabel } from '$lib/core/fieldKeys.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
-	import ClassSchemaDialog from '$lib/components/ClassSchemaDialog.svelte';
-	import ClassSettingsDialog from '$lib/components/ClassSettingsDialog.svelte';
-	import SettingsButton from '$lib/components/SettingsButton.svelte';
+	import EntityRail from '$lib/components/rail/EntityRail.svelte';
+	import SearchBox from '$lib/components/SearchBox.svelte';
+	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
+	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
+	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
+	import { classSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
 	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
 	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Home, ListChecks, MoreVertical, Plus, Upload, X } from 'lucide-svelte';
+	import { ListChecks, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
@@ -64,6 +66,12 @@
 	let editorRefresh = $state(0);
 
 	let query = $state('');
+	/**
+	 * Which field the search is scoped to. `''` = All fields (filename + fields) in a class context,
+	 * or just Filename in the All-Files / "any of" view. In a single-class catalog it's a class field
+	 * key; in the cross "all of" view it's the `classId::field` encoding (same as the group-by picker).
+	 */
+	let searchField = $state('');
 	const selectedClasses = new SvelteSet<string>();
 	let unclassified = $state(false);
 	let matchAll = $state(false);
@@ -82,14 +90,16 @@
 	let deleteFilesOpen = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 
-	// Class management dialogs
-	let schemaOpen = $state(false);
+	// Unified class settings dialog (⋮ → Settings) + delete confirm.
 	let settingsOpen = $state(false);
 	let manageClassId = $state('');
 	let manageClassName = $state('');
 	let deleteClassOpen = $state(false);
 	let deleteClassId = $state('');
 	let deleteClassName = $state('');
+
+	/** Rail collapse mirrors the shared global pref (same one the Records rail uses). */
+	let railCollapsed = $state(false);
 
 	const editorFile = $derived(files.find((f) => f.id === editorFileId) ?? null);
 	const editorIndex = $derived(files.findIndex((f) => f.id === editorFileId));
@@ -125,6 +135,24 @@
 	const crossGroupByLabel = $derived(
 		crossGroupBy ? (crossOptions.find((o) => o.value === crossGroupBy)?.label ?? 'None') : 'None'
 	);
+
+	/**
+	 * Fields offered by the rail's search-field picker — mirrors the group-by feature: a solo class's
+	 * own fields, the `Class: field` set across an intersection, else none (filename only).
+	 */
+	const searchFields = $derived.by(() => {
+		if (soloClass) return catalogSchemaKeys.map((k) => ({ key: k, label: fieldLabel(k) }));
+		if (crossMode) return crossOptions.map((o) => ({ key: o.value, label: o.label }));
+		return [] as { key: string; label: string }[];
+	});
+	/** The All-fields/Filename default label, and whether there's any field to narrow to. */
+	const searchAllLabel = $derived(soloClass || crossMode ? 'All fields' : 'Filename');
+	const searchFieldHasFields = $derived(soloClass != null || crossMode);
+
+	// Drop a stale scoped field when the class context changes (e.g. solo → all files).
+	$effect(() => {
+		if (searchField && !searchFields.some((f) => f.key === searchField)) searchField = '';
+	});
 	const bulkLabel = $derived(
 		classes.find((c) => c.id === bulkClassId)?.displayName ?? 'Add to class…'
 	);
@@ -151,7 +179,8 @@
 				}
 				const data = await apiListClassMembers(soloClass, {
 					groupBy: catalogGroupBy || undefined,
-					query: query || undefined
+					query: query || undefined,
+					searchField: searchField || undefined
 				});
 				files = data.files;
 			} else {
@@ -163,7 +192,8 @@
 					matchAll,
 					unclassified,
 					groupByClass: gc,
-					groupByField: gf
+					groupByField: gf,
+					searchField: searchField || undefined
 				});
 				files = data.files;
 			}
@@ -307,9 +337,15 @@
 	$effect(() => {
 		const unsubscribe = settingsStore.subscribe((s) => {
 			gridSize = s.gridSize;
+			railCollapsed = s.railCollapsed;
 		});
 		return () => unsubscribe();
 	});
+
+	function toggleRail() {
+		railCollapsed = !railCollapsed;
+		settingsStore.updateSetting('railCollapsed', railCollapsed);
+	}
 
 	onMount(async () => {
 		await settingsStore.fetchSettings();
@@ -325,6 +361,7 @@
 	// Reload the grid when filters/search change.
 	$effect(() => {
 		query;
+		searchField;
 		[...selectedClasses].join(',');
 		unclassified;
 		matchAll;
@@ -434,22 +471,28 @@
 		await loadFiles();
 	}
 
-	function openSchema(c: ClassSummary) {
-		manageClassId = c.id;
-		manageClassName = c.displayName;
-		schemaOpen = true;
-	}
-
 	function openSettings(c: ClassSummary) {
 		manageClassId = c.id;
 		manageClassName = c.displayName;
 		settingsOpen = true;
 	}
 
+	/** Open settings for a class by id (used by the content-header ⋮ for the active solo class). */
+	function openSettingsById(id: string) {
+		const c = classes.find((x) => x.id === id);
+		if (c) openSettings(c);
+	}
+
 	function askDeleteClass(c: ClassSummary) {
 		deleteClassId = c.id;
 		deleteClassName = c.displayName;
 		deleteClassOpen = true;
+	}
+
+	/** Ask to delete a class by id (used by the content-header ⋮ for the active solo class). */
+	function askDeleteClassById(id: string) {
+		const c = classes.find((x) => x.id === id);
+		if (c) askDeleteClass(c);
 	}
 
 	async function doDeleteClass() {
@@ -467,155 +510,179 @@
 	}
 </script>
 
-<Sidebar.Provider>
-	<Sidebar.Root collapsible="none" class="h-screen border-r">
-		<Sidebar.Header class="gap-2">
-			<div class="flex items-center justify-between">
-				<Button
-					variant="ghost"
-					size="sm"
-					class="px-1 text-base font-semibold"
-					onclick={clearFilters}
-				>
-					Files
-				</Button>
-				<Button variant="ghost" size="icon" title="Home" href="/">
-					<Home class="size-4" />
-				</Button>
-			</div>
-			<Input class="h-8 text-sm" placeholder="Search filenames…" bind:value={query} />
-			{#if missing.count > 0}
-				<Button
-					variant="ghost"
-					size="sm"
-					class="w-full justify-start bg-destructive/10 text-xs text-destructive hover:bg-destructive/20"
-					onclick={() => (showMissing = !showMissing)}
-				>
-					⚠ {missing.count} file{missing.count === 1 ? '' : 's'} missing — review
-				</Button>
-			{/if}
-		</Sidebar.Header>
-
-		<Sidebar.Content class="p-2">
-			<Sidebar.Group>
-				<div class="mb-1 flex items-center justify-between">
-					<Sidebar.GroupLabel class="p-0">Classes</Sidebar.GroupLabel>
+<div class="flex h-screen w-full overflow-hidden">
+	<EntityRail title="Files" collapsed={railCollapsed} onToggleCollapse={toggleRail}>
+		{#snippet belowHeader()}
+			<div class="flex flex-col gap-2">
+				<SearchBox bind:value={query} placeholder="Search files…" />
+				<SearchFieldSelect
+					fields={searchFields}
+					bind:value={searchField}
+					allLabel={searchAllLabel}
+					disabled={!searchFieldHasFields}
+				/>
+				{#if missing.count > 0}
 					<Button
 						variant="ghost"
 						size="sm"
-						class="h-6 px-1 text-xs"
-						onclick={() => (showNewClass = !showNewClass)}
+						class="w-full justify-start bg-destructive/10 text-xs text-destructive hover:bg-destructive/20"
+						onclick={() => (showMissing = !showMissing)}
 					>
-						<Plus class="size-3" /> New
+						⚠ {missing.count} file{missing.count === 1 ? '' : 's'} missing — review
+					</Button>
+				{/if}
+			</div>
+		{/snippet}
+
+		{#snippet body()}
+			<div class="mb-1 flex items-center justify-between">
+				<span class="text-xs font-medium uppercase text-muted-foreground">Classes</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-6 px-1 text-xs"
+					onclick={() => (showNewClass = !showNewClass)}
+				>
+					<Plus class="size-3" /> New
+				</Button>
+			</div>
+			{#if showNewClass}
+				<div class="mb-2 flex gap-1">
+					<Input
+						class="h-8 text-sm"
+						placeholder="Class name"
+						bind:value={newClassName}
+						onkeydown={(e) => e.key === 'Enter' && createClass()}
+					/>
+					<Button size="sm" class="h-8" onclick={createClass}>Add</Button>
+				</div>
+			{/if}
+			{#if classes.length > 4}
+				<Input class="mb-2 h-8 text-xs" placeholder="filter classes…" bind:value={classSearch} />
+			{/if}
+			<ul class="space-y-0.5">
+				{#each filteredClasses as c (c.id)}
+					<li class="group flex items-center gap-2 rounded px-1 hover:bg-muted">
+						<Checkbox
+							id={`cls-${c.id}`}
+							checked={selectedClasses.has(c.id)}
+							onCheckedChange={() => toggleClassFilter(c.id)}
+						/>
+						<Label
+							for={`cls-${c.id}`}
+							class="flex flex-1 cursor-pointer items-center gap-2 py-1 text-sm font-normal"
+						>
+							<span class="flex-1 truncate">{c.displayName}</span>
+							<span class="text-xs text-muted-foreground">{c.count}</span>
+						</Label>
+						<span class="opacity-0 transition-opacity group-hover:opacity-100">
+							<EntityRowMenu
+								noun="class"
+								onSettings={() => openSettings(c)}
+								onDelete={() => askDeleteClass(c)}
+							/>
+						</span>
+					</li>
+				{/each}
+				{#if classes.length === 0}
+					<li class="px-1 text-xs text-muted-foreground">No classes yet.</li>
+				{/if}
+			</ul>
+
+			{#if selectedClasses.size > 1 && !unclassified}
+				<div class="mt-2 flex items-center gap-2">
+					<span class="text-xs text-muted-foreground">Match</span>
+					<Button
+						variant="outline"
+						size="sm"
+						class="h-7"
+						onclick={() => {
+							matchAll = !matchAll;
+							crossGroupBy = '';
+						}}
+					>
+						{matchAll ? 'all of' : 'any of'}
 					</Button>
 				</div>
-				{#if showNewClass}
-					<div class="mb-2 flex gap-1">
-						<Input
-							class="h-8 text-sm"
-							placeholder="Class name"
-							bind:value={newClassName}
-							onkeydown={(e) => e.key === 'Enter' && createClass()}
-						/>
-						<Button size="sm" class="h-8" onclick={createClass}>Add</Button>
-					</div>
-				{/if}
-				{#if classes.length > 4}
-					<Input class="mb-2 h-8 text-xs" placeholder="filter classes…" bind:value={classSearch} />
-				{/if}
-				<ul class="space-y-0.5">
-					{#each filteredClasses as c (c.id)}
-						<li class="flex items-center gap-2 rounded px-1 hover:bg-muted">
-							<Checkbox
-								id={`cls-${c.id}`}
-								checked={selectedClasses.has(c.id)}
-								onCheckedChange={() => toggleClassFilter(c.id)}
-							/>
-							<Label
-								for={`cls-${c.id}`}
-								class="flex flex-1 cursor-pointer items-center gap-2 py-1 text-sm font-normal"
-							>
-								<span class="flex-1 truncate">{c.displayName}</span>
-								<span class="text-xs text-muted-foreground">{c.count}</span>
-							</Label>
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon"
-											class="size-6"
-											title="Manage class"
-										>
-											<MoreVertical class="size-4" />
-										</Button>
-									{/snippet}
-								</DropdownMenu.Trigger>
-								<DropdownMenu.Content align="end">
-									<DropdownMenu.Item onSelect={() => openSchema(c)}>Edit schema</DropdownMenu.Item>
-									<DropdownMenu.Item onSelect={() => openSettings(c)}>Settings</DropdownMenu.Item>
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item class="text-destructive" onSelect={() => askDeleteClass(c)}>
-										Delete class
-									</DropdownMenu.Item>
-								</DropdownMenu.Content>
-							</DropdownMenu.Root>
-						</li>
+			{/if}
+
+			<div class="mt-3 flex items-center gap-2 border-t pt-2">
+				<Checkbox
+					id="filter-unclassified"
+					checked={unclassified}
+					onCheckedChange={(v) => {
+						unclassified = !!v;
+						if (unclassified) selectedClasses.clear();
+					}}
+				/>
+				<Label for="filter-unclassified" class="cursor-pointer text-sm font-normal">
+					Unclassified
+				</Label>
+			</div>
+
+			{#if showMissing && missing.count > 0}
+				<div class="mt-3 max-h-64 overflow-y-auto border-t pt-2 text-xs">
+					{#each missing.files as mf (mf.file_id)}
+						<div class="mb-2">
+							<div class="font-medium text-destructive">
+								{mf.file_name || mf.file_id.slice(0, 8)}
+							</div>
+							<ul class="ml-2 list-disc">
+								{#each mf.refs as r (r.context + r.label + r.field)}
+									<li>{r.context} · {r.label}{r.field ? ` (${r.field})` : ''}</li>
+								{/each}
+							</ul>
+						</div>
 					{/each}
-					{#if classes.length === 0}
-						<li class="px-1 text-xs text-muted-foreground">No classes yet.</li>
-					{/if}
-				</ul>
-
-				{#if selectedClasses.size > 1 && !unclassified}
-					<div class="mt-2 flex items-center gap-2">
-						<span class="text-xs text-muted-foreground">Match</span>
-						<Button
-							variant="outline"
-							size="sm"
-							class="h-7"
-							onclick={() => {
-								matchAll = !matchAll;
-								crossGroupBy = '';
-							}}
-						>
-							{matchAll ? 'all of' : 'any of'}
-						</Button>
-					</div>
-				{/if}
-
-				<div class="mt-3 flex items-center gap-2 border-t pt-2">
-					<Checkbox
-						id="filter-unclassified"
-						checked={unclassified}
-						onCheckedChange={(v) => {
-							unclassified = !!v;
-							if (unclassified) selectedClasses.clear();
-						}}
-					/>
-					<Label for="filter-unclassified" class="cursor-pointer text-sm font-normal">
-						Unclassified
-					</Label>
 				</div>
-			</Sidebar.Group>
-		</Sidebar.Content>
+			{/if}
+		{/snippet}
 
-		{#if showMissing && missing.count > 0}
-			<Sidebar.Footer class="max-h-64 overflow-y-auto border-t text-xs">
-				{#each missing.files as mf (mf.file_id)}
-					<div class="mb-2">
-						<div class="font-medium text-destructive">{mf.file_name || mf.file_id.slice(0, 8)}</div>
-						<ul class="ml-2 list-disc">
-							{#each mf.refs as r (r.context + r.label + r.field)}
-								<li>{r.context} · {r.label}{r.field ? ` (${r.field})` : ''}</li>
-							{/each}
-						</ul>
-					</div>
+		{#snippet collapsedBody()}
+			<div class="flex flex-col items-center gap-0.5">
+				{#each classes as c (c.id)}
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant={selectedClasses.has(c.id) ? 'secondary' : 'ghost'}
+										size="icon"
+										onclick={() => toggleClassFilter(c.id)}
+									>
+										<span class="text-xs font-semibold uppercase">{c.displayName.slice(0, 2)}</span>
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content side="right">{c.displayName} ({c.count})</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
 				{/each}
-			</Sidebar.Footer>
-		{/if}
-	</Sidebar.Root>
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="icon"
+									class="mt-1"
+									onclick={() => {
+										toggleRail();
+										showNewClass = true;
+									}}
+								>
+									<Plus class="size-4" />
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content side="right">New class</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			</div>
+		{/snippet}
+	</EntityRail>
 
 	<!-- Main -->
 	<main class="flex h-screen min-w-0 flex-1 flex-col">
@@ -689,11 +756,21 @@
 					<ListChecks class="size-4" /> Select
 				{/if}
 			</Button>
-			<SettingsButton />
 			<Button size="sm" onclick={() => fileInput?.click()}>
 				<Upload class="size-4" /> Upload
 			</Button>
 			<input bind:this={fileInput} type="file" multiple class="hidden" onchange={onUpload} />
+			<!-- Content-header ⋮ for the active solo class — keeps its settings reachable when the rail is
+			     collapsed (no single active entity in multi-select/All-Files mode, so it only shows here). -->
+			{#if soloClass}
+				<EntityRowMenu
+					noun="class"
+					title="Manage {classLabel(soloClass)}"
+					triggerClass="size-8"
+					onSettings={() => openSettingsById(soloClass)}
+					onDelete={() => askDeleteClassById(soloClass)}
+				/>
+			{/if}
 		</header>
 
 		{#if selectionMode}
@@ -764,21 +841,24 @@
 			}}
 		/>
 	{/if}
-</Sidebar.Provider>
+</div>
 
-<!-- Class management dialogs -->
+<!-- Unified class settings dialog (rename + title-by + group-by + schema + delete) -->
 {#if manageClassId}
-	<ClassSchemaDialog
-		classId={manageClassId}
-		displayName={manageClassName}
-		bind:open={schemaOpen}
-		onchanged={afterClassChange}
-	/>
-	<ClassSettingsDialog
-		classId={manageClassId}
-		bind:open={settingsOpen}
-		onchanged={afterClassChange}
-	/>
+	{#key manageClassId}
+		<EntitySettingsDialog
+			adapter={classSettingsAdapter(manageClassId)}
+			name={manageClassName}
+			bind:open={settingsOpen}
+			onchanged={afterClassChange}
+			ondeleted={async () => {
+				selectedClasses.delete(manageClassId);
+				settingsOpen = false;
+				await loadMeta();
+				await loadFiles();
+			}}
+		/>
+	{/key}
 {/if}
 
 <AlertDialog.Root bind:open={deleteFilesOpen}>
