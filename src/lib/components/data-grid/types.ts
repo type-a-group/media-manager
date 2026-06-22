@@ -1,6 +1,6 @@
 /**
- * Side-agnostic data model for the shared {@link DataGrid}. Neither the file-first `FileItem`
- * nor the legacy `ImageListItem` shape may leak past a host's adapter: each host maps its native
+ * Side-agnostic data model for the shared {@link DataGrid}. A host's native row shape (e.g. the
+ * file-first `FileItem` or a json record) may not leak past its adapter: each host maps its native
  * rows to {@link GridItem} and feeds the grid these normalized values only. This is what lets one
  * grid serve both the files hub and the json record views without re-introducing the legacy
  * linked/unlinked/excluded model (those concepts have no representation here).

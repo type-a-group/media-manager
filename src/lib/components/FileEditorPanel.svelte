@@ -11,6 +11,7 @@
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
 	import EditorPanelShell from './EditorPanelShell.svelte';
+	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
@@ -32,6 +33,12 @@
 	 * class's schema. Plus rename, intrinsic info, and add/remove-to-class. Edits **autosave** (debounced,
 	 * mirroring the Records detail pane) — flushed on field blur/Enter, prev/next, file switch, close,
 	 * and unload, with a "Saving…/Saved" status in the header. No explicit per-section Save button.
+	 *
+	 * Two distinct host callbacks keep autosave from flashing/clobbering the grid: `onSaved` (a field
+	 * autosave — the grid tile is unaffected, so the host must NOT refetch the file list) vs
+	 * `onStructureChanged` (rename / add / remove-to-class / metadata strip — the tile label, chips, or
+	 * counts changed, so the host reloads). Refetching on every keystroke used to reassign the `file`
+	 * prop and reload `sections` mid-typing, dropping characters.
 	 */
 	let {
 		file,
@@ -42,7 +49,8 @@
 		onPrev,
 		onNext,
 		onclose,
-		onchanged
+		onSaved,
+		onStructureChanged
 	}: {
 		file: FileItem;
 		classes: ClassSummary[];
@@ -55,7 +63,10 @@
 		onPrev?: () => void;
 		onNext?: () => void;
 		onclose: () => void;
-		onchanged: () => void;
+		/** A field autosave settled — the grid tile is unchanged, so the host must NOT refetch. */
+		onSaved?: () => void;
+		/** Membership/name/metadata changed — the host should refresh the grid + class meta. */
+		onStructureChanged: () => void;
 	} = $props();
 
 	let sections = $state<Section[]>([]);
@@ -69,7 +80,6 @@
 	/** Debounced-autosave bookkeeping (mirrors the Records detail pane). */
 	let saving = $state(false);
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
@@ -88,6 +98,10 @@
 	const snapshotOf = (section: Section) => JSON.stringify(patchFor(section));
 	/** Any section with edits not yet persisted. */
 	const dirty = $derived(sections.some((s) => snapshotOf(s) !== savedSnapshots[s.id]));
+
+	// Shared debounced autosave: schedules `saveDirtySections` while dirty. `onSaved` (not a list
+	// refetch) keeps the grid stable so typing never stutters.
+	const autosave = debouncedAutosave({ isDirty: () => dirty, save: saveDirtySections });
 
 	async function load() {
 		loading = true;
@@ -116,7 +130,7 @@
 				}
 			}
 			saveStatus = 'saved';
-			onchanged();
+			onSaved?.();
 		} catch (e) {
 			console.error(e);
 			saveStatus = 'error';
@@ -127,23 +141,14 @@
 	}
 
 	/** Cancel any pending debounce and persist immediately. */
-	async function flush() {
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-			debounceTimer = null;
-		}
-		await saveDirtySections();
-	}
+	const flush = () => autosave.flush();
 
 	/**
 	 * Fire-and-forget flush for the file we're leaving (effect cleanup can't be async, and
 	 * `beforeunload`). `fid` is captured so a mid-load file switch saves the OUTGOING blob's edits.
 	 */
 	function flushLeavingSync(fid: string) {
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-			debounceTimer = null;
-		}
+		autosave.cancel();
 		if (saving || !dirty) return;
 		for (const s of sections) {
 			if (snapshotOf(s) !== savedSnapshots[s.id]) {
@@ -151,7 +156,7 @@
 				void apiUpdateClassRecord(s.id, fid, patchFor(s))
 					.then(() => {
 						savedSnapshots[s.id] = snap;
-						onchanged();
+						onSaved?.();
 					})
 					.catch((e) => console.error('Autosave on leave failed', e));
 			}
@@ -169,22 +174,6 @@
 		await flush();
 		onclose();
 	}
-
-	// Debounced autosave: whenever a section drifts from its last saved snapshot, schedule a write.
-	$effect(() => {
-		if (!dirty) return;
-		if (debounceTimer) clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(() => {
-			debounceTimer = null;
-			void saveDirtySections();
-		}, 600);
-		return () => {
-			if (debounceTimer) {
-				clearTimeout(debounceTimer);
-				debounceTimer = null;
-			}
-		};
-	});
 
 	$effect(() => {
 		// reload whenever the selected file changes; flush the outgoing blob's edits first
@@ -227,7 +216,7 @@
 		const next = renaming.trim();
 		if (!next || next === file.file_name) return;
 		await apiRenameFile(file.id, next);
-		onchanged();
+		onStructureChanged();
 	}
 
 	async function addToClass() {
@@ -235,13 +224,13 @@
 		await apiAddMembers(addClassId, [file.id]);
 		addClassId = '';
 		await load();
-		onchanged();
+		onStructureChanged();
 	}
 
 	async function removeFromClass(classId: string) {
 		await apiRemoveMembers(classId, [file.id]);
 		await load();
-		onchanged();
+		onStructureChanged();
 	}
 </script>
 
@@ -270,7 +259,7 @@
 		</span>
 	{/snippet}
 	{#snippet actions()}
-		<MetadataButton id={file.id} filename={file.file_name} {onchanged} />
+		<MetadataButton id={file.id} filename={file.file_name} onchanged={onStructureChanged} />
 	{/snippet}
 
 	{#if isImage}

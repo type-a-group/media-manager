@@ -1,4 +1,4 @@
-import type { JsonListItem } from './types.js';
+import { normalizeUrlValue, type JsonListItem, type SchemaDefinition } from './types.js';
 
 /**
  * Resolve the display title for a record list row in the Records Explorer.
@@ -59,4 +59,127 @@ export function recordDetailTitle(
 		if (typeof v === 'number' || typeof v === 'boolean') return String(v);
 	}
 	return id.slice(0, 8);
+}
+
+/**
+ * Render a single field value to a short, human-readable string for a record list row's title or
+ * subtitle. `url` → display name (else the url); `list`/array → comma-joined (each `url` item by
+ * display name, else url); everything else → `String(val)`. Returns `undefined` for nullish/empty so
+ * callers can omit the field entirely.
+ *
+ * This is the **single source of truth** for list-row value rendering: `jsonRepo.listRecords` (server)
+ * and the records host's optimistic in-place row patch both call it, so an autosave reflects in the
+ * list without a refetch and renders identically to a full server reload. Pure + Node-free.
+ *
+ * @param schema - The record type's schema (for the field's `type`).
+ * @param key - The field key to render.
+ * @param val - The raw field value.
+ */
+export function stringifyFieldValue(
+	schema: SchemaDefinition,
+	key: string,
+	val: unknown
+): string | undefined {
+	const def = schema[key];
+	if (val == null) return undefined;
+	if (def?.type === 'url') {
+		const urlVal = normalizeUrlValue(val);
+		return (urlVal.display_name ?? '').trim() || urlVal.url || undefined;
+	}
+	if (def?.type === 'list' && Array.isArray(val)) {
+		return (
+			val
+				.map((v: unknown) =>
+					v != null && typeof v === 'object' && 'url' in (v as object)
+						? ((v as { display_name?: string; url?: string }).display_name ?? '').trim() ||
+							(v as { url: string }).url ||
+							''
+						: String(v)
+				)
+				.join(', ') || undefined
+		);
+	}
+	if (Array.isArray(val)) return (val as unknown[]).join(', ') || undefined;
+	return String(val) || undefined;
+}
+
+/**
+ * Resolve a row's `group_by_value` for `field`. Scalars/arrays pass through unchanged (the grid groups
+ * over the raw value); `url`/`list`/multiselect-`dropdown` are rendered to a string. Mirrors the server
+ * group-by projection so an optimistic patch regroups a row exactly as a reload would. Returns
+ * `undefined` only for value shapes that aren't groupable (caller leaves the field unset).
+ */
+export function groupByDisplayValue(
+	schema: SchemaDefinition,
+	field: string,
+	val: unknown
+): string | number | boolean | string[] | null | undefined {
+	const def = schema[field];
+	if (def?.type === 'url' && val != null) {
+		const urlVal = normalizeUrlValue(val);
+		return (urlVal.display_name ?? '').trim() || urlVal.url || '';
+	}
+	if (def?.type === 'list' && Array.isArray(val)) {
+		return val
+			.map((v: unknown) =>
+				v != null && typeof v === 'object' && 'url' in (v as object)
+					? ((v as { display_name?: string; url?: string }).display_name ?? '').trim() ||
+						(v as { url: string }).url ||
+						''
+					: String(v)
+			)
+			.join(', ');
+	}
+	if (
+		def?.type === 'dropdown' &&
+		(def as { multiselect?: boolean }).multiselect &&
+		Array.isArray(val)
+	) {
+		return (val as string[]).join(', ');
+	}
+	if (
+		val === null ||
+		typeof val === 'string' ||
+		typeof val === 'number' ||
+		typeof val === 'boolean' ||
+		Array.isArray(val)
+	) {
+		return val as string | number | boolean | string[] | null;
+	}
+	return undefined;
+}
+
+/**
+ * Project a full record into the display fields a Records list row renders — `name`, `title_value`,
+ * `subtitle_value`, `group_by_value`. Pure and client/server-safe so the server list endpoint
+ * (`jsonRepo.listRecords`) and the client's optimistic post-save row patch produce identical rows.
+ *
+ * Does NOT compute `missing_file_fields` (that needs the server's available-blob set) — callers add it
+ * separately. `subtitle_value` is skipped when it would duplicate the title field.
+ *
+ * @param schema - The record type's schema.
+ * @param record - The full record (raw on-disk field values).
+ * @param opts - The active title/subtitle/group fields (each optional; empty ⇒ that field is omitted).
+ */
+export function projectRecordRow(
+	schema: SchemaDefinition,
+	record: Record<string, unknown>,
+	opts: { titleField?: string | null; subtitleField?: string | null; groupBy?: string | null }
+): Pick<JsonListItem, 'name' | 'title_value' | 'subtitle_value' | 'group_by_value'> {
+	const out: Pick<JsonListItem, 'name' | 'title_value' | 'subtitle_value' | 'group_by_value'> = {};
+	if (typeof record.name === 'string') out.name = record.name;
+	const { titleField, subtitleField, groupBy } = opts;
+	if (titleField) {
+		const tv = stringifyFieldValue(schema, titleField, record[titleField]);
+		if (tv !== undefined && tv !== '') out.title_value = tv;
+	}
+	if (subtitleField && subtitleField !== titleField) {
+		const sv = stringifyFieldValue(schema, subtitleField, record[subtitleField]);
+		if (sv !== undefined && sv !== '') out.subtitle_value = sv;
+	}
+	if (groupBy) {
+		const gv = groupByDisplayValue(schema, groupBy, record[groupBy]);
+		if (gv !== undefined) out.group_by_value = gv;
+	}
+	return out;
 }

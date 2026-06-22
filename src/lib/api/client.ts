@@ -1,7 +1,6 @@
 import {
 	AddFieldRequestSchema,
 	DeleteFieldRequestSchema,
-	ImageListResponseSchema,
 	JsonListResponseSchema,
 	SchemaDefinitionSchema,
 	SuccessResponseSchema,
@@ -27,10 +26,8 @@ export const MediaTypeStatsSchema = z.object({
 });
 export type MediaTypeStats = z.infer<typeof MediaTypeStatsSchema>;
 
-/** Union of list response shapes (images vs json). */
-export type ListRecordsResponse =
-	| z.infer<typeof ImageListResponseSchema>
-	| z.infer<typeof JsonListResponseSchema>;
+/** Record-type list response shape. */
+export type ListRecordsResponse = z.infer<typeof JsonListResponseSchema>;
 
 /**
  * Ensure a fetch Response is OK, otherwise throw with a useful message.
@@ -395,9 +392,7 @@ export async function apiListRecordsForType(
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();
-	// Response may be ImageListResponse or JsonListResponse
-	if ('records' in json) return JsonListResponseSchema.parse(json);
-	return ImageListResponseSchema.parse(json);
+	return JsonListResponseSchema.parse(json);
 }
 
 export async function apiGetFieldValuesForType(

@@ -559,6 +559,39 @@ Once the local-dep ergonomics land, make it installable by non-developer custome
 
 ---
 
+## 34. Reimplement masonry grid layout for the file/record tiles
+
+**Priority**: Low (visual polish)
+
+**Context**: `@masonry-grid/svelte` is a declared dependency but **unreferenced** in `src/` — it was dropped when the shared `DataGrid` (`src/lib/components/data-grid/DataGrid.svelte`) was built as a uniform CSS grid of fixed-aspect tiles. We deliberately **keep the dependency** (2026-06-21) because we want to bring back a true **masonry** layout for the tile grid — variable-height tiles packed without the dead space a fixed grid leaves under short images/text.
+
+### What's needed
+
+- Decide whether to use `@masonry-grid/svelte` as-is, a CSS `columns`/`grid-template-rows: masonry` approach (the latter still behind flags in most engines), or a small JS packer — then wire it into `DataGrid` behind the existing `GridSize` control so both the files hub and record views inherit it.
+- Preserve the side-agnostic `GridItem` contract (incl. the unused `secondaryLabel` already reserved for Files-tile subtitles) — masonry is a layout concern, hosts shouldn't change.
+
+### Considerations
+
+- Records currently render a **records-native vertical list** (`RecordListColumn`), not the tile grid — masonry would apply to the files hub tiles (and any future record tile view), not the records list. Confirm scope before building.
+
+---
+
+## 35. Remove (or actually use) the `sharp` dependency
+
+**Priority**: Low (dependency hygiene)
+
+**Context**: `sharp` is declared in `package.json` but **not referenced anywhere in `src/`** (image work goes through `heic-convert` on upload and `exiftool-vendored` for EXIF in `src/lib/server/fileMetadata.ts`). It's a heavy native dependency to carry unused. Left in place for now (2026-06-21) pending a decision.
+
+### What's needed
+
+- Either **remove `sharp`** from `package.json` (and confirm nothing in build/scripts pulls it in), **or** adopt it for a concrete need — e.g. server-side thumbnail generation / downscaled grid previews instead of shipping full-resolution blobs to the tile grid (which would pair well with Item 34).
+
+### Considerations
+
+- If thumbnails land, `sharp` earns its keep; otherwise it's pure install-size/native-build cost. Decide one way or the other rather than leaving it dangling.
+
+---
+
 ## 22. Group-by-field across multiple classes ("all of" view) — ✅ Shipped
 
 **Status**: **Shipped.** In the multi-class **"all of"** view the Group-by dropdown lists one entry per `(class, field)` across the intersected classes, labelled `Class: field` (so same-named fields disambiguate). [`listAllFiles`](../src/lib/storage/classRepo.ts) accepts `groupBy: { classId, field }` and populates each item's `group_by_value` from that class's record (reusing the same `groupByValue` helper as the solo-class catalog); `GET /api/files` takes `groupByClass` + `groupByField`, and [`files/+page.svelte`](../src/routes/files/+page.svelte) loads each selected class's schema keys lazily to build the options and groups client-side over `group_by_value`. See the "All Files hub" row in [`FEATURES.md`](FEATURES.md).

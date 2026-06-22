@@ -1,5 +1,4 @@
 import * as fs from 'node:fs/promises';
-import * as fssync from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -29,6 +28,7 @@ import { newImageId, type ImageId } from '$lib/core/ids.js';
 import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
 import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
+import { projectRecordRow, stringifyFieldValue } from '$lib/core/recordDisplay.js';
 
 /**
  * JSON media-type repository: read/write records and schema from a single data file and settings.
@@ -294,34 +294,9 @@ export function createJsonRepoForType(typeId: string) {
 		const hasFileField = Object.values(settings.schema).some((d) => d?.type === 'file');
 		const available = hasFileField ? (await getAvailableFileIds()).available : null;
 
-		/** Render a single field value to a short, human-readable string for row titles. */
-		const stringifyFieldValue = (key: string, val: unknown): string | undefined => {
-			const def = settings.schema[key];
-			if (val == null) return undefined;
-			if (def?.type === 'url') {
-				const urlVal = normalizeUrlValue(val);
-				return (urlVal.display_name ?? '').trim() || urlVal.url || undefined;
-			}
-			if (def?.type === 'list' && Array.isArray(val)) {
-				return (
-					val
-						.map((v: unknown) =>
-							v != null && typeof v === 'object' && 'url' in (v as object)
-								? ((v as { display_name?: string; url?: string }).display_name ?? '').trim() ||
-									(v as { url: string }).url ||
-									''
-								: String(v)
-						)
-						.join(', ') || undefined
-				);
-			}
-			if (Array.isArray(val)) return (val as unknown[]).join(', ') || undefined;
-			return String(val) || undefined;
-		};
-
 		// Field-scoped (or all-field) text search, applied server-side because list rows carry only
-		// derived display values, not raw field data. Reuses `stringifyFieldValue` so url/list/dropdown
-		// values match the same way they render.
+		// derived display values, not raw field data. Reuses the shared `stringifyFieldValue` so
+		// url/list/dropdown values match the same way they render in the row.
 		const searchQuery = params?.searchQuery?.trim().toLowerCase() ?? '';
 		if (searchQuery) {
 			const searchField = params?.searchField || null;
@@ -329,61 +304,24 @@ export function createJsonRepoForType(typeId: string) {
 			records = records.filter((rec) => {
 				const recAny = rec as Record<string, unknown>;
 				return fieldsToSearch.some((k) =>
-					(stringifyFieldValue(k, recAny[k]) ?? '').toLowerCase().includes(searchQuery)
+					(stringifyFieldValue(settings.schema, k, recAny[k]) ?? '')
+						.toLowerCase()
+						.includes(searchQuery)
 				);
 			});
 		}
 
 		const items: JsonListItem[] = records.map((rec) => {
 			const recAny = rec as Record<string, unknown>;
-			const item: JsonListItem = { id: rec.id };
-			// Include name for list/grid display when present (e.g. default "name" field).
-			if (typeof recAny.name === 'string') item.name = recAny.name;
-			// Always resolve the title from the effective title field so the client never needs to guess.
-			if (titleField) {
-				const tv = stringifyFieldValue(titleField, recAny[titleField]);
-				if (tv !== undefined && tv !== '') item.title_value = tv;
-			}
-			// Optional subtitle from a distinct field (skip when it duplicates the title).
-			if (subtitleField && subtitleField !== titleField) {
-				const sv = stringifyFieldValue(subtitleField, recAny[subtitleField]);
-				if (sv !== undefined && sv !== '') item.subtitle_value = sv;
-			}
+			// name/title/subtitle/group are projected by the shared `projectRecordRow` so the client's
+			// optimistic post-save row patch renders identically to this server projection.
+			const item: JsonListItem = {
+				id: rec.id,
+				...projectRecordRow(settings.schema, recAny, { titleField, subtitleField, groupBy })
+			};
 			if (available) {
 				const miss = missingFileFields(recAny, settings.schema, available);
 				if (miss.length) item.missing_file_fields = miss;
-			}
-			if (groupBy) {
-				const val = recAny[groupBy];
-				const def = settings.schema[groupBy];
-				if (def?.type === 'url' && val != null) {
-					const urlVal = normalizeUrlValue(val);
-					item.group_by_value = (urlVal.display_name ?? '').trim() || urlVal.url || '';
-				} else if (def?.type === 'list' && Array.isArray(val)) {
-					item.group_by_value = val
-						.map((item: unknown) =>
-							item != null && typeof item === 'object' && 'url' in (item as object)
-								? ((item as { display_name?: string; url?: string }).display_name ?? '').trim() ||
-									(item as { url: string }).url ||
-									''
-								: String(item)
-						)
-						.join(', ');
-				} else if (
-					def?.type === 'dropdown' &&
-					(def as { multiselect?: boolean }).multiselect &&
-					Array.isArray(val)
-				) {
-					item.group_by_value = (val as string[]).join(', ');
-				} else if (
-					val === null ||
-					typeof val === 'string' ||
-					typeof val === 'number' ||
-					typeof val === 'boolean' ||
-					Array.isArray(val)
-				) {
-					item.group_by_value = val;
-				}
 			}
 			return item;
 		});

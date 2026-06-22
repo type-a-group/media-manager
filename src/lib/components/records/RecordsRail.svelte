@@ -76,7 +76,7 @@
 		</div>
 		{#each types as t (t.id)}
 			<div
-				class="group flex items-center gap-1 rounded-md {t.id === activeTypeId
+				class="group flex items-center gap-1 rounded-md hover:bg-muted {t.id === activeTypeId
 					? 'bg-secondary'
 					: ''}"
 			>

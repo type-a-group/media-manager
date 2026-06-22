@@ -7,14 +7,15 @@ import type { Action } from 'svelte/action';
  * editor without a manual resize handle or a per-field "long" toggle.
  *
  * Use case: applied to the string-value `<textarea>` in the shared `FieldInput`
- * (used by `FileEditorPanel`, `RecordEditorPanel`, `GlobalsEditorPane`). Pass the field's
- * current value as the action argument (`use:autogrow={value}`) so the height is
- * re-fitted whenever the bound value changes externally — e.g. when the editor
- * switches to a different record and the same textarea node is reused.
+ * (used by `FileEditorPanel`, `RecordDetailPane`, `GlobalsEditorPane`). Pass the field's
+ * current value as the action argument (`use:autogrow={value}`) so Svelte runs the
+ * action's `update` hook — re-fitting the height — whenever the bound value changes
+ * externally, e.g. when the editor switches to a different record and the same textarea
+ * node is reused. The argument is observed by Svelte to schedule `update`; its value is
+ * never read here (the new height comes from the DOM's `scrollHeight`), so the action
+ * itself takes no parameter.
  *
  * @param node - the textarea element to manage.
- * @param _value - the field's current value; only used to trigger the action's
- *   `update` hook on change. The new height is read from the DOM, not this value.
  *
  * Concerns / future improvements:
  * - Height is derived from `scrollHeight`, which requires the element to be laid
@@ -25,7 +26,7 @@ import type { Action } from 'svelte/action';
  *   that becomes a problem, add a `max-height` + `overflow-y: auto` cap rather
  *   than changing this action.
  */
-export const autogrow: Action<HTMLTextAreaElement, unknown> = (node, _value) => {
+export const autogrow: Action<HTMLTextAreaElement, unknown> = (node) => {
 	const fit = () => {
 		node.style.height = 'auto';
 		node.style.height = `${node.scrollHeight}px`;

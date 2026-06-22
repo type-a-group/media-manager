@@ -7,6 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import EditorPanelShell from '$lib/components/EditorPanelShell.svelte';
 	import FieldInput from '$lib/components/FieldInput.svelte';
+	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -32,7 +33,9 @@
 	 * @param index / total - Position in the current list order (for prev/next + the counter).
 	 * @param onPrev / onNext - Move along the list order (this pane flushes pending edits first).
 	 * @param onclose - Clear the selection (shows the empty detail state).
-	 * @param onchanged - Called after a successful save so the host can refresh the list.
+	 * @param onchanged - Called after a successful save with the **updated record**, so the host can
+	 *   patch that one list row in place (no refetch — refetching would flash the page and clobber
+	 *   in-flight keystrokes).
 	 * @param ondeleted - Called after a successful delete.
 	 * @param refresh - Bump from the host to force a reload (e.g. after a schema change).
 	 */
@@ -57,7 +60,7 @@
 		onPrev?: () => void;
 		onNext?: () => void;
 		onclose: () => void;
-		onchanged: () => void;
+		onchanged: (updated: Record<string, unknown>) => void;
 		ondeleted: () => void;
 		refresh?: number;
 	} = $props();
@@ -73,7 +76,6 @@
 
 	/** Identifies the record whose form is currently in `formValues` (for flush-on-leave). */
 	let loaded = $state<{ typeId: string; recordId: string } | null>(null);
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	/** Ordered editable keys (name first for display) — shared helper. */
 	const getOrderedEditableKeys = schemaUserFieldKeys;
@@ -142,6 +144,10 @@
 
 	const title = $derived(recordDetailTitle(record, recordId, titleField));
 
+	// Shared debounced autosave: schedules `doSave` while dirty, resetting on each keystroke. The host
+	// patches the edited row in place from `onchanged(updated)` — no refetch — so typing never stutters.
+	const autosave = debouncedAutosave({ isDirty: () => isDirty, save: doSave });
+
 	async function load() {
 		loading = true;
 		saveStatus = 'idle';
@@ -175,7 +181,7 @@
 			record = updated as Record<string, unknown>;
 			lastSavedPatch = patch;
 			saveStatus = 'saved';
-			onchanged();
+			onchanged(updated as Record<string, unknown>);
 		} catch (e) {
 			console.error(e);
 			saveStatus = 'error';
@@ -186,13 +192,7 @@
 	}
 
 	/** Cancel any pending debounce and persist immediately. */
-	async function flush() {
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-			debounceTimer = null;
-		}
-		await doSave();
-	}
+	const flush = () => autosave.flush();
 
 	/**
 	 * Fire-and-forget flush for the record we're leaving — used in the load effect's cleanup (which
@@ -200,38 +200,14 @@
 	 * record before `load()` overwrites it.
 	 */
 	function flushLeavingSync() {
-		if (debounceTimer) {
-			clearTimeout(debounceTimer);
-			debounceTimer = null;
-		}
+		autosave.cancel();
 		if (!loaded || !schema || saving) return;
 		const patch = buildPatch();
 		if (JSON.stringify(patch) === JSON.stringify(lastSavedPatch)) return;
 		void apiUpdatePropertiesByIdForType(loaded.typeId, loaded.recordId, patch)
-			.then(() => onchanged())
+			.then((updated) => onchanged(updated as Record<string, unknown>))
 			.catch((e) => console.error('Autosave on leave failed', e));
 	}
-
-	// Debounced autosave: whenever the form drifts from the last saved patch, schedule a write.
-	$effect(() => {
-		const patch = buildPatch();
-		const dirty =
-			schema !== null &&
-			record !== null &&
-			JSON.stringify(patch) !== JSON.stringify(lastSavedPatch);
-		if (!dirty) return;
-		if (debounceTimer) clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(() => {
-			debounceTimer = null;
-			void doSave();
-		}, 600);
-		return () => {
-			if (debounceTimer) {
-				clearTimeout(debounceTimer);
-				debounceTimer = null;
-			}
-		};
-	});
 
 	// Reload whenever the open record changes; flush the outgoing record's edits first.
 	$effect(() => {
@@ -267,10 +243,7 @@
 
 	async function deleteRecord() {
 		try {
-			if (debounceTimer) {
-				clearTimeout(debounceTimer);
-				debounceTimer = null;
-			}
+			autosave.cancel();
 			await apiDeleteRecordForType(typeId, recordId);
 			toast.success('Deleted');
 			deleteOpen = false;

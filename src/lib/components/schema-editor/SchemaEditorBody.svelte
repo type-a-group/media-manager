@@ -478,7 +478,7 @@
 					<Input
 						type="text"
 						bind:value={addDefaultUrlDisplayName}
-						placeholder="Default display name"
+						placeholder="Display Name"
 						class="w-48"
 					/>
 					<Input type="url" bind:value={addDefaultUrlUrl} placeholder="https://…" class="w-48" />

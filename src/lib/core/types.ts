@@ -235,25 +235,6 @@ export const JsonListResponseSchema = z.object({
 export type JsonListResponse = z.infer<typeof JsonListResponseSchema>;
 
 /**
- * Minimal image info for list views.
- * When the list API is called with groupBy, each item includes group_by_value for that field.
- * `id` is the blob's `file_id` (same whether the item is linked or unlinked). `file_name` is resolved
- * from the manifest at list time for display.
- */
-export const ImageListItemSchema = z.object({
-	id: ImageIdSchema,
-	file_name: z.string(),
-	image_name: z.string().optional(),
-	group_by_value: z
-		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
-		.optional(),
-	width: z.number().optional(),
-	height: z.number().optional(),
-	missing_file_fields: z.array(z.string()).optional()
-});
-export type ImageListItem = z.infer<typeof ImageListItemSchema>;
-
-/**
  * Lazy-heal summary returned by a list call: how many blobs the manifest gained (new files appeared on
  * disk and were minted a `file_id`) or lost (a manifest entry's blob is gone) during reconciliation.
  * The client surfaces a toast when present.
@@ -263,22 +244,6 @@ export const HealSummarySchema = z.object({
 	missing: z.number().default(0)
 });
 export type HealSummary = z.infer<typeof HealSummarySchema>;
-
-/**
- * API: image list response.
- *
- * `excluded_missing_files` holds **file_ids** (exclusion follows the blob's identity, not its name)
- * whose blob is no longer on disk.
- */
-export const ImageListResponseSchema = z.object({
-	linked: z.array(ImageListItemSchema).default([]),
-	unlinked: z.array(ImageListItemSchema).default([]),
-	missing_files: z.array(ImageListItemSchema).default([]),
-	excluded: z.array(ImageListItemSchema).default([]),
-	excluded_missing_files: z.array(z.string()).default([]),
-	healed: HealSummarySchema.optional()
-});
-export type ImageListResponse = z.infer<typeof ImageListResponseSchema>;
 
 /**
  * Per-class configuration (lives in each class file's `config`, not in `media/settings.json`).

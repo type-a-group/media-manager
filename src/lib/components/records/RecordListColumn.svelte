@@ -2,11 +2,9 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import * as Popover from '$lib/components/ui/popover/index.js';
-	import RecordFilterPanel, { type FilterRow } from '$lib/components/RecordFilterPanel.svelte';
 	import RecordBulkActions from '$lib/components/RecordBulkActions.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
-	import { ListChecks, Plus, X, Filter, AlertTriangle } from 'lucide-svelte';
+	import { ListChecks, Plus, X, AlertTriangle } from 'lucide-svelte';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import { recordListTitle, recordListSubtitle } from '$lib/core/recordDisplay.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
@@ -14,17 +12,17 @@
 	/**
 	 * The Records Explorer's middle column: the record list for the active type. Replaces the tile
 	 * `DataGrid` with a name-forward scrollable list (records are text-first, not thumbnails). Owns the
-	 * search/group/title/filter controls and the multiselect bulk bar; the host owns the data and the
-	 * open record. Rows resolve their title via {@link recordListTitle} so types without a `name` field
-	 * show something meaningful instead of a raw id.
+	 * group control and the multiselect bulk bar; the host owns the data and the open record (search
+	 * now lives in the rail). Rows resolve their title via {@link recordListTitle} so types without a
+	 * `name` field show something meaningful instead of a raw id.
 	 *
 	 * @param typeName - Display name of the active type (column header).
 	 * @param typeId - The active type id (for bulk actions + schema editor wiring).
-	 * @param schema - The type's schema (drives group/title/filter field lists).
-	 * @param records - The records to show (already loaded by the host for the active filters/group).
+	 * @param schema - The type's schema (drives the group field list).
+	 * @param records - The records to show (already loaded by the host for the active group).
 	 * @param loading - Show a loading hint instead of the list.
-	 * @param query / groupBy / filters - Bindable list controls (host reloads on change). "Title by" is
-	 *   no longer here — it's a persisted per-type setting in the ⋮ → Settings dialog.
+	 * @param groupBy - Bindable group field (host reloads on change). "Title by" is no longer here —
+	 *   it's a persisted per-type setting in the ⋮ → Settings dialog.
 	 * @param selectionMode / selectedIds / selectedRecordId - Multiselect + active-row state.
 	 * @param onOpen / onToggleSelect / onNewRecord / onToggleSelectionMode / onBulkChanged - Callbacks.
 	 * @param onOpenSettings / onDeleteType - Open the active type's settings dialog / delete confirm
@@ -37,7 +35,6 @@
 		records,
 		loading,
 		groupBy = $bindable(''),
-		filters = $bindable<FilterRow[]>([]),
 		selectionMode,
 		selectedIds,
 		selectedRecordId,
@@ -55,7 +52,6 @@
 		records: JsonListItem[];
 		loading: boolean;
 		groupBy?: string;
-		filters?: FilterRow[];
 		selectionMode: boolean;
 		selectedIds: Set<string>;
 		selectedRecordId: string | null;
@@ -70,10 +66,6 @@
 
 	/** Schema field keys eligible for group-by / title (name first). */
 	const schemaFieldKeys = $derived(schema ? schemaUserFieldKeys(schema) : []);
-
-	const activeFilterCount = $derived(
-		filters.filter((r) => r.enabled !== false && r.field && r.operator).length
-	);
 
 	/** Records grouped by the server-provided `group_by_value`, or null when flat. */
 	const groupedRecords = $derived.by<[string, JsonListItem[]][] | null>(() => {
@@ -139,7 +131,7 @@
 		/>
 	</header>
 
-	<!-- Controls: group / title / filter -->
+	<!-- Controls: group -->
 	<div class="flex flex-wrap items-center gap-2 border-b p-2 text-sm">
 		<div class="flex items-center gap-1.5">
 			<span class="text-muted-foreground">Group</span>
@@ -153,18 +145,6 @@
 				</Select.Content>
 			</Select.Root>
 		</div>
-		<Popover.Root>
-			<Popover.Trigger>
-				{#snippet child({ props })}
-					<Button {...props} variant="outline" size="sm">
-						<Filter class="size-4" /> Filter{activeFilterCount ? ` (${activeFilterCount})` : ''}
-					</Button>
-				{/snippet}
-			</Popover.Trigger>
-			<Popover.Content class="w-80" align="start">
-				<RecordFilterPanel {schema} bind:filters />
-			</Popover.Content>
-		</Popover.Root>
 	</div>
 
 	<!-- Bulk bar -->

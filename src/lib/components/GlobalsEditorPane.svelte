@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -7,9 +8,10 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { toast } from 'svelte-sonner';
-	import { Trash2, TriangleAlert } from 'lucide-svelte';
+	import { Trash2, TriangleAlert, Loader2, Check } from 'lucide-svelte';
 	import { apiGetGlobalsRecord, apiUpdateGlobalsRecord } from '$lib/api/client.js';
 	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
+	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { GLOBALS_FIELD_KINDS_KEY, GLOBALS_FIELD_META_KEY } from '$lib/core/fieldKeys.js';
@@ -38,9 +40,13 @@
 
 	let loading = $state(true);
 	let saving = $state(false);
+	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	/** Serialized editable state at last load/save — the baseline for the `dirty` autosave trigger. */
+	let savedSnapshot = $state('');
 	let baseValues = $state<Record<string, unknown>>({});
 	let formValues = $state<Record<string, unknown>>({});
-	let deletedKeys = $state<Set<string>>(new Set());
+	/** Base keys the user removed (sent as `null` on save). SvelteSet ⇒ mutate in place, don't reassign. */
+	const deletedKeys = new SvelteSet<string>();
 	let fieldKinds = $state<Record<string, ValueKind>>({});
 	let fieldMeta = $state<Record<string, FieldMeta>>({});
 	let missingFiles = $state<Record<string, string>>({});
@@ -211,9 +217,11 @@
 				rec._missing_files && typeof rec._missing_files === 'object'
 					? (rec._missing_files as Record<string, string>)
 					: {};
-			deletedKeys = new Set();
+			deletedKeys.clear();
 			pendingListItem = {};
 			pendingListUrl = {};
+			savedSnapshot = currentSnapshot();
+			saveStatus = 'idle';
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to load globals');
@@ -221,6 +229,19 @@
 			loading = false;
 		}
 	}
+
+	/** Serialize the editable state (values + per-field kinds/meta + deletions) for dirty detection. */
+	function currentSnapshot(): string {
+		return JSON.stringify({
+			values: formValues,
+			kinds: fieldKinds,
+			meta: fieldMeta,
+			deleted: [...deletedKeys].sort()
+		});
+	}
+
+	/** True once loaded and the editable state drifts from the last saved snapshot. */
+	const dirty = $derived(!loading && savedSnapshot !== '' && currentSnapshot() !== savedSnapshot);
 
 	function removeField(key: string) {
 		const next = { ...formValues };
@@ -233,9 +254,7 @@
 		delete nextMeta[key];
 		fieldMeta = nextMeta;
 		if (key in baseValues) {
-			const s = new Set(deletedKeys);
-			s.add(key);
-			deletedKeys = s;
+			deletedKeys.add(key);
 		}
 	}
 
@@ -309,8 +328,28 @@
 		formValues = { ...formValues, [key]: arr };
 	}
 
+	/**
+	 * Persist the current globals state. Debounced-autosave driven (no explicit Save button), so it
+	 * must NOT reload the record afterward — reloading would reset `formValues` mid-edit and drop
+	 * in-flight keystrokes (the same bug the records/files panels had). Instead it advances the saved
+	 * baseline in place so `dirty` settles. `triggerImageListRefresh()` still nudges OTHER views (file
+	 * pickers, etc.) that reference globals; it does not reload this pane.
+	 */
 	async function save() {
+		if (saving || !dirty) return;
 		saving = true;
+		saveStatus = 'saving';
+		// Capture the exact state we're persisting (the form may change again during the await). The
+		// post-save baseline has `deleted: []` because these deletions become permanent on success, so
+		// `dirty` settles to false once `deletedKeys` is cleared (and stays correct if the user edits
+		// mid-save — `currentSnapshot()` will then differ and re-arm autosave).
+		const persistedValues = { ...formValues };
+		const baselineAfterSave = JSON.stringify({
+			values: persistedValues,
+			kinds: { ...fieldKinds },
+			meta: JSON.parse(JSON.stringify(fieldMeta)),
+			deleted: []
+		});
 		try {
 			const patch: Record<string, unknown> = {};
 			for (const [k, v] of Object.entries(formValues)) patch[k] = v;
@@ -326,16 +365,38 @@
 			patch[GLOBALS_FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
 			patch[GLOBALS_FIELD_META_KEY] = JSON.stringify(metaToStore);
 			await apiUpdateGlobalsRecord(patch);
-			toast.success('Globals saved');
+			// Advance the baseline in place (no reload): persisted keys are now the base; deletions done.
+			baseValues = persistedValues;
+			deletedKeys.clear();
+			savedSnapshot = baselineAfterSave;
+			saveStatus = 'saved';
 			triggerImageListRefresh();
-			await load();
 		} catch (e) {
 			console.error(e);
+			saveStatus = 'error';
 			toast.error('Failed to save globals');
 		} finally {
 			saving = false;
 		}
 	}
+
+	// Shared debounced autosave (mirrors the records/files panels): saves ~600ms after edits settle.
+	const autosave = debouncedAutosave({ isDirty: () => dirty, save });
+	/** Cancel any pending debounce and persist immediately (field Enter). */
+	const flush = () => autosave.flush();
+
+	// Best-effort flush on tab close / pane unmount so a pending edit is never lost.
+	$effect(() => {
+		const handler = () => {
+			if (dirty) void save();
+		};
+		window.addEventListener('beforeunload', handler);
+		return () => window.removeEventListener('beforeunload', handler);
+	});
+	onDestroy(() => {
+		autosave.cancel();
+		if (dirty) void save();
+	});
 
 	onMount(load);
 </script>
@@ -386,7 +447,7 @@
 								bind:value={formValues[key]}
 								missing={missingFiles[key] !== undefined && formValues[key] === baseValues[key]}
 								missingName={missingFiles[key]}
-								onEnterSave={save}
+								onEnterSave={flush}
 							/>
 							{#if getFieldKind(key) === 'dropdown'}
 								<div class="flex items-center gap-2">
@@ -466,10 +527,14 @@
 				</div>
 			{/if}
 		</Card.Content>
-		<Card.Footer class="justify-end">
-			<Button onclick={save} disabled={saving || loading}
-				>{saving ? 'Saving…' : 'Save globals'}</Button
-			>
+		<Card.Footer class="justify-end text-xs text-muted-foreground">
+			{#if saveStatus === 'saving'}
+				<Loader2 class="mr-1 inline size-3 animate-spin" /> Saving…
+			{:else if saveStatus === 'saved' && !dirty}
+				<Check class="mr-1 inline size-3 text-green-600" /> Saved
+			{:else if saveStatus === 'error'}
+				<span class="text-destructive">Save failed</span>
+			{/if}
 		</Card.Footer>
 	</Card.Root>
 </div>

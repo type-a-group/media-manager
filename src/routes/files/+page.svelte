@@ -511,7 +511,7 @@
 </script>
 
 <div class="flex h-screen w-full overflow-hidden">
-	<EntityRail title="Files" collapsed={railCollapsed} onToggleCollapse={toggleRail}>
+	<EntityRail title="Media" collapsed={railCollapsed} onToggleCollapse={toggleRail}>
 		{#snippet belowHeader()}
 			<div class="flex flex-col gap-2">
 				<SearchBox bind:value={query} placeholder="Search files…" />
@@ -835,7 +835,7 @@
 			onPrev={() => gotoFile(-1)}
 			onNext={() => gotoFile(1)}
 			onclose={() => (editorFileId = null)}
-			onchanged={async () => {
+			onStructureChanged={async () => {
 				await loadMeta();
 				await loadFiles();
 			}}

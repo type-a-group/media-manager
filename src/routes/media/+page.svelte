@@ -10,7 +10,6 @@
 	import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { typeSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
-	import { type FilterRow } from '$lib/components/RecordFilterPanel.svelte';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -32,7 +31,7 @@
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { isUserFieldKey, schemaUserFields } from '$lib/core/fieldKeys.js';
-	import { VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
+	import { projectRecordRow } from '$lib/core/recordDisplay.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
 	/**
@@ -55,7 +54,6 @@
 	let query = $state('');
 	/** Field to scope the search to (`''` = All fields). Lives in the rail, like the Files hub. */
 	let searchField = $state('');
-	let filters = $state<FilterRow[]>([]);
 	let groupBy = $state('');
 	let titleField = $state('');
 	let subtitleField = $state('');
@@ -124,17 +122,6 @@
 		if (next) selectedRecordId = next;
 	}
 
-	/** Build the API filter clauses from the enabled filter rows. */
-	function apiFilters() {
-		return filters
-			.filter((row) => row.enabled !== false && row.field && row.operator)
-			.map((row) => ({
-				field: row.field,
-				operator: row.operator,
-				...(VALUE_LESS_OPERATORS.has(row.operator) ? {} : { value: row.value })
-			}));
-	}
-
 	async function loadSchema() {
 		if (!activeTypeId || isGlobals) return;
 		try {
@@ -165,9 +152,7 @@
 		if (!activeTypeId || isGlobals) return;
 		loading = true;
 		try {
-			const clauses = apiFilters();
 			const data = await apiListRecordsForType(activeTypeId, {
-				...(clauses.length > 0 ? { filters: clauses } : {}),
 				groupBy: groupBy || undefined,
 				titleField: titleField || undefined,
 				subtitleField: subtitleField || undefined,
@@ -183,6 +168,33 @@
 		}
 	}
 
+	/**
+	 * Optimistically patch the one edited row in place after an autosave — **no refetch**. Reusing the
+	 * same `projectRecordRow` projection the server list endpoint uses keeps the row's title/subtitle/
+	 * group value identical to what a reload would produce, while avoiding the full-list re-render that
+	 * used to flash the page and drop in-flight keystrokes in the open editor.
+	 */
+	function patchRecordRow(updated: Record<string, unknown>) {
+		if (!schema) return;
+		const id = updated.id as string;
+		const projected = projectRecordRow(schema, updated, {
+			titleField: titleField || null,
+			subtitleField: subtitleField || null,
+			groupBy: groupBy || null
+		});
+		records = records.map((r) =>
+			r.id === id
+				? {
+						...r,
+						name: projected.name,
+						title_value: projected.title_value,
+						subtitle_value: projected.subtitle_value,
+						group_by_value: projected.group_by_value
+					}
+				: r
+		);
+	}
+
 	/** Switch the active type, syncing the URL and resetting per-type view state. */
 	function selectType(id: string) {
 		if (id === activeTypeId) return;
@@ -192,7 +204,6 @@
 		selectionMode = false;
 		query = '';
 		searchField = '';
-		filters = [];
 		groupBy = '';
 		titleField = '';
 		subtitleField = '';
@@ -336,9 +347,8 @@
 		}
 	});
 
-	// Reload when filters / group-by / title-field / search change (search is server-side now).
+	// Reload when group-by / title-field / search change (search is server-side now).
 	$effect(() => {
-		filters;
 		groupBy;
 		titleField;
 		subtitleField;
@@ -411,7 +421,6 @@
 			{records}
 			{loading}
 			bind:groupBy
-			bind:filters
 			{selectionMode}
 			{selectedIds}
 			{selectedRecordId}
@@ -435,7 +444,7 @@
 				onPrev={() => gotoRecord(-1)}
 				onNext={() => gotoRecord(1)}
 				onclose={() => (selectedRecordId = null)}
-				onchanged={loadRecords}
+				onchanged={patchRecordRow}
 				ondeleted={async () => {
 					selectedRecordId = null;
 					await loadRecords();
