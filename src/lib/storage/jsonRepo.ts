@@ -50,6 +50,10 @@ function getFieldType(schema: SchemaDefinition, fieldKey: string): FieldType {
  * Build a synthetic {@link SchemaDefinition} for the schemaless `globals` record from its reserved
  * `__field_kinds` hint, so schema-driven read logic (url normalization, missing-file detection)
  * applies to globals too. Tolerant of a missing/malformed hint (returns `{}`).
+ *
+ * Note: only `__field_kinds` is consulted here. The other reserved keys are intentionally ignored —
+ * `__field_meta` is per-field UI options (not schema), and `__layout` (the sectioned-editor grouping,
+ * see `core/globalsLayout.ts`) is presentation-only. Neither should ever become a synthetic field.
  */
 function globalsSyntheticSchema(rec: Record<string, unknown>): SchemaDefinition {
 	const raw = rec[GLOBALS_FIELD_KINDS_KEY];

@@ -28,7 +28,13 @@
 			}
 			body {
 				margin: 0;
-				font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+				font:
+					15px/1.55 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
 				color: var(--fg);
 				background: #f8fafc;
 			}
@@ -236,7 +242,9 @@
 				</div>
 				<div class="card ok">
 					<h3><span class="tag b">Mode B</span> Reader</h3>
-					<p class="sub"><code>import 'media-manager/fs'</code> · <code>media-manager export</code></p>
+					<p class="sub">
+						<code>import 'media-manager/fs'</code> · <code>media-manager export</code>
+					</p>
 					<ul>
 						<li><b>Never writes</b>, never heals — frozen contract</li>
 						<li>Host build renders galleries/pages from the same files</li>
@@ -257,9 +265,12 @@
 				</li>
 				<li>
 					<b>Convention auto-detect</b> — find a folder with <code>media/manifest.json</code>; probe
-					<code>./media_manager</code>, <code>./src/assets/media_manager</code>, <code>./media</code>
+					<code>./media_manager</code>, <code>./src/assets/media_manager</code>,
+					<code>./media</code>
 				</li>
-				<li><b>Friendly error</b> — print the chain tried + suggest <code>media-manager init</code></li>
+				<li>
+					<b>Friendly error</b> — print the chain tried + suggest <code>media-manager init</code>
+				</li>
 			</ol>
 
 			<h2>Mode B — host reads the format at build time</h2>
@@ -279,21 +290,25 @@
 			<div class="cols" style="margin-top: 16px">
 				<div class="card">
 					<h3>Library (Node hosts)</h3>
-					<pre>import { openWorkspace } from 'media-manager/fs';
+					<pre>
+import { openWorkspace } from 'media-manager/fs';
 
 const ws = openWorkspace('src/assets/media_manager');
 await ws.listFiles({ classIds: ['photos'] });
 await ws.listMembers('photos');
 ws.resolveBlobPath(id); // abs path on disk
-await ws.getGlobals();</pre>
+await ws.getGlobals();</pre
+					>
 				</div>
 				<div class="card">
 					<h3>Export (any host)</h3>
-					<pre>media-manager export --class photos \
+					<pre>
+media-manager export --class photos \
   --out photos.json
 
 media-manager export --all \
-  &gt; workspace.json</pre>
+  &gt; workspace.json</pre
+					>
 					<p class="sub" style="margin-top: 10px">
 						Denormalized snapshot → host reads with plain <code>JSON.parse</code>.
 					</p>
@@ -301,24 +316,31 @@ media-manager export --all \
 			</div>
 			<div class="callout">
 				<b>Refactor that gates Mode B:</b> the storage layer resolves the root from
-				<code>getRootDir()</code> (the <code>MEDIA_MANAGER_ROOT</code> env global). A library API must
-				thread an <em>explicit</em> root instead of mutating <code>process.env</code>.
+				<code>getRootDir()</code> (the <code>MEDIA_MANAGER_ROOT</code> env global). A library API
+				must thread an <em>explicit</em> root instead of mutating <code>process.env</code>.
 			</div>
 
 			<h2>North-star layout in nicb.at</h2>
-			<div class="tree">~/Projects/nicb.at/
-├─ media-manager.config.json      { root: "src/assets/media_manager" }  (port is ephemeral)
-├─ src/assets/media_manager/      the workspace (committed)
-│  └─ media/{manifest.json, files/, classes/, settings.json}
-└─ src/lib/media.ts               imports media-manager/fs → renders at build</div>
+			<div class="tree">
+				~/Projects/nicb.at/ ├─ media-manager.config.json { root: "src/assets/media_manager" } (port
+				is ephemeral) ├─ src/assets/media_manager/ the workspace (committed) │ └─
+				media/{manifest.json, files/, classes/, settings.json} └─ src/lib/media.ts imports
+				media-manager/fs → renders at build
+			</div>
 
 			<h2>Packaging gotchas <span class="tag warn">measure first</span></h2>
 			<div class="cols">
 				<div class="card">
 					<h3>Install size</h3>
 					<ul>
-						<li><code>exiftool-vendored</code> bundles platform Perl (tens of MB) → maybe optional/lazy</li>
-						<li>Drop <code>sharp</code> + <code>@masonry-grid/svelte</code> (unreferenced in <code>src/</code>)</li>
+						<li>
+							<code>exiftool-vendored</code> bundles platform Perl (tens of MB) → maybe
+							optional/lazy
+						</li>
+						<li>
+							Drop <code>sharp</code> + <code>@masonry-grid/svelte</code> (unreferenced in
+							<code>src/</code>)
+						</li>
 						<li><code>npx</code> refetches the whole tarball on a cold cache</li>
 					</ul>
 				</div>

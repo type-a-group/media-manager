@@ -22,13 +22,19 @@ export const PROTECTED_SCHEMA_KEYS = new Set(['id', 'image_name', 'name']);
 /**
  * Reserved record keys the `globals` singleton uses to emulate a schema (it has none). Field UI
  * types live in `__field_kinds` (key → ValueKind); extra per-field metadata (dropdown `options`,
- * `multiselect`, list `itemType`) lives in `__field_meta` (key → object). Both are JSON-encoded
- * strings stored alongside the data and hidden from the editable field list.
+ * `multiselect`, list `itemType`) lives in `__field_meta` (key → object); the sectioned-editor
+ * grouping/order/collapse/sort lives in `__layout` (see `core/globalsLayout.ts`). All three are
+ * JSON-encoded strings stored alongside the data and hidden from the editable field list.
  */
 export const GLOBALS_FIELD_KINDS_KEY = '__field_kinds';
 export const GLOBALS_FIELD_META_KEY = '__field_meta';
+export const GLOBALS_LAYOUT_KEY = '__layout';
 /** All reserved globals meta keys (excluded from the editable/iterated field set). */
-export const GLOBALS_META_KEYS = new Set([GLOBALS_FIELD_KINDS_KEY, GLOBALS_FIELD_META_KEY]);
+export const GLOBALS_META_KEYS = new Set([
+	GLOBALS_FIELD_KINDS_KEY,
+	GLOBALS_FIELD_META_KEY,
+	GLOBALS_LAYOUT_KEY
+]);
 
 /**
  * Returns whether a key is protected from removal/rename in the schema editor.

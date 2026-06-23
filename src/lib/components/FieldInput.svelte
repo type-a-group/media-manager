@@ -4,9 +4,10 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { X, TriangleAlert } from 'lucide-svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { X, TriangleAlert, ExternalLink } from 'lucide-svelte';
 	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
 	import FilePicker from './FilePicker.svelte';
 
@@ -55,6 +56,26 @@
 	);
 	function setUrl(patch: Partial<UrlValue>) {
 		value = { ...url, ...patch };
+	}
+
+	/**
+	 * Resolves a user-entered URL into something safe to put in an `<a href>` for navigation.
+	 * Leaves schemed values (`https://…`, `mailto:…`, protocol-relative `//…`) untouched and
+	 * assumes `https://` for bare hosts like `svelte.dev`, so the "open" button never produces a
+	 * same-origin relative link. Does NOT mutate the stored value — display/edit keeps what was typed.
+	 */
+	function hrefFor(raw: string): string {
+		const t = raw.trim();
+		if (!t) return '';
+		if (t.startsWith('//') || /^[a-zA-Z][\w+.-]*:/.test(t)) return t;
+		return `https://${t}`;
+	}
+
+	/** Patch one url-typed list item in place (Option 1: inline-editable rows). */
+	function updateUrlItem(i: number, patch: Partial<UrlValue>) {
+		const arr = [...listItems];
+		arr[i] = { ...normalizeUrlValue(arr[i]), ...patch };
+		value = arr;
 	}
 
 	const stringValue = $derived(typeof value === 'string' ? value : '');
@@ -106,6 +127,38 @@
 	}
 </script>
 
+<!-- Shared "open this URL in a new tab" icon button with a tooltip; disabled when empty. -->
+{#snippet openLink(raw: string)}
+	{@const target = hrefFor(raw)}
+	<Tooltip.Root>
+		<Tooltip.Trigger>
+			{#if target}
+				<a
+					href={target}
+					target="_blank"
+					rel="noopener noreferrer"
+					class={buttonVariants({ variant: 'outline', size: 'icon' }) + ' shrink-0'}
+					aria-label="Open link in new tab"
+				>
+					<ExternalLink class="size-4" />
+				</a>
+			{:else}
+				<span
+					class={buttonVariants({ variant: 'outline', size: 'icon' }) +
+						' shrink-0 cursor-not-allowed opacity-50'}
+					aria-disabled="true"
+					aria-label="Open link in new tab"
+				>
+					<ExternalLink class="size-4" />
+				</span>
+			{/if}
+		</Tooltip.Trigger>
+		<Tooltip.Content side="top" sideOffset={6}>
+			{target ? 'Open link in new tab' : 'Enter a URL to open'}
+		</Tooltip.Content>
+	</Tooltip.Root>
+{/snippet}
+
 {#if def.type === 'boolean'}
 	<Checkbox {id} checked={value === true} onCheckedChange={(v) => (value = v === true)} />
 {:else if def.type === 'number'}
@@ -144,6 +197,50 @@
 			</Select.Content>
 		</Select.Root>
 	{/if}
+{:else if def.type === 'list' && itemType === 'url'}
+	<!-- Option 1: each url item is a persistent, inline-editable row + an "add" row at the bottom. -->
+	<div class="flex flex-col gap-2">
+		{#each listItems as item, i (i)}
+			{@const u = normalizeUrlValue(item)}
+			<div class="flex items-center gap-2">
+				<Input
+					class="w-32 shrink-0"
+					placeholder="Display name"
+					value={u.display_name}
+					oninput={(e) => updateUrlItem(i, { display_name: e.currentTarget.value })}
+				/>
+				<Input
+					class="min-w-0 flex-1"
+					type="url"
+					placeholder="https://…"
+					value={u.url}
+					oninput={(e) => updateUrlItem(i, { url: e.currentTarget.value })}
+				/>
+				{@render openLink(u.url)}
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon"
+					class="shrink-0 text-muted-foreground hover:text-destructive"
+					onclick={() => removeListItem(i)}
+					aria-label="Remove item"
+				>
+					<X class="size-4" />
+				</Button>
+			</div>
+		{/each}
+		<div class="flex items-center gap-2">
+			<Input class="w-32 shrink-0" placeholder="Display name" bind:value={newUrlName} />
+			<Input
+				class="min-w-0 flex-1"
+				type="url"
+				placeholder="https://…"
+				bind:value={newUrlUrl}
+				onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
+			/>
+			<Button type="button" variant="outline" size="sm" onclick={addListItem}>Add</Button>
+		</div>
+	</div>
 {:else if def.type === 'list'}
 	<div class="flex flex-col gap-2">
 		{#if listItems.length > 0}
@@ -164,30 +261,20 @@
 			</div>
 		{/if}
 		<div class="flex flex-wrap items-end gap-2">
-			{#if itemType === 'url'}
-				<Input class="w-32" placeholder="Display name" bind:value={newUrlName} />
-				<Input
-					class="min-w-0 flex-1"
-					type="url"
-					placeholder="https://…"
-					bind:value={newUrlUrl}
-					onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
-				/>
-			{:else}
-				<Input
-					class="min-w-0 flex-1"
-					type={itemType === 'number' ? 'number' : 'text'}
-					placeholder="Add item"
-					bind:value={newItem}
-					onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
-				/>
-			{/if}
+			<Input
+				class="min-w-0 flex-1"
+				type={itemType === 'number' ? 'number' : 'text'}
+				placeholder="Add item"
+				bind:value={newItem}
+				onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
+			/>
 			<Button type="button" variant="outline" size="sm" onclick={addListItem}>Add</Button>
 		</div>
 	</div>
 {:else if def.type === 'url'}
-	<div class="flex flex-col gap-2">
+	<div class="flex items-center gap-2">
 		<Input
+			class="w-32 shrink-0"
 			placeholder="Display name"
 			value={url.display_name}
 			oninput={(e) => setUrl({ display_name: e.currentTarget.value })}
@@ -195,10 +282,12 @@
 		<Input
 			{id}
 			type="url"
+			class="min-w-0 flex-1"
 			placeholder="https://…"
 			value={url.url}
 			oninput={(e) => setUrl({ url: e.currentTarget.value })}
 		/>
+		{@render openLink(url.url)}
 	</div>
 {:else if def.type === 'file'}
 	<div class="flex w-full flex-col gap-1">

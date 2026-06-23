@@ -11,25 +11,25 @@ Captured from a planning chat — these steer the sequencing, not yet committed 
 - **Editor-first.** Nail `npx media-manager` zero-config root discovery (Mode A) before
   the host-reader work. The reader (Mode B) stays designed-but-deferred.
 - **Workspace is committed to git** in nicb.at. The editor lazy-heals the manifest on
-  every list and can rename/strip blobs, so *just opening* committed data can dirty the
+  every list and can rename/strip blobs, so _just opening_ committed data can dirty the
   tree. **Chosen fix: "quiet heal" — persist heal results to disk ONLY when something
   actually changed** (new/missing blob); suppress no-op rewrites (mtime/formatting churn).
   Editing stays fully functional; you simply stop getting spurious diffs from browsing.
-  This is a targeted change to `reconcile`'s write logic, *not* a separate read-only mode.
+  This is a targeted change to `reconcile`'s write logic, _not_ a separate read-only mode.
   (A hard `--read-only` flag is **not** being pursued now.)
 - **Distribution: local dep now, publish/global-link later.** media-manager goes into
   nicb.at as a devDependency (`file:../media-manager` or a git URL); `npx media-manager`
   inside nicb.at then resolves the **local** install — no npm publish, stays private, bare
-  command works. Publishing scoped (`@nicbat/media-manager`) or `npm link` is a *later*
+  command works. Publishing scoped (`@nicbat/media-manager`) or `npm link` is a _later_
   option, not now.
 - **Config: standalone `media-manager.config.json`** at the host repo root (not a
   `package.json` key). **But see the serve-model rethink below — `port` likely drops out
   of it.**
 - **Serve model: keep the server, drop the fixed port.** A server is mandatory (the app
   does real filesystem IO, exiftool, heic-convert, manifest locks — it cannot be a static
-  page). What's *not* needed is a configured port: bind to an **ephemeral port (port 0)**
+  page). What's _not_ needed is a configured port: bind to an **ephemeral port (port 0)**
   and auto-open the OS-assigned URL, eliminating port config + collisions with the host
-  dev server. A desktop-window shell (Tauri/Electron) is a possible *later* polish, not now.
+  dev server. A desktop-window shell (Tauri/Electron) is a possible _later_ polish, not now.
 - **Dependency / install-size work: deferred entirely.** Leave `sharp`,
   `@masonry-grid/svelte`, and `exiftool-vendored` as-is for now; revisit only if cold
   `npx` install time actually annoys.
@@ -38,6 +38,7 @@ Captured from a planning chat — these steer the sequencing, not yet committed 
 - **Serving the blob bytes (Mode B): undecided** — point-at-`media/files` vs copy-into-build.
 
 ### What "editor-first + committed" implies for near-term work
+
 1. **Root discovery chain** (steps 3–5 below) — the headline `npx` experience.
 2. **`media-manager.config.json`** at the nicb.at repo root pointing at
    `src/assets/media_manager` (root path only; **no `port`** — ephemeral).
@@ -46,7 +47,7 @@ Captured from a planning chat — these steer the sequencing, not yet committed 
 4. **Ephemeral port + auto-open** — replace the fixed `PORT` default with port 0 and open
    the assigned URL.
 5. **Local-dep wiring** — add media-manager to nicb.at's `package.json` so `npx
-   media-manager` resolves the local install.
+media-manager` resolves the local install.
 
 ## The dream, in one sentence
 
@@ -60,14 +61,14 @@ editor pointed at the right folder with **zero config**, and (b) expose a small,
 The single biggest design clarification: there are **two different things** the host
 wants from media-manager, and they have opposite constraints.
 
-| Mode | Entry point | Mutates the root? | Audience |
-| --- | --- | --- | --- |
-| **A. Editor** | `npx media-manager` (boots the Node server + browser) | **Yes** — heals manifest, renames blobs, writes class files | You, interactively curating metadata |
-| **B. Reader** | `import` a library / `media-manager export` | **No** — pure reads | The host build (nicb.at) rendering galleries, pages, etc. |
+| Mode          | Entry point                                           | Mutates the root?                                           | Audience                                                  |
+| ------------- | ----------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| **A. Editor** | `npx media-manager` (boots the Node server + browser) | **Yes** — heals manifest, renames blobs, writes class files | You, interactively curating metadata                      |
+| **B. Reader** | `import` a library / `media-manager export`           | **No** — pure reads                                         | The host build (nicb.at) rendering galleries, pages, etc. |
 
 Conflating these is the trap. The editor is allowed to rewrite the root (it lazy-heals
 the manifest, can rename/strip blob refs — see `CLAUDE.md` "lazy-heals"). If the host's
-data root is **committed to git**, simply *launching the editor* can produce diffs. The
+data root is **committed to git**, simply _launching the editor_ can produce diffs. The
 reader must be a clean, side-effect-free path with a frozen contract.
 
 ---
@@ -75,11 +76,13 @@ reader must be a clean, side-effect-free path with a frozen contract.
 ## Mode A — `npx media-manager` with zero-config root discovery
 
 ### Today
+
 `bin/media-manager.js` **requires** a positional `<root-dir>` and errors without it. It
 also requires `build/` to already exist next to the bin. Good foundation, not yet
 zero-config.
 
 ### Target behavior
+
 Running bare `npx media-manager` inside a host repo should resolve the root through a
 clear precedence chain (first match wins):
 
@@ -87,7 +90,7 @@ clear precedence chain (first match wins):
 2. **Env** — `MEDIA_MANAGER_ROOT` (current behavior).
 3. **Config file** — nearest `media-manager.config.json` / `.media-managerrc` found by
    walking up from `cwd`, **or** a `"mediaManager"` key in the nearest `package.json`.
-4. **Convention auto-detect** — walk up from `cwd` looking for a folder that *looks like*
+4. **Convention auto-detect** — walk up from `cwd` looking for a folder that _looks like_
    a workspace: contains `media/manifest.json` (strongest signal) or a `media/` dir.
    Probe common spots: `./media_manager`, `./src/assets/media_manager`, `./media`,
    `./.media-manager`.
@@ -99,28 +102,30 @@ root:
 
 ```jsonc
 {
-  "root": "src/assets/media_manager",
-  // no "port" — the server binds to an ephemeral port (port 0) and auto-opens
-  // the OS-assigned URL, so it can never collide with the host dev server.
-  "open": true,
-  "bodySizeLimit": 104857600
+	"root": "src/assets/media_manager",
+	// no "port" — the server binds to an ephemeral port (port 0) and auto-opens
+	// the OS-assigned URL, so it can never collide with the host dev server.
+	"open": true,
+	"bodySizeLimit": 104857600
 }
 ```
 
 …then `npx media-manager` from anywhere in the repo "just works."
 
 ### CLI evolves from positional-only to verbs
+
 Keep the bare/positional form for back-compat, but grow a verb surface:
 
-| Command | Purpose |
-| --- | --- |
-| `media-manager` (no args) | Discover root → **serve** (the headline) |
-| `media-manager serve [root]` | Explicit serve |
-| `media-manager init [root]` | Scaffold an empty workspace (`media/`, `manifest.json`, `settings.json`) |
-| `media-manager export …` | **Mode B** — emit denormalized JSON (see below) |
+| Command                       | Purpose                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| `media-manager` (no args)     | Discover root → **serve** (the headline)                                                   |
+| `media-manager serve [root]`  | Explicit serve                                                                             |
+| `media-manager init [root]`   | Scaffold an empty workspace (`media/`, `manifest.json`, `settings.json`)                   |
+| `media-manager export …`      | **Mode B** — emit denormalized JSON (see below)                                            |
 | `media-manager doctor [root]` | Validate / heal / report without serving (surface the `healed`/`missing` info as a report) |
 
 ### Packaging gotchas (the part that actually bites on `npx`)
+
 - **`build/` must ship.** It already does (`package.json#files`), and `prepublishOnly`
   runs the build. Verify it isn't excluded by `.gitignore`-driven publish surprises.
 - **Native/heavy deps inflate cold `npx` downloads.** `npx` fetches the whole tarball on
@@ -141,9 +146,10 @@ Keep the bare/positional form for back-compat, but grow a verb surface:
 
 ## Mode B — host ↔ file-format library + scripts
 
-This is what lets nicb.at *render* from the data without booting the editor.
+This is what lets nicb.at _render_ from the data without booting the editor.
 
 ### The shape of a public reader
+
 A subpath export, e.g. `media-manager/fs`, exposing **pure, root-explicit, read-only**
 functions. Crucially it must take the root as an **argument**, not via
 `process.env.MEDIA_MANAGER_ROOT` (today the storage layer reads the env global — a
@@ -155,12 +161,12 @@ import { openWorkspace } from 'media-manager/fs';
 const ws = openWorkspace('src/assets/media_manager');
 
 await ws.listFiles({ classIds: ['photos'], match: 'any' }); // FileItem[]
-await ws.listClasses();                                       // class configs + counts
-await ws.listMembers('photos');                               // catalog rows for one class
-await ws.getFileMeta(id);                                     // per-blob metadata
-ws.resolveBlobPath(id);                                       // absolute path to the file on disk
-await ws.listJsonRecords('notes');                            // json-type records
-await ws.getGlobals();                                        // the globals singleton
+await ws.listClasses(); // class configs + counts
+await ws.listMembers('photos'); // catalog rows for one class
+await ws.getFileMeta(id); // per-blob metadata
+ws.resolveBlobPath(id); // absolute path to the file on disk
+await ws.listJsonRecords('notes'); // json-type records
+await ws.getGlobals(); // the globals singleton
 ```
 
 Implementation note: this should **reuse the existing read paths** (`classRepo.ts`,
@@ -175,6 +181,7 @@ If the manifest is stale vs disk, the reader reports it (like `healed`/`missing`
 does not "fix" it. Healing stays a Mode-A (editor) responsibility.
 
 ### For non-Node hosts: `media-manager export`
+
 Not every host wants to `import` Node code at build (Astro/Vite islands, static
 pipelines, other languages). A CLI export emits a single denormalized JSON blob:
 
@@ -188,6 +195,7 @@ Output is a stable, self-contained snapshot (records joined to their filenames/p
 the host reads with plain `fs.readFile` + `JSON.parse`.
 
 ### Wiring the actual asset files into the host build
+
 The metadata is JSON, but the **blobs live in `media/files/`**. The host needs those
 bytes in its output. Two patterns to document/support:
 
@@ -204,6 +212,7 @@ bytes in its output. Two patterns to document/support:
 ## Open questions to resolve in a future chat
 
 **Resolved (2026-06-20):**
+
 - Editor-first sequencing.
 - Committed-data friction → **quiet heal** (persist only on real change); no hard
   read-only mode for now.
@@ -214,21 +223,21 @@ bytes in its output. Two patterns to document/support:
 
 Still open:
 
-1. **Quiet-heal implementation** *(near-term)* — how to make `reconcile` detect "nothing
+1. **Quiet-heal implementation** _(near-term)_ — how to make `reconcile` detect "nothing
    actually changed" cleanly so it skips the write. Needs a real-diff check before persist
    (compare computed index/manifest to on-disk) rather than always rewriting.
-2. **Ephemeral-port plumbing** *(near-term)* — `adapter-node` reads `PORT`; confirm port 0
+2. **Ephemeral-port plumbing** _(near-term)_ — `adapter-node` reads `PORT`; confirm port 0
    works through the adapter, or whether the CLI must read back the actually-bound port to
    build the auto-open URL.
-3. **Host consumption shape** *(deferred — Mode B)* — library (`media-manager/fs`) vs
+3. **Host consumption shape** _(deferred — Mode B)_ — library (`media-manager/fs`) vs
    `export` JSON. Decide once nicb.at's build needs are concrete; don't pre-build.
-4. **Blob-serving strategy** *(deferred — Mode B)* — point host asset dir at `media/files/`
+4. **Blob-serving strategy** _(deferred — Mode B)_ — point host asset dir at `media/files/`
    vs copy/export needed blobs into the build.
-5. **Reader root-threading refactor** *(deferred — gates Mode B)* — decouple the storage
+5. **Reader root-threading refactor** _(deferred — gates Mode B)_ — decouple the storage
    layer from `getRootDir()`/env; only matters once #3 lands.
-6. **Desktop-window shell** *(someday)* — Tauri/Electron/`webview` wrapper instead of a
+6. **Desktop-window shell** _(someday)_ — Tauri/Electron/`webview` wrapper instead of a
    browser tab, if the localhost-tab feel ever bothers you.
-7. **Bundle/deps** *(deferred)* — drop unused `sharp`/`@masonry-grid/svelte`; consider
+7. **Bundle/deps** _(deferred)_ — drop unused `sharp`/`@masonry-grid/svelte`; consider
    lazy `exiftool-vendored`. Revisit only if cold `npx` install time annoys.
 
 ## Concrete nicb.at end-state (north star)

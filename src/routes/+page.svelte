@@ -1,46 +1,46 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { apiListClasses, apiListFiles } from '$lib/api/files.js';
-	import { apiListMediaTypes, apiCreateMediaType, type MediaTypeSummary } from '$lib/api/client.js';
+	import { apiListMediaTypes, apiGetGlobalsRecord } from '$lib/api/client.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
 	import SettingsButton from '$lib/components/SettingsButton.svelte';
-	import { apiCreateClass } from '$lib/api/files.js';
-	import { Files, FolderOpen, FileJson, Plus } from 'lucide-svelte';
-	import { toast } from 'svelte-sonner';
-	import type { ClassSummary } from '$lib/core/types.js';
+	import { GLOBALS_META_KEYS } from '$lib/core/fieldKeys.js';
+	import { Files, Layers, SlidersHorizontal } from 'lucide-svelte';
 
 	/**
-	 * Dashboard landing: an overview of everything in the workspace as cards — All Files (the blob
-	 * hub), each class, and each `json` record type — plus toolbar actions to create a class or a
-	 * record type and open global settings. Cards drill into `/files`, `/files?class=<id>`, or
-	 * `/media/<typeId>`.
+	 * Home launcher: the workspace's three peer sub-apps as large entry cards — **Files** (the blob
+	 * hub + classes), **Records** (`json` record types), and **Globals** (the app-wide singleton).
+	 * Per-class / per-type browsing and creation live *inside* each sub-app (their rails), so the home
+	 * page deliberately does not re-list every entity — it just routes to the three and shows a count.
 	 */
-	let classes = $state<ClassSummary[]>([]);
-	let recordTypes = $state<MediaTypeSummary[]>([]);
 	let totalFiles = $state(0);
+	let classCount = $state(0);
+	let recordTypeCount = $state(0);
+	let globalsFieldCount = $state(0);
 	let loading = $state(true);
 
-	let newClassOpen = $state(false);
-	let newClassName = $state('');
-	let newTypeOpen = $state(false);
-	let newTypeName = $state('');
+	/** System keys that aren't user fields, so the Globals count matches what the editor shows. */
+	const GLOBALS_SYSTEM_KEYS = new Set([
+		'id',
+		'last_modified',
+		'_missing_files',
+		...GLOBALS_META_KEYS
+	]);
 
 	async function load() {
 		loading = true;
 		try {
-			const [cls, types, files] = await Promise.all([
-				apiListClasses(),
+			const [cls, types, files, globals] = await Promise.all([
+				apiListClasses().catch(() => []),
 				apiListMediaTypes().catch(() => []),
-				apiListFiles().catch(() => ({ files: [] }))
+				apiListFiles().catch(() => ({ files: [] })),
+				apiGetGlobalsRecord().catch(() => ({}) as Record<string, unknown>)
 			]);
-			classes = cls;
-			recordTypes = types;
+			classCount = cls.length;
+			// Globals is its own peer here, not a record type.
+			recordTypeCount = types.filter((t) => t.id !== 'globals').length;
 			totalFiles = files.files.length;
+			globalsFieldCount = Object.keys(globals).filter((k) => !GLOBALS_SYSTEM_KEYS.has(k)).length;
 		} finally {
 			loading = false;
 		}
@@ -48,138 +48,66 @@
 
 	onMount(load);
 
-	async function createClass() {
-		const name = newClassName.trim();
-		if (!name) return;
-		try {
-			const created = await apiCreateClass(name);
-			newClassName = '';
-			newClassOpen = false;
-			goto(`/files?class=${created.id}`);
-		} catch (e) {
-			console.error(e);
-			toast.error('Failed to create class');
-		}
-	}
-
-	async function createRecordType() {
-		const name = newTypeName.trim();
-		if (!name) return;
-		try {
-			const created = await apiCreateMediaType({ displayName: name, kind: 'json' });
-			newTypeName = '';
-			newTypeOpen = false;
-			goto(`/media?type=${created.id}`);
-		} catch (e) {
-			console.error(e);
-			toast.error('Failed to create record type');
-		}
-	}
+	const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 </script>
 
-<div class="mx-auto max-w-5xl p-6">
-	<header class="mb-6 flex items-center gap-3">
-		<h1 class="text-2xl font-semibold">Overview</h1>
+<div class="mx-auto max-w-4xl p-6">
+	<header class="mb-8 flex items-center gap-3">
+		<h1 class="text-2xl font-semibold tracking-tight">media-manager</h1>
 		<div class="flex-1"></div>
-		<Button variant="outline" size="sm" onclick={() => (newClassOpen = true)}>
-			<Plus class="size-4" /> New class
-		</Button>
-		<Button variant="outline" size="sm" onclick={() => (newTypeOpen = true)}>
-			<Plus class="size-4" /> New record type
-		</Button>
 		<SettingsButton />
 	</header>
 
-	{#if loading}
-		<p class="text-muted-foreground">Loading…</p>
-	{:else}
-		<section class="mb-6">
-			<h2 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Files</h2>
-			<div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-				<a href="/files" class="block">
-					<Card.Root class="h-full transition-colors hover:border-primary hover:bg-muted/40">
-						<Card.Header>
-							<Files class="size-6 text-muted-foreground" />
-							<Card.Title>All Files</Card.Title>
-							<Card.Description>{totalFiles} file{totalFiles === 1 ? '' : 's'}</Card.Description>
-						</Card.Header>
-					</Card.Root>
-				</a>
-				{#each classes as c (c.id)}
-					<a href={`/files?class=${c.id}`} class="block">
-						<Card.Root class="h-full transition-colors hover:border-primary hover:bg-muted/40">
-							<Card.Header>
-								<FolderOpen class="size-6 text-muted-foreground" />
-								<Card.Title class="truncate">{c.displayName}</Card.Title>
-								<Card.Description>{c.count} file{c.count === 1 ? '' : 's'}</Card.Description>
-							</Card.Header>
-						</Card.Root>
-					</a>
-				{/each}
-			</div>
-		</section>
+	<div class="grid gap-4 sm:grid-cols-3">
+		<a href="/files" class="block">
+			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
+				<Card.Header>
+					<Files class="size-8 text-muted-foreground transition-colors group-hover:text-primary" />
+					<Card.Title class="text-xl">Files</Card.Title>
+					<Card.Description
+						>Your blobs, and the classes that tag &amp; describe them.</Card.Description
+					>
+				</Card.Header>
+				<Card.Content class="text-sm text-muted-foreground">
+					{#if !loading}
+						{plural(totalFiles, 'file')} · {plural(classCount, 'class', 'classes')}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</a>
 
-		{#if recordTypes.length > 0}
-			<section>
-				<h2 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Records</h2>
-				<div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-					{#each recordTypes as t (t.id)}
-						<a href={`/media?type=${t.id}`} class="block">
-							<Card.Root class="h-full transition-colors hover:border-primary hover:bg-muted/40">
-								<Card.Header>
-									<FileJson class="size-6 text-muted-foreground" />
-									<Card.Title class="truncate">{t.displayName}</Card.Title>
-									<Card.Description>{t.id === 'globals' ? 'Singleton' : 'Records'}</Card.Description
-									>
-								</Card.Header>
-							</Card.Root>
-						</a>
-					{/each}
-				</div>
-			</section>
-		{/if}
-	{/if}
+		<a href="/media" class="block">
+			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
+				<Card.Header>
+					<Layers class="size-8 text-muted-foreground transition-colors group-hover:text-primary" />
+					<Card.Title class="text-xl">Records</Card.Title>
+					<Card.Description
+						>Schema-driven record types — pure data, no file attached.</Card.Description
+					>
+				</Card.Header>
+				<Card.Content class="text-sm text-muted-foreground">
+					{#if !loading}
+						{plural(recordTypeCount, 'type')}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</a>
+
+		<a href="/media?type=globals" class="block">
+			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
+				<Card.Header>
+					<SlidersHorizontal
+						class="size-8 text-muted-foreground transition-colors group-hover:text-primary"
+					/>
+					<Card.Title class="text-xl">Globals</Card.Title>
+					<Card.Description>One app-wide settings record, grouped into sections.</Card.Description>
+				</Card.Header>
+				<Card.Content class="text-sm text-muted-foreground">
+					{#if !loading}
+						{plural(globalsFieldCount, 'field')}
+					{/if}
+				</Card.Content>
+			</Card.Root>
+		</a>
+	</div>
 </div>
-
-<Dialog.Root bind:open={newClassOpen}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Title>New class</Dialog.Title>
-		<Dialog.Description
-			>A class is a schema + opt-in per-file metadata over your blobs.</Dialog.Description
-		>
-		<div class="flex flex-col gap-2 py-2">
-			<Label for="new-class-name">Name</Label>
-			<Input
-				id="new-class-name"
-				bind:value={newClassName}
-				placeholder="Class name"
-				onkeydown={(e) => e.key === 'Enter' && createClass()}
-			/>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (newClassOpen = false)}>Cancel</Button>
-			<Button onclick={createClass} disabled={!newClassName.trim()}>Create</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<Dialog.Root bind:open={newTypeOpen}>
-	<Dialog.Content class="max-w-sm">
-		<Dialog.Title>New record type</Dialog.Title>
-		<Dialog.Description>A `json` record type — pure records, no file attachment.</Dialog.Description
-		>
-		<div class="flex flex-col gap-2 py-2">
-			<Label for="new-type-name">Name</Label>
-			<Input
-				id="new-type-name"
-				bind:value={newTypeName}
-				placeholder="Record type name"
-				onkeydown={(e) => e.key === 'Enter' && createRecordType()}
-			/>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (newTypeOpen = false)}>Cancel</Button>
-			<Button onclick={createRecordType} disabled={!newTypeName.trim()}>Create</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>

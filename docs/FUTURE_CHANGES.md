@@ -451,18 +451,18 @@ A per-class review affordance that helps answer "which files should be in this c
 ## 30. Editor npx Setup — Zero-Config Root Discovery (Mode A)
 
 **Priority**: Medium (user-requested; editor-first milestone)
-**Context**: Today [`bin/media-manager.js`](../bin/media-manager.js) **requires** an explicit `<root-dir>` positional arg and errors without it. The vision is to run bare **`npx media-manager`** from inside a host repo (e.g. `~/Projects/nicb.at`, workspace at `src/assets/media_manager`) and have it find the right folder with **zero config**. This is the "editor" half of the [npx-package vision](plans/npx-package-vision.md) (Mode A — the server that *mutates* the root), distinct from Item 33 (the read-only reader). Decision (2026-06-20): **editor-first**, and distribute as a **local dep** in the host repo for now (publish/`npm link` later).
+**Context**: Today [`bin/media-manager.js`](../bin/media-manager.js) **requires** an explicit `<root-dir>` positional arg and errors without it. The vision is to run bare **`npx media-manager`** from inside a host repo (e.g. `~/Projects/nicb.at`, workspace at `src/assets/media_manager`) and have it find the right folder with **zero config**. This is the "editor" half of the [npx-package vision](plans/npx-package-vision.md) (Mode A — the server that _mutates_ the root), distinct from Item 33 (the read-only reader). Decision (2026-06-20): **editor-first**, and distribute as a **local dep** in the host repo for now (publish/`npm link` later).
 
 ### Decisions (2026-06-20)
 
-- **Local dep, not published (for now).** media-manager goes into the host `package.json` as a devDependency via `file:../media-manager` or a git URL, so `npx media-manager` inside that repo resolves the **local** install — no npm publish, stays private, bare command works. Publishing scoped (`@nicbat/media-manager`) or global `npm link` is a *later* phase (folded in below — see "Publishing").
+- **Local dep, not published (for now).** media-manager goes into the host `package.json` as a devDependency via `file:../media-manager` or a git URL, so `npx media-manager` inside that repo resolves the **local** install — no npm publish, stays private, bare command works. Publishing scoped (`@nicbat/media-manager`) or global `npm link` is a _later_ phase (folded in below — see "Publishing").
 - **Config lives in a standalone `media-manager.config.json`** at the host repo root (not a `package.json` key), holding the root path (and `open`, `bodySizeLimit`) — but **not** a port (see Item 31).
 
-*(Folds in former Item 27 "npx Package Distribution" — the publish mechanics now live in the "Publishing (later phase)" section below.)*
+_(Folds in former Item 27 "npx Package Distribution" — the publish mechanics now live in the "Publishing (later phase)" section below.)_
 
 ### What's needed
 
-- A **root-resolution precedence chain** in the CLI (first match wins): (1) explicit arg *(current)*; (2) `MEDIA_MANAGER_ROOT` env *(current)*; (3) nearest `media-manager.config.json` found by walking up from `cwd`; (4) convention auto-detect — walk up looking for a folder with `media/manifest.json` (strongest signal) / a `media/` dir, probing `./media_manager`, `./src/assets/media_manager`, `./media`, `./.media-manager`; (5) friendly error printing the chain it tried + suggesting `media-manager init`.
+- A **root-resolution precedence chain** in the CLI (first match wins): (1) explicit arg _(current)_; (2) `MEDIA_MANAGER_ROOT` env _(current)_; (3) nearest `media-manager.config.json` found by walking up from `cwd`; (4) convention auto-detect — walk up looking for a folder with `media/manifest.json` (strongest signal) / a `media/` dir, probing `./media_manager`, `./src/assets/media_manager`, `./media`, `./.media-manager`; (5) friendly error printing the chain it tried + suggesting `media-manager init`.
 - A **config-file loader** (parse + validate `media-manager.config.json`; resolve `root` relative to the config file's location, not `cwd`).
 - Grow the CLI toward **verbs** while keeping the bare/positional form for back-compat: `serve` (default), `init` (scaffold an empty workspace), `doctor` (validate/heal-report without serving). `export` belongs to Item 33.
 
@@ -490,12 +490,12 @@ Once the local-dep ergonomics land, make it installable by non-developer custome
 ## 31. Ephemeral Server Port + Auto-Open (drop the fixed PORT)
 
 **Priority**: Medium (editor-first milestone; pairs with Item 30)
-**Context**: The CLI defaults `PORT=3000` ([`bin/media-manager.js`](../bin/media-manager.js)) and opens `http://localhost:3000`. Running inside a host repo, a fixed port can **collide with the host's dev server**, and it forces "which port?" config. A server itself is **mandatory** — the app does real filesystem IO, `exiftool-vendored`, `heic-convert`, and manifest locking (`withFileLock`), so it cannot be a static page — but the *fixed port* isn't. Decision (2026-06-20): **keep the server, bind an ephemeral port (port 0), auto-open the OS-assigned URL**, and drop `port` from config entirely.
+**Context**: The CLI defaults `PORT=3000` ([`bin/media-manager.js`](../bin/media-manager.js)) and opens `http://localhost:3000`. Running inside a host repo, a fixed port can **collide with the host's dev server**, and it forces "which port?" config. A server itself is **mandatory** — the app does real filesystem IO, `exiftool-vendored`, `heic-convert`, and manifest locking (`withFileLock`), so it cannot be a static page — but the _fixed port_ isn't. Decision (2026-06-20): **keep the server, bind an ephemeral port (port 0), auto-open the OS-assigned URL**, and drop `port` from config entirely.
 
 ### What's needed
 
 - Launch the server on an **ephemeral port** (port 0 → OS assigns a free port), then **open the actually-bound URL**.
-- Remove `port`/`PORT` from the config surface and docs (the README + CLAUDE.md mention `PORT` default 3000); keep an optional `--port`/`PORT` override for power users who *want* a fixed port.
+- Remove `port`/`PORT` from the config surface and docs (the README + CLAUDE.md mention `PORT` default 3000); keep an optional `--port`/`PORT` override for power users who _want_ a fixed port.
 
 ### Open questions / research
 
@@ -504,25 +504,25 @@ Once the local-dep ergonomics land, make it installable by non-developer custome
 
 ### Considerations
 
-- A possible *later* alternative to the browser-tab model is a **desktop-window shell** (Tauri/Electron/`webview`) — cleaner lifecycle (closing the window ends the session) but a big toolchain add. Deferred; noted in the vision doc, not this item.
+- A possible _later_ alternative to the browser-tab model is a **desktop-window shell** (Tauri/Electron/`webview`) — cleaner lifecycle (closing the window ends the session) but a big toolchain add. Deferred; noted in the vision doc, not this item.
 
 ---
 
 ## 32. Quiet Heal — Persist Manifest Reconcile Only on Real Change
 
 **Priority**: Medium (unblocks editing a git-committed workspace)
-**Context**: Every list call **lazy-heals** the manifest against disk (`reconcile` in [`manifest.ts`](../src/lib/storage/manifest.ts)): new blobs get an id, vanished blobs are flagged `missing`. The host workspace (`nicb.at/src/assets/media_manager`) is **committed to git**, so *just opening the editor and browsing* can rewrite `media/manifest.json` (mtime/formatting/no-op churn) and dirty the tree even when nothing semantically changed. Decision (2026-06-20): **quiet heal** — make reconcile **persist to disk only when something actually changed** (a blob added/missing/renamed), suppressing no-op rewrites. Editing stays fully functional; browsing produces zero diffs. Chosen *over* a hard `--read-only` mode (which would block editing).
+**Context**: Every list call **lazy-heals** the manifest against disk (`reconcile` in [`manifest.ts`](../src/lib/storage/manifest.ts)): new blobs get an id, vanished blobs are flagged `missing`. The host workspace (`nicb.at/src/assets/media_manager`) is **committed to git**, so _just opening the editor and browsing_ can rewrite `media/manifest.json` (mtime/formatting/no-op churn) and dirty the tree even when nothing semantically changed. Decision (2026-06-20): **quiet heal** — make reconcile **persist to disk only when something actually changed** (a blob added/missing/renamed), suppressing no-op rewrites. Editing stays fully functional; browsing produces zero diffs. Chosen _over_ a hard `--read-only` mode (which would block editing).
 
 ### What's needed
 
 - In `reconcile` (and the membership-index resync path), compute the new manifest state in memory and **diff it against the on-disk state**; skip the write entirely when they're equivalent.
 - Ensure the equivalence check is **canonical** — stable key ordering / serialization so semantically-identical manifests compare equal and don't trip on formatting.
-- Confirm `healed: { added, missing }` reporting + the toast still fire for *real* changes (the UX signal is intentional); only the **no-op disk write** is suppressed.
+- Confirm `healed: { added, missing }` reporting + the toast still fire for _real_ changes (the UX signal is intentional); only the **no-op disk write** is suppressed.
 
 ### Open questions / research
 
 - Is the spurious churn coming from `reconcile`, the **mtime-gated membership resync**, `settings.json` healing, or all three? Audit which write paths fire on a pure browse of a clean workspace — **research before implementing** (serve the committed fixture read-only-ish and watch `git status`).
-- Does any caller *depend on* the manifest mtime advancing on every list (e.g. the mtime-gated resync that rebuilds the index from class files if any is newer)? Make sure suppressing the write doesn't break that staleness detection.
+- Does any caller _depend on_ the manifest mtime advancing on every list (e.g. the mtime-gated resync that rebuilds the index from class files if any is newer)? Make sure suppressing the write doesn't break that staleness detection.
 - Decide the equivalence granularity: byte-equal serialized JSON vs. deep structural equality on the parsed object (structural is safer against formatting drift).
 
 ### Considerations
@@ -535,7 +535,7 @@ Once the local-dep ergonomics land, make it installable by non-developer custome
 ## 33. Reader Package — Read-Only Host Integration (Mode B)
 
 **Priority**: Low–Medium (deferred; design captured, don't pre-build)
-**Context**: The "reader" half of the [npx-package vision](plans/npx-package-vision.md): let a host build (e.g. nicb.at) **consume the on-disk format** to render galleries/pages **without booting the editor**. Opposite constraints from Mode A — it must be **pure read-only** (never write, never heal, never lock-then-rename). Decision (2026-06-20): **deferred** — the consumption shape (library vs export JSON) and blob-serving strategy stay open until nicb.at's build needs are concrete. Overlaps Item 7 (static export); this is the *programmatic/library* face of the same read logic.
+**Context**: The "reader" half of the [npx-package vision](plans/npx-package-vision.md): let a host build (e.g. nicb.at) **consume the on-disk format** to render galleries/pages **without booting the editor**. Opposite constraints from Mode A — it must be **pure read-only** (never write, never heal, never lock-then-rename). Decision (2026-06-20): **deferred** — the consumption shape (library vs export JSON) and blob-serving strategy stay open until nicb.at's build needs are concrete. Overlaps Item 7 (static export); this is the _programmatic/library_ face of the same read logic.
 
 ### Two possible faces (undecided)
 
