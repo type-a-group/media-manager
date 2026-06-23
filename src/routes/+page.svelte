@@ -93,7 +93,7 @@
 			</Card.Root>
 		</a>
 
-		<a href="/media?type=globals" class="block">
+		<a href="/globals" class="block">
 			<Card.Root class="group h-full transition-colors hover:border-primary hover:bg-muted/40">
 				<Card.Header>
 					<SlidersHorizontal

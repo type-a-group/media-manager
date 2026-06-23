@@ -2,17 +2,20 @@
 	import type { Snippet } from 'svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import SettingsButton from '$lib/components/SettingsButton.svelte';
+	import SubAppSwitcher from '$lib/components/rail/SubAppSwitcher.svelte';
 	import { Home, PanelLeftClose, PanelLeftOpen } from 'lucide-svelte';
 
 	/**
-	 * The shared **rail shell** for both sub-apps: a collapsible left `<aside>` with a header (title +
-	 * collapse toggle), a scrollable body, and a footer (Home + global App settings). The Records type
-	 * rail (single-select **navigate** rows) and the Files class sidebar (multi-select **filter** rows)
-	 * both compose this — the chrome, collapse behavior, and footer are unified; only the body differs,
-	 * injected per side via snippets. Collapsing renders the icon-only `collapsedBody` strip; the active
-	 * entity's settings ⋮ then lives in the content-column header (handled by the host).
+	 * The shared **rail shell** for all three sub-apps: a collapsible left `<aside>` with a header (the
+	 * {@link SubAppSwitcher} + collapse toggle), a scrollable body, and a footer (Home + global App
+	 * settings). The Records type rail (single-select **navigate** rows), the Files class sidebar
+	 * (multi-select **filter** rows), and the Globals page all compose this — the chrome, collapse
+	 * behavior, sub-app switcher, and footer are unified; only the body differs, injected per side via
+	 * snippets. Collapsing renders the icon-only `collapsedBody` strip; the active entity's settings ⋮
+	 * then lives in the content-column header (handled by the host).
 	 *
-	 * @param title - Brand label shown when expanded.
+	 * @param current - Which sub-app this rail belongs to (drives the header switcher). Preferred.
+	 * @param title - Legacy static brand label (used only when `current` is omitted).
 	 * @param collapsed - Icon-only when true (host owns + persists the state).
 	 * @param onToggleCollapse - Flip collapsed.
 	 * @param body - Expanded body (the rows + per-side extras).
@@ -21,6 +24,7 @@
 	 * @param footer - Optional footer override; defaults to Home + App settings.
 	 */
 	let {
+		current,
 		title,
 		collapsed,
 		onToggleCollapse,
@@ -29,7 +33,8 @@
 		belowHeader,
 		footer
 	}: {
-		title: string;
+		current?: 'files' | 'records' | 'globals';
+		title?: string;
 		collapsed: boolean;
 		onToggleCollapse: () => void;
 		body: Snippet;
@@ -44,15 +49,17 @@
 		? 'w-14'
 		: 'w-56'}"
 >
-	<!-- Header: brand + collapse toggle -->
-	<div class="flex h-12 items-center gap-2 border-b px-2">
-		{#if !collapsed}
+	<!-- Header: sub-app switcher + collapse toggle (stacked when collapsed) -->
+	<div class="flex items-center gap-1 border-b px-2 {collapsed ? 'flex-col py-2' : 'h-12'}">
+		{#if current}
+			<SubAppSwitcher {current} {collapsed} />
+		{:else if !collapsed}
 			<span class="flex-1 truncate px-1 text-sm font-semibold">{title}</span>
 		{/if}
 		<Button
 			variant="ghost"
 			size="icon"
-			class={collapsed ? 'mx-auto' : ''}
+			class={collapsed && !current ? 'mx-auto' : ''}
 			onclick={onToggleCollapse}
 			title={collapsed ? 'Expand rail' : 'Collapse rail'}
 		>

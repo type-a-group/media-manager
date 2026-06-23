@@ -3,6 +3,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import RecordBulkActions from '$lib/components/RecordBulkActions.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import { ListChecks, Plus, X, AlertTriangle } from 'lucide-svelte';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
@@ -27,6 +28,7 @@
 	 * @param onOpen / onToggleSelect / onNewRecord / onToggleSelectionMode / onBulkChanged - Callbacks.
 	 * @param onOpenSettings / onDeleteType - Open the active type's settings dialog / delete confirm
 	 *   from the content-header ⋮ (always reachable, even when the rail is collapsed).
+	 * @param crumbs - Optional breadcrumb trail rendered above the header (Home › Records › <type>).
 	 */
 	let {
 		typeName,
@@ -44,7 +46,8 @@
 		onToggleSelectionMode,
 		onBulkChanged,
 		onOpenSettings,
-		onDeleteType
+		onDeleteType,
+		crumbs
 	}: {
 		typeName: string;
 		typeId: string;
@@ -62,6 +65,7 @@
 		onBulkChanged: () => void;
 		onOpenSettings: () => void;
 		onDeleteType: () => void;
+		crumbs?: { label: string; href?: string }[];
 	} = $props();
 
 	/** Schema field keys eligible for group-by / title (name first). */
@@ -101,6 +105,11 @@
 </script>
 
 <div class="flex h-screen min-w-0 flex-1 flex-col">
+	{#if crumbs}
+		<div class="flex h-9 items-center border-b px-3">
+			<Breadcrumbs items={crumbs} />
+		</div>
+	{/if}
 	<!-- Header: name + actions -->
 	<header class="flex items-center gap-2 border-b p-3">
 		<h1 class="truncate text-base font-semibold">{typeName}</h1>

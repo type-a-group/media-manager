@@ -595,3 +595,68 @@ Once the local-dep ergonomics land, make it installable by non-developer custome
 ## 22. Group-by-field across multiple classes ("all of" view) — ✅ Shipped
 
 **Status**: **Shipped.** In the multi-class **"all of"** view the Group-by dropdown lists one entry per `(class, field)` across the intersected classes, labelled `Class: field` (so same-named fields disambiguate). [`listAllFiles`](../src/lib/storage/classRepo.ts) accepts `groupBy: { classId, field }` and populates each item's `group_by_value` from that class's record (reusing the same `groupByValue` helper as the solo-class catalog); `GET /api/files` takes `groupByClass` + `groupByField`, and [`files/+page.svelte`](../src/routes/files/+page.svelte) loads each selected class's schema keys lazily to build the options and groups client-side over `group_by_value`. See the "All Files hub" row in [`FEATURES.md`](FEATURES.md).
+
+---
+
+## 36. `relation` field type — record-to-record references (turn the islands into a graph)
+
+**Priority**: Medium (data model — high leverage, non-trivial)
+
+**Context**: We have a `file` field type that stores a **manifest id pointing at a blob** (a physical file in `media/files/`, picked via `FilePicker` over `/api/files`). What we _don't_ have is a way for a record to point at **another record** — e.g. a "Movies" record's `director` field referencing a row in a "People" record type. Today you retype "Christopher Nolan" as a plain string in every movie; there's no typed pointer, no click-through, no rename propagation. The three sub-apps are effectively islands; `file` only bridges record→blob, never record→record (or record→class-member). A `relation` field would add that edge and make the data a small graph.
+
+|            | references               | picker source           | use case                     |
+| ---------- | ------------------------ | ----------------------- | ---------------------------- |
+| `file`     | a blob                   | `/api/files`            | attach an uploaded file      |
+| `relation` | a record in another type | that type's record list | link a movie to its director |
+
+### What's needed
+
+- Add `relation` to `FieldTypeSchema` (`src/lib/core/types.ts`) and a value shape — e.g. `{ typeId: string, recordId: string }` (single) and/or `relation[]` for multi-target. Per-field config stores the **target type id** (analogous to a `dropdown`'s options).
+- `FieldInput.svelte` gains a relation editor: a picker that lists the target type's records (reuse the records `list` endpoint + the chosen type's `title_value` for labels), renders the selected target as a **title chip**, and **clicks through** to it (deep link: `/media?type=<targetType>&record=<id>` — the `?record=` deep link shipped with the sub-app restructure makes this trivial).
+- Server-side: normalize/validate relation values (target exists), and extend the `_missing_files`-style annotation to flag **dangling relations** (target record deleted) so the UI can warn, mirroring the missing-files pattern.
+- Globals parity: store the relation's target-type hint in `__field_meta` so `GlobalsEditorPane` supports it too (per the globals feature-parity rule in `CLAUDE.md`).
+
+### Considerations
+
+- **Single vs. multi target** — ship single first (smaller), add `relation[]` later.
+- **Reverse "referenced by"** — optionally show, on the target record, what points at it (a back-reference list). Requires a scan or a derived index; defer unless needed.
+- **Cross-sub-app scope** — a relation could also target a **class member** (a blob), but that's already what the `file` field does; keep `relation` for record→record to avoid overlap.
+- Decided to **defer** during the sub-app restructure (2026-06-22) — that change shipped Globals split + switcher + breadcrumbs/deep-links + ⌘K palette; relation is the natural next step now that `?record=` deep links exist to click through to.
+
+---
+
+## 37. Import from Google Photos (Picker API)
+
+**Priority**: Medium (user-requested; rare-use feature, kept out of the way)
+**Full design**: [`plans/google-photos-import.md`](plans/google-photos-import.md) (backend sequence diagram + file-by-file integration map) · UI mockup [`google-photos-import.html`](google-photos-import.html) (6-step walkthrough).
+
+**Context**: Let a user pull photos from their Google Photos library into the All Files hub from the UI. Researched 2026-06-22 (two subagents: Google API + our upload path). **Verdict: feasible** — a picked photo collapses onto the existing upload path (`write to media/files/` + `registerBlob()` in [`classRepo.ts`](../src/lib/storage/classRepo.ts)/[`manifest.ts`](../src/lib/storage/manifest.ts)); no DB, schema migration, or fixture change. Everything server-side is additive.
+
+### Decisions locked (2026-06-22)
+
+- **Bring-your-own credentials.** Each user supplies their own Google Cloud OAuth client (Desktop app), so we never need Google app verification. Standard self-hosted pattern (rclone, Home Assistant). The alternative — one shared verified app — was rejected as too heavy for a local-first project.
+- **Import target: All Files (unclassified).** Imported blobs are plain files, classified later like any upload — no `addMembers()` call.
+- **Entry point: a "⋮ More" overflow `DropdownMenu`** next to Upload in [`files/+page.svelte`](../src/routes/files/+page.svelte) (not a primary toolbar button — rare action). Compose the existing shadcn `DropdownMenu` (same primitive as `EntityRowMenu`).
+
+### Hard constraints (from Google's 2025 API changes — not engineerable away)
+
+- **No library browsing or sync.** The old Library API was removed 2025-03-31; the **Picker API** is the only path. Users hand-pick photos in **Google's own hosted window**; we only ever receive their explicit selection. Every import is manual.
+- **Picker can't be embedded** (no iframe) — opens in a new tab; we poll for completion.
+- **~60-min download window** — picked-item `baseUrl`s expire in ~1h and require the OAuth bearer header, so download immediately.
+- **~weekly re-login** — Testing-mode OAuth apps expire refresh tokens after 7 days.
+- **First-run setup wizard** — the bring-your-own-credentials Cloud Console walkthrough.
+
+### What's needed (see plan for the full map)
+
+- New `src/lib/server/googlePhotos.ts` (OAuth2 loopback + PKCE via `google-auth-library`; Picker REST: session/poll/list/download), `src/lib/storage/googleConfig.ts` (`media/google.json`, chmod 600 — **never** seed into `test-fixtures/`), `src/lib/api/googlePhotos.ts` (client wrappers).
+- New routes under `src/routes/api/google-photos/`: `status`, `credentials`, `auth/start`, `auth/callback`, `session`, `session/[id]`, `import`.
+- New `GooglePhotosDialog.svelte` (setup → connect → pick → progress → done) + the `⋮` menu in `files/+page.svelte`; on success call the existing `loadMeta()`/`loadFiles()`.
+- Add `google-auth-library` to `package.json` (skip `googleapis` — no first-party Picker client; hit the REST endpoints via the auth client's `.request()`). Update [`FEATURES.md`](FEATURES.md) (new feature row + 7 endpoints) per repo rules.
+- Factor the upload route's `heic-convert` step into a shared helper so `/upload` and `/import` don't duplicate it.
+
+### Open questions / research before building
+
+- **Scope tier:** confirm in the Cloud Console whether `photospicker.mediaitems.readonly` is *sensitive* (brand verification) or *restricted* (annual CASA audit). Bring-your-own-credentials sidesteps it for us, but verify.
+- **Loopback port** for the OAuth redirect: pick a free ephemeral port at `auth/start` time (Desktop clients allow any `127.0.0.1` port). Note the overlap with Item 31 (ephemeral server port).
+- **Partial-import resilience:** the download loop must survive one bad/expired `baseUrl` and report `{ imported, failed }`.
+- **Token-expiry UX:** surface "connected · expires in N days" from a stored `tokenObtainedAt` so the weekly re-login isn't a surprise.

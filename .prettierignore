@@ -7,3 +7,6 @@ bun.lockb
 
 # Miscellaneous
 static/
+
+# Plan artifacts (HTML/MD scratch plans — not source)
+plans/

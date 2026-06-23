@@ -7,7 +7,7 @@
 	import RecordsRail from '$lib/components/records/RecordsRail.svelte';
 	import RecordListColumn from '$lib/components/records/RecordListColumn.svelte';
 	import RecordDetailPane from '$lib/components/records/RecordDetailPane.svelte';
-	import GlobalsEditorPane from '$lib/components/GlobalsEditorPane.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { typeSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -40,7 +40,8 @@
 	 * inline autosaving detail pane. There is deliberately no "All Records" merged view (records aren't
 	 * attached to blobs the way files are; a record type is the records-side analogue of a class). The
 	 * active type is held in `?type=<id>` (in-page selection — deep per-record routing is deferred). The
-	 * reserved `globals` singleton renders its bespoke editor in place of the list+detail split.
+	 * reserved `globals` singleton is **not** a record type here — it has its own sub-app at `/globals`,
+	 * so it is filtered out of the type list ({@link fetchTypes}) and `?type=globals` redirects there.
 	 */
 
 	let types = $state<MediaTypeSummary[]>([]);
@@ -68,7 +69,13 @@
 
 	const selectedIds = new SvelteSet<string>();
 	let selectionMode = $state(false);
+	/**
+	 * The open record is deep-linked via `?record=<id>` (alongside `?type=`), so reload / share /
+	 * back-forward reopen the same detail pane. {@link syncUrl} writes both back on change; `urlReady`
+	 * gates that writer until the initial restore in {@link onMount} has consumed the incoming params.
+	 */
 	let selectedRecordId = $state<string | null>(null);
+	let urlReady = $state(false);
 	let editorRefresh = $state(0);
 
 	// New-type dialog (shared with the dashboard flow).
@@ -90,6 +97,13 @@
 	const isGlobals = $derived(activeTypeId === 'globals');
 	const activeType = $derived(types.find((t) => t.id === activeTypeId) ?? null);
 	const typeName = $derived(activeType?.displayName ?? activeTypeId ?? '');
+
+	/** Breadcrumb trail: Home › Records › <active type>. */
+	const crumbs = $derived([
+		{ label: 'Home', href: '/' },
+		{ label: 'Records', href: '/media' },
+		...(activeTypeId ? [{ label: typeName }] : [])
+	]);
 
 	/**
 	 * The visible record order (grouped) — drives prev/next in the detail pane. Search is now applied
@@ -120,6 +134,16 @@
 	function gotoRecord(delta: number) {
 		const next = orderedIds[editorIndex + delta];
 		if (next) selectedRecordId = next;
+	}
+
+	/**
+	 * List record types for the Records hub, excluding the reserved `globals` singleton — Globals is now
+	 * its own sub-app at `/globals`, so it must never appear in the Records rail or become the active
+	 * type here. All type loads in this page go through this so the exclusion holds in one place.
+	 */
+	async function fetchTypes(): Promise<MediaTypeSummary[]> {
+		const all = await apiListMediaTypes();
+		return all.filter((t) => t.id !== 'globals');
 	}
 
 	async function loadSchema() {
@@ -195,7 +219,7 @@
 		);
 	}
 
-	/** Switch the active type, syncing the URL and resetting per-type view state. */
+	/** Switch the active type, resetting per-type view state. The URL is kept in sync by {@link syncUrl}. */
 	function selectType(id: string) {
 		if (id === activeTypeId) return;
 		activeTypeId = id;
@@ -207,11 +231,6 @@
 		groupBy = '';
 		titleField = '';
 		subtitleField = '';
-		try {
-			replaceState(`/media?type=${encodeURIComponent(id)}`, {});
-		} catch {
-			/* router not ready (initial mount) — URL already correct */
-		}
 	}
 
 	function toggleSelect(id: string) {
@@ -248,7 +267,7 @@
 			const created = await apiCreateMediaType({ displayName: name, kind: 'json' });
 			newTypeName = '';
 			newTypeOpen = false;
-			types = await apiListMediaTypes().catch(() => types);
+			types = await fetchTypes().catch(() => types);
 			selectType(created.id);
 		} catch (e) {
 			console.error(e);
@@ -273,7 +292,7 @@
 
 	/** After a rename / title-by / schema change in the settings dialog: refresh names + the active view. */
 	async function afterTypeSettingsChange() {
-		types = await apiListMediaTypes().catch(() => types);
+		types = await fetchTypes().catch(() => types);
 		if (activeTypeId && !isGlobals) {
 			await loadSchema();
 			await loadRecords();
@@ -289,16 +308,10 @@
 			toast.success('Record type deleted');
 			deleteOpen = false;
 			settingsOpen = false;
-			types = await apiListMediaTypes().catch(() => types);
+			types = await fetchTypes().catch(() => types);
 			if (activeTypeId === id) {
 				selectedRecordId = null;
-				const next = types[0]?.id ?? null;
-				activeTypeId = next;
-				try {
-					replaceState(next ? `/media?type=${encodeURIComponent(next)}` : '/media', {});
-				} catch {
-					/* router not ready */
-				}
+				activeTypeId = types[0]?.id ?? null; // URL kept in sync by syncUrl
 			}
 		} catch (e) {
 			console.error(e);
@@ -313,18 +326,43 @@
 
 	// Initial load: settings (rail state), the type list, and the initial active type from ?type=.
 	onMount(() => {
+		// Back-compat: Globals moved out of the Records hub to its own /globals route. Redirect any
+		// stale ?type=globals link there instead of trying to open it as a record type.
+		if ($page.url.searchParams.get('type') === 'globals') {
+			goto('/globals', { replaceState: true });
+			return;
+		}
 		settingsStore.fetchSettings();
 		(async () => {
 			try {
-				types = await apiListMediaTypes();
+				types = await fetchTypes();
 			} catch (e) {
 				console.error(e);
 			}
 			const wanted = $page.url.searchParams.get('type');
 			activeTypeId = wanted && types.some((t) => t.id === wanted) ? wanted : (types[0]?.id ?? null);
+			// Reopen the deep-linked record (?record=) for the active type.
+			const wantedRecord = $page.url.searchParams.get('record');
+			if (wantedRecord && activeTypeId === wanted) selectedRecordId = wantedRecord;
 			loadingTypes = false;
+			urlReady = true; // initial restore done — the URL writer below may now run
 		})();
 		return () => currentMediaTypeStore.set(null);
+	});
+
+	/**
+	 * Keep the URL in sync with the active type + open record so reload / share / back-forward
+	 * reproduce the view. `replaceState` (no per-click history spam); gated by `urlReady` so it can't
+	 * fire before the initial restore consumes the incoming `?type=`/`?record=`.
+	 */
+	$effect(() => {
+		const type = activeTypeId;
+		const record = selectedRecordId;
+		if (!urlReady) return;
+		const parts: string[] = [];
+		if (type) parts.push(`type=${encodeURIComponent(type)}`);
+		if (record) parts.push(`record=${encodeURIComponent(record)}`);
+		replaceState(parts.length ? `/media?${parts.join('&')}` : '/media', {});
 	});
 
 	// Mirror the persisted rail-collapsed pref.
@@ -409,12 +447,9 @@
 			<p class="text-muted-foreground">No record types yet.</p>
 			<Button onclick={() => (newTypeOpen = true)}>New record type</Button>
 		</div>
-	{:else if isGlobals}
-		<div class="min-w-0 flex-1">
-			<GlobalsEditorPane />
-		</div>
 	{:else}
 		<RecordListColumn
+			{crumbs}
 			{typeName}
 			typeId={activeTypeId}
 			{schema}
@@ -485,7 +520,7 @@
 			ondeleted={async () => {
 				const id = settingsTargetId;
 				settingsOpen = false;
-				types = await apiListMediaTypes().catch(() => types);
+				types = await fetchTypes().catch(() => types);
 				if (activeTypeId === id) {
 					selectedRecordId = null;
 					activeTypeId = types[0]?.id ?? null;

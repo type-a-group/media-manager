@@ -12,8 +12,8 @@
 	 * The Records Explorer's persistent type rail — the cross-cutting navigator for the records
 	 * sub-app, composed on the shared {@link EntityRail} shell (collapse + header + footer unified with
 	 * the Files sidebar). Lists every `json` record type and switches the active type on click
-	 * (**navigate** mode, single-select). Each non-reserved row carries the shared ⋮ menu
-	 * (Settings… / Delete). The reserved `globals` singleton has no ⋮ (cannot be renamed/deleted).
+	 * (**navigate** mode, single-select). Each row carries the shared ⋮ menu (Settings… / Delete). The
+	 * reserved `globals` singleton is not listed here — it has its own sub-app at `/globals`.
 	 *
 	 * @param types - Every record type (from `apiListMediaTypes`).
 	 * @param activeTypeId - The currently open type (highlighted).
@@ -54,7 +54,7 @@
 	} = $props();
 </script>
 
-<EntityRail title="Records" {collapsed} {onToggleCollapse}>
+<EntityRail current="records" {collapsed} {onToggleCollapse}>
 	{#snippet belowHeader()}
 		<div class="flex flex-col gap-2">
 			<SearchBox bind:value={query} placeholder="Search records…" />
@@ -89,19 +89,17 @@
 					<FileText class="size-4 shrink-0" />
 					<span class="truncate">{t.displayName}</span>
 				</Button>
-				{#if t.id !== 'globals'}
-					<span
-						class="opacity-0 transition-opacity group-hover:opacity-100 {t.id === activeTypeId
-							? 'opacity-100'
-							: ''}"
-					>
-						<EntityRowMenu
-							noun="record type"
-							onSettings={() => onOpenSettings(t.id)}
-							onDelete={() => onDeleteType(t.id)}
-						/>
-					</span>
-				{/if}
+				<span
+					class="opacity-0 transition-opacity group-hover:opacity-100 {t.id === activeTypeId
+						? 'opacity-100'
+						: ''}"
+				>
+					<EntityRowMenu
+						noun="record type"
+						onSettings={() => onOpenSettings(t.id)}
+						onDelete={() => onDeleteType(t.id)}
+					/>
+				</span>
 			</div>
 		{/each}
 	{/snippet}

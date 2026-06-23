@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
+	import { replaceState } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		apiListFiles,
@@ -21,6 +22,7 @@
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
+	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
@@ -80,7 +82,14 @@
 	const selectedIds = new SvelteSet<string>();
 	/** Multiselect: off by default; toggled by the header button. Tiles only select while on. */
 	let selectionMode = $state(false);
-	let editorFileId = $state<string | null>(null);
+	/**
+	 * The open file is deep-linked via `?file=<id>` (alongside `?class=`), so a reload or shared URL
+	 * reopens the same file editor. Initialized straight from the URL; {@link syncUrl} writes it back on
+	 * change. `urlReady` gates that writer until the initial restore in {@link onMount} has run, so the
+	 * first effect pass can't clobber the incoming `?class=`/`?file=` before we've consumed them.
+	 */
+	let editorFileId = $state<string | null>($page.url.searchParams.get('file'));
+	let urlReady = $state(false);
 	let missing = $state<MissingFilesResponse>({ count: 0, files: [] });
 	let showMissing = $state(false);
 
@@ -156,6 +165,13 @@
 	const bulkLabel = $derived(
 		classes.find((c) => c.id === bulkClassId)?.displayName ?? 'Add to class…'
 	);
+
+	/** Breadcrumb trail: Home › Files › <solo class | All Files>. */
+	const crumbs = $derived([
+		{ label: 'Home', href: '/' },
+		{ label: 'Files', href: '/files' },
+		{ label: soloClass ? classLabel(soloClass) : 'All Files' }
+	]);
 
 	/** Load a class's catalog config (group-by default, grid size, schema keys) for the catalog view. */
 	async function loadCatalogConfig(classId: string) {
@@ -350,12 +366,29 @@
 	onMount(async () => {
 		await settingsStore.fetchSettings();
 		await loadMeta();
-		// ?class=<id> opens directly in that class's catalog view.
+		// ?class=<id> opens directly in that class's catalog view (?file= was restored at init).
 		const initialClass = $page.url.searchParams.get('class');
 		if (initialClass && classes.some((c) => c.id === initialClass)) {
 			selectedClasses.add(initialClass);
 		}
 		await loadFiles();
+		urlReady = true; // initial restore done — the URL writer below may now run
+	});
+
+	/**
+	 * Keep the URL in sync with the open file + active solo class so reload / share / back-forward
+	 * reproduce the view. `replaceState` (no history spam per click); gated by `urlReady` so it can't
+	 * fire before the initial restore. Multi-class filter states aren't encoded — this targets the open
+	 * item, not arbitrary filter combos.
+	 */
+	$effect(() => {
+		const cls = soloClass;
+		const file = editorFileId;
+		if (!urlReady) return;
+		const parts: string[] = [];
+		if (cls) parts.push(`class=${encodeURIComponent(cls)}`);
+		if (file) parts.push(`file=${encodeURIComponent(file)}`);
+		replaceState(parts.length ? `/files?${parts.join('&')}` : '/files', {});
 	});
 
 	// Reload the grid when filters/search change.
@@ -511,7 +544,7 @@
 </script>
 
 <div class="flex h-screen w-full overflow-hidden">
-	<EntityRail title="Media" collapsed={railCollapsed} onToggleCollapse={toggleRail}>
+	<EntityRail current="files" collapsed={railCollapsed} onToggleCollapse={toggleRail}>
 		{#snippet belowHeader()}
 			<div class="flex flex-col gap-2">
 				<SearchBox bind:value={query} placeholder="Search files…" />
@@ -686,6 +719,9 @@
 
 	<!-- Main -->
 	<main class="flex h-screen min-w-0 flex-1 flex-col">
+		<div class="flex h-9 items-center border-b px-3">
+			<Breadcrumbs items={crumbs} />
+		</div>
 		<header class="flex items-center gap-3 border-b p-3">
 			<span class="text-sm text-muted-foreground"
 				>{files.length} file{files.length === 1 ? '' : 's'}</span

@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mockup — Google Photos import</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --red: #ff6b6b;
+        --gblue: #4285f4;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 24px 100px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 28px; margin: 12px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 78ch; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.85em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+
+      /* step nav */
+      .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 26px 0 18px; }
+      .steps button {
+        font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 9px 14px; transition: 0.15s; display: flex; gap: 8px; align-items: center;
+      }
+      .steps button .num { color: var(--muted); }
+      .steps button:hover { border-color: var(--accent); }
+      .steps button.active { border-color: var(--accent); color: var(--accent); background: #1c1a0c; }
+      .steps button.active .num { color: var(--accent); }
+
+      .stage { position: relative; }
+      .screen { display: none; animation: fade 0.2s ease; }
+      .screen.show { display: block; }
+      @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+      .caption {
+        background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+        border-radius: 10px; padding: 12px 16px; margin: 0 0 16px; color: var(--muted); font-size: 13.5px;
+      }
+      .caption b { color: var(--ink); }
+
+      /* fake browser chrome */
+      .browser { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 24px 60px -30px #000; }
+      .chrome { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+      .dots { display: flex; gap: 6px; }
+      .dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+      .dots i:nth-child(1){ background:#ff5f57; } .dots i:nth-child(2){ background:#febc2e; } .dots i:nth-child(3){ background:#28c840; }
+      .url { flex: 1; font: 12px/1 var(--mono); color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px; }
+      .body { padding: 0; min-height: 440px; }
+
+      /* app top bar */
+      .appbar { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+      .appbar .title { font-weight: 600; }
+      .appbar .spacer { flex: 1; }
+      .btn { font: 600 13px/1 system-ui; cursor: pointer; border-radius: 8px; padding: 9px 13px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); display: inline-flex; gap: 7px; align-items: center; }
+      .btn:hover { border-color: var(--accent); }
+      .btn.primary { background: var(--accent); color: #1a1407; border-color: var(--accent); }
+      .btn.g { background: #fff; color: #3c4043; border-color: #fff; font-weight: 600; }
+      .btn.g .glogo { width: 16px; height: 16px; display: inline-block; }
+      .btn.danger { color: var(--red); }
+      .btn:disabled { opacity: 0.5; cursor: default; }
+      .pill { font: 600 11px/1 var(--mono); padding: 5px 9px; border-radius: 999px; }
+      .pill.ok { color: var(--green); background: #11291c; }
+      .pill.off { color: var(--muted); background: var(--panel-2); }
+      .pill.warn { color: var(--accent); background: #2c2608; }
+
+      /* overflow ⋮ menu */
+      .menuwrap { position: relative; }
+      .iconbtn { font: 600 16px/1 system-ui; cursor: pointer; border-radius: 8px; padding: 8px 11px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); }
+      .iconbtn:hover { border-color: var(--accent); }
+      .dropdown { position: absolute; right: 0; top: calc(100% + 8px); width: 246px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px -24px #000; padding: 6px; z-index: 5; }
+      .dropdown .item { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+      .dropdown .item:hover { background: var(--panel-2); }
+      .dropdown .item .sub2 { display: block; font-size: 11px; color: var(--muted); }
+      .dropdown .sep { height: 1px; background: var(--line); margin: 6px 4px; }
+      .dropdown .item .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex: none; }
+
+      /* files grid */
+      .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 18px; }
+      .tile { aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); position: relative; overflow: hidden; background: var(--panel-2); }
+      .tile span { position: absolute; bottom: 0; left: 0; right: 0; font: 11px/1 var(--mono); color: #d7dee6; padding: 6px 7px; background: linear-gradient(transparent, #000a); }
+      .tile.new { outline: 2px solid var(--green); }
+      .tile.new::before { content: "NEW"; position: absolute; top: 6px; left: 6px; z-index: 2; font: 700 9px/1 var(--mono); color: #06210f; background: var(--green); padding: 3px 5px; border-radius: 4px; }
+      .g1{background:linear-gradient(135deg,#3a4d6b,#1d2738);} .g2{background:linear-gradient(135deg,#6b4a3a,#382318);}
+      .g3{background:linear-gradient(135deg,#3a6b4f,#16291f);} .g4{background:linear-gradient(135deg,#5a3a6b,#2a1838);}
+      .g5{background:linear-gradient(135deg,#6b3a4f,#381822);} .g6{background:linear-gradient(135deg,#3a566b,#16242e);}
+
+      /* modal */
+      .modal-stage { padding: 28px; display: flex; justify-content: center; }
+      .modal { width: 560px; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 30px 80px -30px #000; overflow: hidden; }
+      .modal-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+      .modal-head .gp { width: 22px; height: 22px; border-radius: 6px; background: var(--gblue); display: grid; place-items: center; font: 700 12px/1 system-ui; color: #fff; }
+      .modal-head h3 { margin: 0; font-size: 16px; }
+      .modal-head .x { margin-left: auto; color: var(--muted); cursor: pointer; }
+      .modal-body { padding: 20px; }
+      .field { margin: 14px 0; }
+      .field label { display: block; font: 600 12px/1 var(--mono); color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+      .field input { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 10px 12px; font: 13px/1 var(--mono); }
+      .modal-foot { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--line); }
+      .ol { counter-reset: s; margin: 4px 0 0; padding: 0; list-style: none; }
+      .ol li { counter-increment: s; position: relative; padding: 7px 0 7px 30px; font-size: 13.5px; color: var(--muted); border-bottom: 1px dashed var(--line); }
+      .ol li:last-child { border: 0; }
+      .ol li::before { content: counter(s); position: absolute; left: 0; top: 7px; width: 20px; height: 20px; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); font: 700 11px/20px var(--mono); text-align: center; }
+      .ol li b { color: var(--ink); }
+
+      .note { display: flex; gap: 10px; padding: 11px 14px; border-radius: 10px; font-size: 13px; margin: 14px 0 0; }
+      .note.warn { background: #2c2608; border: 1px solid #5a4d12; color: #f0dd9a; }
+      .note.info { background: #122033; border: 1px solid #234a78; color: #bcd4f5; }
+      .note .ico { flex: none; }
+
+      /* progress */
+      .prog { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; margin: 8px 0 4px; }
+      .prog i { display: block; height: 100%; background: var(--green); border-radius: 999px; transition: width 0.4s; }
+      .spinner { width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 0.7s linear infinite; vertical-align: -3px; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* google picker fake */
+      .gpicker { background: #fff; color: #3c4043; min-height: 440px; }
+      .gpbar { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #e3e3e3; }
+      .gpbar .gtitle { font-weight: 600; color: #202124; }
+      .gpbar .gdone { margin-left: auto; background: var(--gblue); color: #fff; border: 0; border-radius: 999px; padding: 9px 20px; font: 600 13px/1 system-ui; cursor: pointer; }
+      .gpgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 16px; }
+      .gpcell { aspect-ratio: 1; border-radius: 6px; position: relative; cursor: pointer; }
+      .gpcell .chk { position: absolute; top: 5px; right: 5px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid #fff; background: #0006; }
+      .gpcell.sel .chk { background: var(--gblue); border-color: var(--gblue); }
+      .gpcell.sel { outline: 3px solid var(--gblue); outline-offset: -3px; }
+      .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 18px; font-size: 12.5px; color: var(--muted); }
+      .legend b { color: var(--ink); }
+      .footer-note { margin-top: 28px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 18px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="kicker">UI Mockup · feasibility</div>
+      <h1>Import from Google Photos</h1>
+      <p class="sub">
+        Walkthrough of the proposed flow inside the <b>All Files</b> hub. Bring-your-own credentials,
+        photos land unclassified. Click the steps to advance — this is a static mock, not wired to anything.
+      </p>
+
+      <div class="steps" id="steps"></div>
+
+      <div class="stage" id="stage">
+        <!-- 1: entry -->
+        <section class="screen" data-cap="<b>Entry point.</b> Import lives tucked inside a <b>“⋮ More”</b> overflow menu next to Upload — not a primary toolbar button, since it’s a rare action. Discoverable, but out of the way. (Shown here with the menu open.)">
+          <div class="browser">
+            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">localhost:3000/files</div></div>
+            <div class="body">
+              <div class="appbar">
+                <div class="title">All Files</div>
+                <span class="pill off">142 files</span>
+                <div class="spacer"></div>
+                <button class="btn primary">⬆ Upload</button>
+                <div class="menuwrap">
+                  <button class="iconbtn">⋮</button>
+                  <div class="dropdown">
+                    <div class="item">⬇ <div>Import from Google Photos…<span class="sub2">Pick photos from your library</span></div></div>
+                    <div class="sep"></div>
+                    <div class="item">🔗 Manage connections…</div>
+                  </div>
+                </div>
+              </div>
+              <div class="grid">
+                <div class="tile g1"><span>IMG_2201.jpg</span></div>
+                <div class="tile g2"><span>beach.png</span></div>
+                <div class="tile g3"><span>receipt.pdf</span></div>
+                <div class="tile g4"><span>sunset.heic</span></div>
+                <div class="tile g5"><span>cat.jpg</span></div>
+                <div class="tile g6"><span>doc_scan.png</span></div>
+                <div class="tile g2"><span>trip_07.jpg</span></div>
+                <div class="tile g4"><span>poster.jpg</span></div>
+                <div class="tile g1"><span>note.png</span></div>
+                <div class="tile g3"><span>plant.jpg</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2: setup wizard -->
+        <section class="screen" data-cap="<b>One-time setup wizard.</b> First run only. The user creates their own Google Cloud OAuth client and pastes the ID + secret. This sidesteps Google verification entirely — they’re the ‘developer’ of their own app.">
+          <div class="modal-stage">
+            <div class="modal">
+              <div class="modal-head"><div class="gp">G</div><h3>Connect Google Photos — Setup</h3><div class="x">✕</div></div>
+              <div class="modal-body">
+                <p class="muted" style="margin-top:0">One-time setup. You’ll use <b>your own</b> Google credentials, so nothing is shared with anyone.</p>
+                <ol class="ol">
+                  <li>Open <b>console.cloud.google.com</b> → create a project</li>
+                  <li>Enable the <b>Google Photos Picker API</b></li>
+                  <li>Create an OAuth client → type <b>Desktop app</b></li>
+                  <li>Add your own email as a <b>test user</b></li>
+                  <li>Paste the credentials below ↓</li>
+                </ol>
+                <div class="field"><label>Client ID</label><input value="8472…-abcd.apps.googleusercontent.com" /></div>
+                <div class="field"><label>Client Secret</label><input value="GOCSPX-••••••••••••••••" type="password" /></div>
+                <div class="note info"><span class="ico">ℹ</span><div>Stored locally in <code>media/google.json</code> (chmod 600). Never uploaded, never committed.</div></div>
+              </div>
+              <div class="modal-foot"><button class="btn">Cancel</button><button class="btn primary">Save & continue</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3: connect -->
+        <section class="screen" data-cap="<b>Connect (OAuth).</b> Clicking <b>Connect</b> opens Google’s consent screen in a new tab via a localhost loopback redirect. After consent a refresh token is stored, so subsequent imports skip this.">
+          <div class="modal-stage">
+            <div class="modal">
+              <div class="modal-head"><div class="gp">G</div><h3>Connect Google Photos</h3><div class="x">✕</div></div>
+              <div class="modal-body">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span class="pill ok">✓ Credentials saved</span><span class="pill off">Not connected</span></div>
+                <p class="muted">Click below to sign in. A Google window opens in a new tab — approve access, then come back here.</p>
+                <div style="text-align:center;padding:18px 0 6px"><button class="btn g"><span class="glogo">🔵</span> Sign in with Google</button></div>
+                <div class="note warn"><span class="ico">⚠</span><div><b>You’ll see an “unverified app” warning</b> — that’s expected (it’s your own app). Click <i>Advanced → continue</i>. Because it runs in Testing mode, you’ll re-connect about once a week.</div></div>
+              </div>
+              <div class="modal-foot"><button class="btn">Cancel</button><button class="btn primary" disabled>Waiting for Google…</button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4: google picker -->
+        <section class="screen" data-cap="<b>Google’s hosted picker.</b> This is Google’s own UI in a new tab — we can’t embed or restyle it. The user hand-picks photos. We never see their library, only what they select here. Our app polls in the background.">
+          <div class="browser">
+            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">photos.google.com/picker/session/…</div></div>
+            <div class="body gpicker">
+              <div class="gpbar"><div class="gtitle">Select photos</div><span style="color:#5f6368;font-size:13px">4 selected</span><button class="gdone">Done</button></div>
+              <div class="gpgrid">
+                <div class="gpcell g1 sel"><div class="chk"></div></div>
+                <div class="gpcell g2"><div class="chk"></div></div>
+                <div class="gpcell g3 sel"><div class="chk"></div></div>
+                <div class="gpcell g4"><div class="chk"></div></div>
+                <div class="gpcell g5 sel"><div class="chk"></div></div>
+                <div class="gpcell g6"><div class="chk"></div></div>
+                <div class="gpcell g2 sel"><div class="chk"></div></div>
+                <div class="gpcell g4"><div class="chk"></div></div>
+                <div class="gpcell g1"><div class="chk"></div></div>
+                <div class="gpcell g3"><div class="chk"></div></div>
+                <div class="gpcell g5"><div class="chk"></div></div>
+                <div class="gpcell g6"><div class="chk"></div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5: import progress -->
+        <section class="screen" data-cap="<b>Download + import.</b> Once the user clicks Done, our server lists the picked items and downloads each at full resolution (EXIF intact) within the ~60-min window, writing them straight into <code>media/files/</code> via the existing <code>registerBlob()</code> path.">
+          <div class="modal-stage">
+            <div class="modal">
+              <div class="modal-head"><div class="gp">G</div><h3>Importing 4 photos</h3><div class="x">✕</div></div>
+              <div class="modal-body">
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span class="muted"><span class="spinner"></span> Downloading…</span><span class="muted">3 / 4</span></div>
+                <div class="prog"><i style="width:75%"></i></div>
+                <ul style="list-style:none;padding:0;margin:14px 0 0;font:12.5px/1.9 var(--mono);color:var(--muted)">
+                  <li>✓ <span style="color:var(--ink)">PXL_20240712.jpg</span> → registered <span class="muted">(a3f1…)</span></li>
+                  <li>✓ <span style="color:var(--ink)">PXL_20240713.jpg</span> → registered <span class="muted">(b7c2…)</span></li>
+                  <li>✓ <span style="color:var(--ink)">IMG_holiday.heic</span> → converted → registered <span class="muted">(c9d3…)</span></li>
+                  <li><span class="spinner"></span> PXL_20240715.jpg <span class="muted">downloading…</span></li>
+                </ul>
+                <div class="note info"><span class="ico">ℹ</span><div>Imported files land in <b>All Files, unclassified</b> — classify them afterward like any upload.</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6: done -->
+        <section class="screen" data-cap="<b>Done.</b> The dialog closes, the grid reloads (existing <code>loadFiles()</code>), and the 4 new blobs appear flagged NEW — unclassified, ready to use. Connection persists for next time.">
+          <div class="browser">
+            <div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">localhost:3000/files</div></div>
+            <div class="body">
+              <div class="appbar">
+                <div class="title">All Files</div>
+                <span class="pill ok">✓ Imported 4</span>
+                <span class="pill off">146 files</span>
+                <div class="spacer"></div>
+                <button class="btn primary">⬆ Upload</button>
+                <div class="menuwrap">
+                  <button class="iconbtn">⋮</button>
+                  <div class="dropdown">
+                    <div class="item"><span class="dot"></span><div>Import from Google Photos…<span class="sub2">Connected · expires in 6 days</span></div></div>
+                    <div class="sep"></div>
+                    <div class="item">🔗 Manage connections…</div>
+                  </div>
+                </div>
+              </div>
+              <div class="grid">
+                <div class="tile g1 new"><span>PXL_20240712.jpg</span></div>
+                <div class="tile g3 new"><span>PXL_20240713.jpg</span></div>
+                <div class="tile g5 new"><span>IMG_holiday.jpg</span></div>
+                <div class="tile g2 new"><span>PXL_20240715.jpg</span></div>
+                <div class="tile g1"><span>IMG_2201.jpg</span></div>
+                <div class="tile g2"><span>beach.png</span></div>
+                <div class="tile g3"><span>receipt.pdf</span></div>
+                <div class="tile g4"><span>sunset.heic</span></div>
+                <div class="tile g5"><span>cat.jpg</span></div>
+                <div class="tile g6"><span>doc_scan.png</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="caption" id="caption"></div>
+
+      <div class="footer-note">
+        <b>Constraints baked into this flow:</b> no library browsing/sync (manual pick only) · Google’s picker can’t be embedded (new tab) · ~60-min download window after picking · ~weekly re-login in Testing mode · first-run setup wizard. See <code>docs/plans/google-photos-import.md</code> for the backend sequence diagram and the file-by-file integration map.
+      </div>
+    </div>
+
+    <script>
+      const labels = ['Entry', 'Setup wizard', 'Connect', 'Google picker', 'Importing', 'Done'];
+      const screens = [...document.querySelectorAll('.screen')];
+      const stepsEl = document.getElementById('steps');
+      const capEl = document.getElementById('caption');
+      let cur = 0;
+      labels.forEach((l, i) => {
+        const b = document.createElement('button');
+        b.innerHTML = `<span class="num">${i + 1}</span> ${l}`;
+        b.onclick = () => show(i);
+        stepsEl.appendChild(b);
+      });
+      function show(i) {
+        cur = i;
+        screens.forEach((s, j) => s.classList.toggle('show', i === j));
+        [...stepsEl.children].forEach((b, j) => b.classList.toggle('active', i === j));
+        capEl.innerHTML = screens[i].dataset.cap;
+      }
+      show(0);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') show(Math.min(cur + 1, screens.length - 1));
+        if (e.key === 'ArrowLeft') show(Math.max(cur - 1, 0));
+      });
+    </script>
+  </body>
+</html>
