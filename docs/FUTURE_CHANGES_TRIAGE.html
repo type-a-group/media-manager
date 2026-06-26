@@ -197,7 +197,7 @@
     <ol>
       <li><b>Archive the 6 Done/folded items</b> (1, 2, 6, 22, 28, 27) into a collapsed bottom section — they pad the file and re-litigate settled work. <span>Keep a one-line "shipped → see FEATURES.md".</span></li>
       <li><b>Delete the 4 Verify items after a 5-min check</b> (0, 3, 5, 29). 0 is fully shipped; 3 & 5 are mostly shipped (only bulk-export / repair-scope remain) — demote to a one-liner; 29 is still valid.</li>
-      <li><b>Fix the 5 stale-ref items</b> (8, 9, 12, 14, 17) — repoint to <code>classRepo.ts</code> / <code>DataGrid</code> / <code>FieldInput</code>; Item 14 also predates the file-first model and needs a rethink, not just a re-link.</li>
+      <li><b>Fix the stale-ref items</b> (8, 12, 14, 17) — repoint to <code>classRepo.ts</code> / <code>DataGrid</code> / <code>FieldInput</code>; Item 14 also predates the file-first model and needs a rethink, not just a re-link. (Item 9 shipped.)</li>
       <li><b>Make "ready" a real state.</b> Adopt per-item frontmatter (<code>status · size · files · depends_on · open_questions · acceptance</code>). An item with any open question = <code>blocked</code>, never handed to an agent.</li>
       <li><b>Group by cluster, not by number.</b> The npx (30–33+7) and media-kinds (14/21/23/24) clusters already exist implicitly — make them headers with explicit ordering.</li>
     </ol>
@@ -217,6 +217,7 @@ const ITEMS = [
   {n:22, name:"Group-by across multiple classes", status:"done", size:null, use:3, group:"grid", note:"Shipped — 'all of' view groups by (class, field)."},
   {n:28, name:"Per-Type / Per-Class Icon Picker", status:"done", size:null, use:3, group:"misc", note:"Shipped — curated Lucide set in the unified settings dialog."},
   {n:27, name:"npx Package Distribution", status:"done", size:null, use:0, group:"npx", folded:30, note:"Folded into Item 30 (publish mechanics). Keep as a redirect only."},
+  {n:9, name:"Sorting & Ordering", status:"done", size:"M", use:4, group:"grid", note:"Shipped — shared SortControl + core/sort.ts comparator (empties-last, stable tie-break); ?sort&dir on records list / files / class members; persisted per-entity. Last-modified shown in side panels."},
 
   {n:0, name:"Make URL fields editable", status:"verify", size:"S", use:0, group:"fields", note:"<b>Already shipped.</b> FieldInput.svelte has a full url {display_name,url} editor. Recommend delete."},
   {n:3, name:"Bulk Operations", status:"verify", size:"S", prio:"low", use:1, group:"bulk", note:"<b>Mostly shipped:</b> bulk-update + bulk-delete exist (RecordBulkActions). Only bulk-<b>export</b> JSON remains. Demote to a one-liner."},
@@ -226,7 +227,6 @@ const ITEMS = [
 
   {n:7, name:"Static Site Export (read-only)", status:"active", size:"L", prio:"med", use:1, group:"npx", oq:3, deps:[6], note:"Read-only export target. Sequences with the npx cluster; needs the same root-threading refactor as Item 33."},
   {n:8, name:"Configurable & Verbose Grid Display", status:"active", size:"L", prio:"high", use:5, group:"grid", oq:3, stale:true, note:"High / user-requested. Display-field (title-by) <b>partly shipped</b>; verbose multi-field mode not. Pointers name removed JsonRecordGrid/ImageViewGrid/selection.svelte — repoint to DataGrid."},
-  {n:9, name:"Sorting & Ordering", status:"active", size:"M", prio:"med", use:4, group:"grid", stale:true, note:"No explicit sort yet — a basic, expected, daily-use control. Pointer to removed repo.ts → classRepo.ts/jsonRepo.ts."},
   {n:10, name:"Filter for Missing / Empty Fields", status:"active", size:"M", prio:"med", use:3, group:"grid", note:"filters.ts already supports empty checks; needs a first-class entry point in the rail filter UI."},
   {n:12, name:"Fix / Normalize File Extension", status:"active", size:"S", prio:"low", use:2, group:"misc", stale:true, note:"Pointer to removed propagateFilenameRename — post Item 6 this is a pure rename. Add magic-byte type detection."},
   {n:13, name:"Swap Width/Height (orientation fix)", status:"active", size:"S", prio:"low", use:2, group:"misc", note:"Per-record swap action + optional heuristic warning. Niche bug-fix. Heuristic would lean on sharp (see Item 35)."},

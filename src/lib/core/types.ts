@@ -253,6 +253,10 @@ export const ClassConfigSchema = z.object({
 	displayName: z.string().default(''),
 	gridGroupByField: z.string().optional(),
 	displayField: z.string().optional(),
+	/** List sort key (Item 9): a built-in (`name` | `created_at` | `size` | `last_modified`) or a schema field key. */
+	sortField: z.string().optional(),
+	/** List sort direction. */
+	sortDir: z.enum(['asc', 'desc']).optional(),
 	/** Optional per-class icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
 	icon: z.string().optional()
 });

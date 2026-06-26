@@ -20,6 +20,7 @@
 	 * @param onclose - Close the panel.
 	 * @param titleArea - Snippet rendered between the chevrons and the close button (e.g. a rename input).
 	 * @param actions - Optional snippet rendered just before the close button (e.g. a metadata button).
+	 * @param meta - Optional muted one-line caption shown under the header (e.g. "Modified …" / "Added …").
 	 * @param children - The scrollable panel body.
 	 */
 	let {
@@ -30,6 +31,7 @@
 		onclose,
 		titleArea,
 		actions,
+		meta,
 		children
 	}: {
 		index?: number;
@@ -39,6 +41,7 @@
 		onclose: () => void;
 		titleArea?: Snippet;
 		actions?: Snippet;
+		meta?: string;
 		children: Snippet;
 	} = $props();
 
@@ -96,6 +99,10 @@
 			<X class="size-4" />
 		</Button>
 	</header>
+
+	{#if meta}
+		<div class="border-b px-3 py-1.5 text-xs text-muted-foreground" title={meta}>{meta}</div>
+	{/if}
 
 	<div class="flex-1 overflow-y-auto p-3">
 		{@render children()}

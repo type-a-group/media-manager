@@ -10,6 +10,7 @@
 	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
+	import { formatTimestamp } from '$lib/core/datetime.js';
 	import {
 		GLOBALS_FIELD_KINDS_KEY,
 		GLOBALS_FIELD_META_KEY,
@@ -67,6 +68,8 @@
 	let fieldMeta = $state<Record<string, FieldMeta>>({});
 	let missingFiles = $state<Record<string, string>>({});
 	let layout = $state<GlobalsLayout>({ sections: [], defaultSectionId: '', fieldSort: 'manual' });
+	/** The record's `last_modified` (Item 9) — shown as a muted caption, mirroring the other editors. */
+	let lastModified = $state<string | null>(null);
 
 	let filterQuery = $state('');
 	let settingsOpen = $state(false);
@@ -208,6 +211,7 @@
 	 * the change is dirty and autosaves.
 	 */
 	function applyRecord(rec: Record<string, unknown>, resetBaseline = true) {
+		if (typeof rec.last_modified === 'string') lastModified = rec.last_modified;
 		const editable = editableFromRecord(rec);
 		const storedKinds = parseStoredKinds(rec);
 		const nextKinds: Record<string, ValueKind> = {};
@@ -561,7 +565,8 @@
 			patch[GLOBALS_FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
 			patch[GLOBALS_FIELD_META_KEY] = JSON.stringify(metaToStore);
 			patch[GLOBALS_LAYOUT_KEY] = JSON.stringify(layout);
-			await apiUpdateGlobalsRecord(patch);
+			const updated = (await apiUpdateGlobalsRecord(patch)) as Record<string, unknown>;
+			if (typeof updated?.last_modified === 'string') lastModified = updated.last_modified;
 			baseValues = persistedValues;
 			deletedKeys.clear();
 			savedSnapshot = baselineAfterSave;
@@ -635,6 +640,12 @@
 			>
 				<Settings class="size-4" />
 			</Button>
+
+			{#if lastModified}
+				<span class="hidden text-xs text-muted-foreground sm:inline" title="Last modified">
+					Modified {formatTimestamp(lastModified)}
+				</span>
+			{/if}
 
 			<div class="w-20 text-right text-xs text-muted-foreground">
 				{#if saveStatus === 'saving'}

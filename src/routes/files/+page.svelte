@@ -16,6 +16,7 @@
 		apiBlobUrl,
 		apiGetMissingFiles,
 		apiGetClass,
+		apiUpdateClassConfig,
 		type MissingFilesResponse
 	} from '$lib/api/files.js';
 	import { fieldLabel } from '$lib/core/fieldKeys.js';
@@ -25,6 +26,7 @@
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
+	import SortControl from '$lib/components/SortControl.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { classSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
@@ -41,6 +43,7 @@
 	import { ListChecks, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
+	import type { SortDir } from '$lib/core/sort.js';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
 
 	let files = $state<FileItem[]>([]);
@@ -51,6 +54,17 @@
 	let catalogSchemaKeys = $state<string[]>([]);
 	let catalogGroupBy = $state('');
 	let catalogLoadedFor: string | null = null;
+	/**
+	 * List sort (Item 9). `sortField`/`sortDir` are the **active** sort bound to the toolbar control;
+	 * their persistence target depends on the view: a solo class persists to its class config, while
+	 * the All Files / "any of" / "all of" views persist to the media-wide settings (`hubSort*`, the
+	 * remembered hub default). Built-in keys: `name` · `created_at` · `size` (+ `last_modified` and the
+	 * class's schema fields in a catalog).
+	 */
+	let sortField = $state('created_at');
+	let sortDir = $state<SortDir>('desc');
+	let hubSortField = $state('created_at');
+	let hubSortDir = $state<SortDir>('desc');
 	/**
 	 * Grid size for every view here — a single global app setting (`media/settings.json`), shared
 	 * with the catalog, multi-class, and `json` record grids. Synced from the store; changing it
@@ -176,15 +190,41 @@
 			: { label: 'All Files' }
 	]);
 
-	/** Load a class's catalog config (group-by default, grid size, schema keys) for the catalog view. */
+	/** Human label for a sort key (built-ins + schema fields). */
+	function sortLabel(key: string): string {
+		if (key === 'name') return 'Name';
+		if (key === 'last_modified') return 'Last modified';
+		if (key === 'created_at') return 'Date added';
+		if (key === 'size') return 'Size';
+		return fieldLabel(key);
+	}
+
+	/**
+	 * Sort options for the active view (Item 9): a solo class catalog offers the per-record keys + its
+	 * schema fields; the All Files / multi-class views offer only intrinsic blob keys.
+	 */
+	const sortOptions = $derived.by(() => {
+		const builtins = soloClass
+			? ['name', 'last_modified', 'created_at', 'size']
+			: ['name', 'created_at', 'size'];
+		const fields = soloClass ? catalogSchemaKeys : [];
+		return [...builtins, ...fields].map((k) => ({ value: k, label: sortLabel(k) }));
+	});
+
+	/** Load a class's catalog config (group-by + sort defaults, schema keys) for the catalog view. */
 	async function loadCatalogConfig(classId: string) {
 		try {
 			const detail = await apiGetClass(classId);
 			catalogSchemaKeys = Object.keys(detail.schema).sort((a, b) => a.localeCompare(b));
 			catalogGroupBy = detail.config.gridGroupByField ?? '';
+			// Per-class persisted sort; default last_modified desc (catalog rows have records).
+			sortField = detail.config.sortField || 'last_modified';
+			sortDir = detail.config.sortDir === 'asc' ? 'asc' : 'desc';
 		} catch {
 			catalogSchemaKeys = [];
 			catalogGroupBy = '';
+			sortField = 'last_modified';
+			sortDir = 'desc';
 		}
 	}
 
@@ -199,11 +239,16 @@
 				const data = await apiListClassMembers(soloClass, {
 					groupBy: catalogGroupBy || undefined,
 					query: query || undefined,
-					searchField: searchField || undefined
+					searchField: searchField || undefined,
+					sort: sortField || undefined,
+					dir: sortDir
 				});
 				files = data.files;
 			} else {
 				catalogLoadedFor = null;
+				// Outside a catalog the sort comes from the remembered media-wide hub default.
+				sortField = hubSortField;
+				sortDir = hubSortDir;
 				const [gc, gf] = crossMode && crossGroupBy ? crossGroupBy.split('::') : [];
 				const data = await apiListFiles({
 					query: query || undefined,
@@ -212,7 +257,9 @@
 					unclassified,
 					groupByClass: gc,
 					groupByField: gf,
-					searchField: searchField || undefined
+					searchField: searchField || undefined,
+					sort: sortField || undefined,
+					dir: sortDir
 				});
 				files = data.files;
 			}
@@ -230,6 +277,30 @@
 	/** Re-run the "all of" listing when the user picks a different cross-class group-by field. */
 	async function changeCrossGroupBy(value: string) {
 		crossGroupBy = value;
+		await loadFiles();
+	}
+
+	/**
+	 * Persist + apply a sort change (Item 9). A solo class saves to its class config; every other view
+	 * saves to the media-wide hub default. The control has already updated `sortField`/`sortDir`.
+	 */
+	async function onSortChange() {
+		try {
+			if (soloClass) {
+				await apiUpdateClassConfig(soloClass, { sortField, sortDir });
+			} else {
+				hubSortField = sortField;
+				hubSortDir = sortDir;
+				await fetch('/api/settings', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ sortField, sortDir })
+				});
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to save sort');
+		}
 		await loadFiles();
 	}
 
@@ -377,6 +448,14 @@
 
 	onMount(async () => {
 		await settingsStore.fetchSettings();
+		// Read the persisted All Files hub sort (Item 9) from media settings before the first listing.
+		try {
+			const s = await fetch('/api/settings').then((r) => r.json());
+			hubSortField = typeof s.sortField === 'string' && s.sortField ? s.sortField : 'created_at';
+			hubSortDir = s.sortDir === 'asc' ? 'asc' : 'desc';
+		} catch {
+			/* defaults already set */
+		}
 		await loadMeta();
 		// ?class=<id> opens directly in that class's catalog view (?file= was restored at init).
 		const initialClass = $page.url.searchParams.get('class');
@@ -782,6 +861,12 @@
 						</Select.Content>
 					</Select.Root>
 				{/if}
+				<SortControl
+					options={sortOptions}
+					bind:field={sortField}
+					bind:dir={sortDir}
+					onchange={onSortChange}
+				/>
 				<span class="text-muted-foreground">Size</span>
 				<Select.Root
 					type="single"

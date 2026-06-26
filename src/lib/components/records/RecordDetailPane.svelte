@@ -12,6 +12,7 @@
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { recordDetailTitle } from '$lib/core/recordDisplay.js';
+	import { formatTimestamp } from '$lib/core/datetime.js';
 	import {
 		apiGetSchemaForType,
 		apiGetRecordByIdForType,
@@ -261,6 +262,9 @@
 	onPrev={() => advance(onPrev)}
 	onNext={() => advance(onNext)}
 	onclose={handleClose}
+	meta={record?.last_modified
+		? `Modified ${formatTimestamp(record.last_modified as string)}`
+		: undefined}
 >
 	{#snippet titleArea()}
 		<span class="min-w-0 flex-1 truncate text-sm font-medium" {title}>{title}</span>

@@ -8,6 +8,7 @@
 		apiRemoveMembers
 	} from '$lib/api/files.js';
 	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
+	import { formatTimestamp } from '$lib/core/datetime.js';
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
 	import EditorPanelShell from './EditorPanelShell.svelte';
@@ -240,6 +241,7 @@
 	onPrev={() => advance(onPrev)}
 	onNext={() => advance(onNext)}
 	onclose={handleClose}
+	meta={file.created_at ? `Added ${formatTimestamp(file.created_at)}` : undefined}
 >
 	{#snippet titleArea()}
 		<Input
@@ -313,7 +315,14 @@
 		{#each sections as section (section.id)}
 			<section class="mb-4 rounded border">
 				<div class="flex items-center justify-between border-b bg-muted/50 px-2 py-1">
-					<span class="text-sm font-semibold">{section.displayName}</span>
+					<span class="flex min-w-0 items-baseline gap-2">
+						<span class="truncate text-sm font-semibold">{section.displayName}</span>
+						{#if section.record.last_modified}
+							<span class="shrink-0 text-xs text-muted-foreground">
+								Modified {formatTimestamp(section.record.last_modified as string)}
+							</span>
+						{/if}
+					</span>
 					<Button
 						variant="link"
 						size="sm"

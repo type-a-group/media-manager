@@ -15,7 +15,10 @@ const PatchSchema = z.object({
 	gridSize: z.enum(['small', 'medium', 'large']).optional(),
 	autoAdvanceToNextUnlinked: z.boolean().optional(),
 	autoSaveOnAdvance: z.boolean().optional(),
-	railCollapsed: z.boolean().optional()
+	railCollapsed: z.boolean().optional(),
+	// All Files hub list sort (Item 9). Empty string clears the override (default sort).
+	sortField: z.string().max(256).optional(),
+	sortDir: z.enum(['asc', 'desc']).optional()
 });
 
 /** GET: current global settings. */
@@ -25,7 +28,9 @@ export const GET: RequestHandler = async () => {
 		gridSize: s.gridSize,
 		autoAdvanceToNextUnlinked: s.autoAdvanceToNextUnlinked,
 		autoSaveOnAdvance: s.autoSaveOnAdvance,
-		railCollapsed: s.railCollapsed
+		railCollapsed: s.railCollapsed,
+		sortField: s.sortField ?? '',
+		sortDir: s.sortDir ?? ''
 	});
 };
 
@@ -36,11 +41,16 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	const parsed = PatchSchema.safeParse(await request.json());
 	if (!parsed.success) throw error(400, 'Invalid settings payload');
-	const updated = await writeMediaSettings(parsed.data);
+	// Empty `sortField` clears the override (back to default); coerce to undefined so it isn't persisted.
+	const patch = { ...parsed.data };
+	if (patch.sortField === '') patch.sortField = undefined;
+	const updated = await writeMediaSettings(patch);
 	return json({
 		gridSize: updated.gridSize,
 		autoAdvanceToNextUnlinked: updated.autoAdvanceToNextUnlinked,
 		autoSaveOnAdvance: updated.autoSaveOnAdvance,
-		railCollapsed: updated.railCollapsed
+		railCollapsed: updated.railCollapsed,
+		sortField: updated.sortField ?? '',
+		sortDir: updated.sortDir ?? ''
 	});
 };

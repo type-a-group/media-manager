@@ -29,6 +29,7 @@ import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/fi
 import type { FieldType } from '$lib/core/types.js';
 import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
 import { projectRecordRow, stringifyFieldValue } from '$lib/core/recordDisplay.js';
+import { sortItems, fieldSortValue, resolveSort, type SortDir } from '$lib/core/sort.js';
 
 /**
  * JSON media-type repository: read/write records and schema from a single data file and settings.
@@ -272,6 +273,13 @@ export function createJsonRepoForType(typeId: string) {
 		 * rendered value contains the query). A field key restricts the match to that one field.
 		 */
 		searchField?: string | null;
+		/**
+		 * Sort key (Item 9): a built-in (`name` | `last_modified`) or a schema field key. Falls back to
+		 * the persisted per-type `sortField`, then the default `last_modified`.
+		 */
+		sortField?: string | null;
+		/** Sort direction; falls back to the persisted `sortDir`, then `desc`. */
+		sortDir?: SortDir | null;
 	}): Promise<JsonListResponse> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
@@ -314,6 +322,34 @@ export function createJsonRepoForType(typeId: string) {
 				);
 			});
 		}
+
+		// Sort (Item 9), server-side so it composes with the filter + search above. `name` sorts by the
+		// resolved title field (so a chosen title-by wins); `last_modified` by the record timestamp; any
+		// schema field via `fieldSortValue`. Empties sort last; ties break by id. Precedence: explicit
+		// param → persisted per-type setting → default (last_modified desc).
+		const allowedSort = new Set<string>([
+			'name',
+			'last_modified',
+			...schemaUserFieldKeys(settings.schema)
+		]);
+		const { field: sortField, dir: sortDir } = resolveSort(
+			params?.sortField ?? settings.sortField,
+			params?.sortDir ?? settings.sortDir,
+			allowedSort,
+			{ field: 'last_modified', dir: 'desc' }
+		);
+		records = sortItems(records, sortDir, {
+			value: (rec) => {
+				const recAny = rec as Record<string, unknown>;
+				if (sortField === 'last_modified') return (recAny.last_modified as string) ?? null;
+				if (sortField === 'name')
+					return titleField
+						? fieldSortValue(settings.schema, titleField, recAny[titleField])
+						: ((recAny.name as string) ?? null);
+				return fieldSortValue(settings.schema, sortField, recAny[sortField]);
+			},
+			id: (rec) => rec.id
+		});
 
 		const items: JsonListItem[] = records.map((rec) => {
 			const recAny = rec as Record<string, unknown>;

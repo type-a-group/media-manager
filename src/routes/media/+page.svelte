@@ -32,6 +32,8 @@
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { isUserFieldKey, schemaUserFields } from '$lib/core/fieldKeys.js';
 	import { projectRecordRow } from '$lib/core/recordDisplay.js';
+	import { apiUpdateTypeSettings } from '$lib/api/client.js';
+	import type { SortDir } from '$lib/core/sort.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
 	/**
@@ -58,6 +60,9 @@
 	let groupBy = $state('');
 	let titleField = $state('');
 	let subtitleField = $state('');
+	/** Per-type list sort (Item 9), persisted in the type's settings.json. Default: last_modified desc. */
+	let sortField = $state('last_modified');
+	let sortDir = $state<SortDir>('desc');
 
 	/** User fields of the active type offered by the rail's search-field picker. */
 	const searchFields = $derived(schema ? schemaUserFields(schema) : []);
@@ -153,11 +158,19 @@
 		try {
 			const [s, settings] = await Promise.all([
 				apiGetSchemaForType(activeTypeId),
-				apiGetTypeSettings(activeTypeId).catch(() => ({ displayField: '', subtitleField: '' }))
+				apiGetTypeSettings(activeTypeId).catch(() => ({
+					displayField: '',
+					subtitleField: '',
+					sortField: '',
+					sortDir: ''
+				}))
 			]);
 			schema = s;
 			// The persisted subtitle field (⋮ → Settings → General) is sticky like the title field.
 			subtitleField = settings.subtitleField || '';
+			// Persisted per-type sort (Item 9). Absent ⇒ default (last_modified desc).
+			sortField = settings.sortField || 'last_modified';
+			sortDir = settings.sortDir === 'asc' ? 'asc' : 'desc';
 			// The persisted "title by" (settings.displayField, set in the ⋮ → Settings dialog) wins and
 			// makes the choice sticky across type switches. Otherwise fix the id-instead-of-title bug out
 			// of the box: when a type has no `name` field, auto-pick a sensible field (first string, else
@@ -183,7 +196,9 @@
 				titleField: titleField || undefined,
 				subtitleField: subtitleField || undefined,
 				searchQuery: query || undefined,
-				searchField: searchField || undefined
+				searchField: searchField || undefined,
+				sort: sortField || undefined,
+				dir: sortDir
 			});
 			records = 'records' in data ? (data.records as JsonListItem[]) : [];
 		} catch (e) {
@@ -233,6 +248,19 @@
 		groupBy = '';
 		titleField = '';
 		subtitleField = '';
+		sortField = 'last_modified';
+		sortDir = 'desc';
+	}
+
+	/** Persist the chosen sort durably on the active type (Item 9). The reload runs via the sort $effect. */
+	async function persistSort() {
+		if (!activeTypeId || isGlobals) return;
+		try {
+			await apiUpdateTypeSettings(activeTypeId, { sortField, sortDir });
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to save sort');
+		}
 	}
 
 	function toggleSelect(id: string) {
@@ -387,13 +415,15 @@
 		}
 	});
 
-	// Reload when group-by / title-field / search change (search is server-side now).
+	// Reload when group-by / title-field / search / sort change (all server-side now).
 	$effect(() => {
 		groupBy;
 		titleField;
 		subtitleField;
 		query;
 		searchField;
+		sortField;
+		sortDir;
 		if (activeTypeId && !isGlobals) loadRecords();
 	});
 
@@ -458,6 +488,9 @@
 			{records}
 			{loading}
 			bind:groupBy
+			bind:sortField
+			bind:sortDir
+			onSortChange={persistSort}
 			{selectionMode}
 			{selectedIds}
 			{selectedRecordId}

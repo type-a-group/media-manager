@@ -14,6 +14,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		const groupBy = url.searchParams.get('groupBy') || undefined;
 		const query = url.searchParams.get('query');
 		const searchField = url.searchParams.get('searchField') || undefined;
+		const sortField = url.searchParams.get('sort') || undefined;
+		const sortDirRaw = url.searchParams.get('dir');
+		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : undefined;
 		const filtersRaw = url.searchParams.get('filters');
 		let filters: z.infer<typeof FiltersParamSchema> | null = null;
 		if (filtersRaw) {
@@ -23,7 +26,16 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				/* ignore invalid filters */
 			}
 		}
-		return json(await listClassMembers(params.id, { groupBy, query, filters, searchField }));
+		return json(
+			await listClassMembers(params.id, {
+				groupBy,
+				query,
+				filters,
+				searchField,
+				sortField,
+				sortDir
+			})
+		);
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('not found')) throw error(404, 'Class not found');

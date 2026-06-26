@@ -12,7 +12,8 @@ import {
 	updateRecord,
 	getRecord,
 	listAllFiles,
-	listClassMembers
+	listClassMembers,
+	updateClassConfig
 } from './classRepo.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
 
@@ -165,5 +166,63 @@ describe('classRepo — opt-in class membership', () => {
 		// All-fields intersection search reaches the docs field too.
 		const all = await listAllFiles({ classIds: [images, docs], matchAll: true, query: 'receipt' });
 		expect(all.files.map((f) => f.id)).toEqual([bId]);
+	});
+
+	it('sorts the All Files listing by filename ascending and descending (Item 9)', async () => {
+		for (const n of ['c.png', 'a.png', 'b.png']) fs.writeFileSync(path.join(filesDir, n), 'x');
+		const asc = (await listAllFiles({ sortField: 'name', sortDir: 'asc' })).files.map(
+			(f) => f.file_name
+		);
+		expect(asc).toEqual(['a.png', 'b.png', 'c.png']);
+		const desc = (await listAllFiles({ sortField: 'name', sortDir: 'desc' })).files.map(
+			(f) => f.file_name
+		);
+		expect(desc).toEqual(['c.png', 'b.png', 'a.png']);
+	});
+
+	it('sorts class members by a schema field, composes with search, and sorts empties last', async () => {
+		for (const n of ['a.png', 'b.png', 'c.png']) fs.writeFileSync(path.join(filesDir, n), 'x');
+		const files0 = (await listAllFiles()).files;
+		const byName = Object.fromEntries(files0.map((f) => [f.file_name, f.id]));
+		const id = await createClass('Gallery', schema);
+		await addMembers(
+			id,
+			files0.map((f) => f.id)
+		);
+		await updateRecord(id, byName['a.png'], { caption: 'zebra' });
+		await updateRecord(id, byName['b.png'], { caption: 'apple' });
+		// c.png has no caption → empty, must sort last in BOTH directions.
+		const asc = (await listClassMembers(id, { sortField: 'caption', sortDir: 'asc' })).files.map(
+			(f) => f.file_name
+		);
+		expect(asc).toEqual(['b.png', 'a.png', 'c.png']); // apple, zebra, then empty
+		const desc = (await listClassMembers(id, { sortField: 'caption', sortDir: 'desc' })).files.map(
+			(f) => f.file_name
+		);
+		expect(desc).toEqual(['a.png', 'b.png', 'c.png']); // zebra, apple, empty still last
+
+		// Composes with a field-scoped search: only 'apple' contains 'p', still under the chosen sort.
+		const searched = (
+			await listClassMembers(id, {
+				query: 'p',
+				searchField: 'caption',
+				sortField: 'caption',
+				sortDir: 'asc'
+			})
+		).files.map((f) => f.file_name);
+		expect(searched).toEqual(['b.png']);
+	});
+
+	it('honors a class config sort default when no sort param is given', async () => {
+		for (const n of ['a.png', 'b.png', 'c.png']) fs.writeFileSync(path.join(filesDir, n), 'x');
+		const files0 = (await listAllFiles()).files;
+		const id = await createClass('Gallery', schema);
+		await addMembers(
+			id,
+			files0.map((f) => f.id)
+		);
+		await updateClassConfig(id, { sortField: 'name', sortDir: 'desc' });
+		const names = (await listClassMembers(id)).files.map((f) => f.file_name);
+		expect(names).toEqual(['c.png', 'b.png', 'a.png']);
 	});
 });

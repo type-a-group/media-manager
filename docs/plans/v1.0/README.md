@@ -17,7 +17,7 @@ The committed scope for the **1.0** release, with one self-contained brief per f
 | # | Feature | Brief | Backlog status | Size |
 | --- | --- | --- | --- | --- |
 | 8 | Configurable & verbose grid display | [`08-verbose-grid.md`](08-verbose-grid.md) | blocked (3 OQ) | L |
-| 9 | Sorting & ordering | [`09-sorting.md`](09-sorting.md) | ready | M |
+| 9 | Sorting & ordering | [`09-sorting.md`](09-sorting.md) | ✅ shipped | M |
 | 10 | Filter for missing / empty field | [`10-missing-filter.md`](10-missing-filter.md) | ready | M |
 | 3 | Bulk operations (export remainder) | [`03-bulk-operations.md`](03-bulk-operations.md) | ready | S |
 | 5 | Data validation & repair | [`05-validation-repair.md`](05-validation-repair.md) | ready | S |
@@ -43,7 +43,7 @@ Everything else in `FUTURE_CHANGES.md` is **post-1.0** unless promoted here.
 
 Dependency-aware order. Waves can overlap across agents; within the npx sub-project, follow its own README.
 
-1. **Wave 1 — ready quick wins (parallelizable):** 9, 10, 12, 13, 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
+1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), 10, 12, 13, 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
 2. **Wave 2 — display & assets:** 8 (resolve its 3 open questions in the interview first), 34, 15. 8/34 both touch `DataGrid` — coordinate so they don't collide; 15 (compression) shares the **one resize/variant pipeline** with 34 and adopts `sharp` (closing the Item 35 decision) — design that pipeline once, before building either.
 3. **Wave 3 — design-then-build:** 18, 19. Both are `discussion` — the interview + HTML-plan stage is where they become `ready`. Do not start code until their open questions are closed.
 4. **Wave 4 — npx sub-project:** 32 → 31 → 30 → 33. Quiet-heal (32) makes browsing committed data safe; ephemeral port (31) unblocks running alongside a host dev server; root discovery + publishing (30) ties it together; the reader (33) shares the root-threading refactor and lands last. See [`npx/README.md`](npx/README.md).
@@ -91,6 +91,7 @@ Break the approved plan into the **smallest shippable slices** (a slice = a thin
 - **End-to-end against the fixture:** `npm run test:serve` (builds, copies `test-fixtures/` → gitignored `test-data/`, serves it) and exercise the feature in the running Node app. **Never test against a real data root** — running mutates it.
 - **UI capture:** drive + screenshot/record the feature via the `test-ui-feature` skill (wraps `scripts/ui-capture.mjs` → `.screenshots/`), so the developer can see the actual states, including mid-interaction ones the URL doesn't encode.
 - **Docs in the same change:** update [`docs/FEATURES.md`](../../FEATURES.md) when behaviour/routes/owning files change; update the [`test-fixtures/`](../../../test-fixtures/) seed when on-disk structure changes; move the backlog item to **Shipped & folded** in `FUTURE_CHANGES.md` and keep `FUTURE_CHANGES_TRIAGE.html` in sync.
+- **Hand-off: a manual smoke checklist for Nicholas.** When the feature is done, give the developer a short, concrete **"what to click to confirm it works yourself"** list — the few interactions automated tests can't fully stand in for (persistence across reload, per-entity independence, empty/edge states, the actual look). Phrase it as numbered steps against `npm run test:serve` (the throwaway fixture — never a real data root). The automated gates prove correctness; this list lets the developer *trust* it in 2 minutes. Put it at the end of the feature brief and/or in the hand-off message.
 
 Each feature brief restates these as a concrete, feature-specific checklist — follow that.
 

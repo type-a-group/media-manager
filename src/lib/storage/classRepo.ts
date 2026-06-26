@@ -48,6 +48,14 @@ import {
 import { hasAllowedImageExtension } from '$lib/core/images.js';
 import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
+import {
+	sortItems,
+	fieldSortValue,
+	resolveSort,
+	type SortDir,
+	type RawSortValue
+} from '$lib/core/sort.js';
+import { readMediaSettings } from './mediaSettings.js';
 
 /**
  * File-first class storage. A **class** is a schema + opt-in per-blob metadata stored as a single
@@ -807,6 +815,17 @@ function fileItemFromEntry(id: string, manifest: Manifest): FileItem {
 	};
 }
 
+/** Built-in (intrinsic, class-agnostic) sort keys offered on every file listing (Item 9). */
+const FILE_SORT_KEYS = new Set<string>(['name', 'created_at', 'size']);
+
+/** Read a built-in blob sort value off a {@link FileItem}. `name` ⇒ filename; else the intrinsic field. */
+function fileBuiltinSortValue(f: FileItem, key: string): RawSortValue {
+	if (key === 'name') return f.file_name;
+	if (key === 'created_at') return f.created_at ?? null;
+	if (key === 'size') return f.size ?? null;
+	return null;
+}
+
 // ---------------------------------------------------------------------------
 // All Files listing (manifest-driven)
 // ---------------------------------------------------------------------------
@@ -835,6 +854,13 @@ export async function listAllFiles(params?: {
 	 *   group-by encoding).
 	 */
 	searchField?: string | null;
+	/**
+	 * Sort key (Item 9): a built-in (`name` | `created_at` | `size`). Falls back to the persisted
+	 * media-wide `sortField`, then the default `created_at` (no per-record context on the hub).
+	 */
+	sortField?: string | null;
+	/** Sort direction; falls back to the persisted `sortDir`, then `desc` (newest first). */
+	sortDir?: SortDir | null;
 }): Promise<FileListResponse> {
 	const { manifest, diskNames, healed } = await reconcileAndResync();
 	await backfillDimensions(manifest, diskNames);
@@ -916,8 +942,20 @@ export async function listAllFiles(params?: {
 		}
 		files.push(item);
 	}
-	files.sort((a, b) => a.file_name.localeCompare(b.file_name));
-	return { files, healed };
+	// Sort (Item 9). The hub has no per-record context, so only intrinsic blob keys are offered; default
+	// is created_at desc (newest first). Precedence: explicit param → persisted media setting → default.
+	const mediaSettings = readMediaSettings();
+	const { field: sortField, dir: sortDir } = resolveSort(
+		params?.sortField ?? mediaSettings.sortField,
+		params?.sortDir ?? mediaSettings.sortDir,
+		FILE_SORT_KEYS,
+		{ field: 'created_at', dir: 'desc' }
+	);
+	const sorted = sortItems(files, sortDir, {
+		value: (f) => fileBuiltinSortValue(f, sortField),
+		id: (f) => f.id
+	});
+	return { files: sorted, healed };
 }
 
 /**
@@ -935,6 +973,13 @@ export async function listClassMembers(
 		 * field). A field key restricts the match to that class field only.
 		 */
 		searchField?: string | null;
+		/**
+		 * Sort key (Item 9): a built-in (`name` | `created_at` | `size` | `last_modified`) or a class
+		 * schema field key. Falls back to the class's persisted `sortField`, then `last_modified` desc.
+		 */
+		sortField?: string | null;
+		/** Sort direction; falls back to the class's persisted `sortDir`, then `desc`. */
+		sortDir?: SortDir | null;
 	}
 ): Promise<FileListResponse> {
 	const file = await readClassFile(id);
@@ -948,6 +993,9 @@ export async function listClassMembers(
 	const searchField = params?.searchField || null;
 
 	const files: FileItem[] = [];
+	// Keep each kept blob's class record around so the sort can read its `last_modified` + schema fields
+	// (the `FileItem` carries only intrinsic blob data).
+	const recById = new Map<string, Record<string, unknown>>();
 	for (const [fileId, rec] of Object.entries(file.records)) {
 		const entry = manifest.files[fileId];
 		const fileName = entry?.file_name ?? '';
@@ -968,10 +1016,27 @@ export async function listClassMembers(
 		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy);
 		const miss = missingFileFields(recObj, file.schema, available);
 		if (miss.length) item.missing_file_fields = miss;
+		recById.set(fileId, recObj);
 		files.push(item);
 	}
-	files.sort((a, b) => a.file_name.localeCompare(b.file_name));
-	return { files, healed };
+	// Sort (Item 9). Built-in blob keys come off the FileItem; `last_modified` + schema fields come off
+	// the class record. Default is last_modified desc. Precedence: param → class config → default.
+	const { field: sortField, dir: sortDir } = resolveSort(
+		params?.sortField ?? file.config.sortField,
+		params?.sortDir ?? file.config.sortDir,
+		new Set<string>([...FILE_SORT_KEYS, 'last_modified', ...schemaUserFieldKeys(file.schema)]),
+		{ field: 'last_modified', dir: 'desc' }
+	);
+	const sorted = sortItems(files, sortDir, {
+		value: (f) => {
+			const rec = recById.get(f.id);
+			if (sortField === 'last_modified') return (rec?.last_modified as string) ?? null;
+			if (FILE_SORT_KEYS.has(sortField)) return fileBuiltinSortValue(f, sortField);
+			return rec ? fieldSortValue(file.schema, sortField, rec[sortField]) : null;
+		},
+		id: (f) => f.id
+	});
+	return { files: sorted, healed };
 }
 
 // ---------------------------------------------------------------------------

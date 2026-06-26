@@ -15,6 +15,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		const subtitleField = url.searchParams.get('subtitleField') || undefined;
 		const searchQuery = url.searchParams.get('searchQuery') || undefined;
 		const searchField = url.searchParams.get('searchField') || undefined;
+		const sortField = url.searchParams.get('sort') || undefined;
+		const sortDirRaw = url.searchParams.get('dir');
+		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : undefined;
 
 		const filtersRaw = url.searchParams.get('filters');
 		let filters: z.infer<typeof FiltersParamSchema> | undefined;
@@ -32,7 +35,9 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				titleField,
 				subtitleField,
 				searchQuery,
-				searchField
+				searchField,
+				sortField,
+				sortDir
 			})
 		);
 	} catch (err) {

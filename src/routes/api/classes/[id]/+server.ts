@@ -7,6 +7,9 @@ const ConfigPatchSchema = z.object({
 	displayName: z.string().min(1).max(256).optional(),
 	gridGroupByField: z.string().optional(),
 	displayField: z.string().optional(),
+	// List sort (Item 9): a built-in or schema field key + direction. '' clears the override (default).
+	sortField: z.string().max(256).optional(),
+	sortDir: z.enum(['asc', 'desc']).optional(),
 	gridSize: z.enum(['small', 'medium', 'large']).optional(),
 	// Per-class icon id (a curated Lucide id; '' resolves to the generic fallback when rendered).
 	icon: z.string().max(64).optional()
@@ -30,7 +33,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	const parsed = ConfigPatchSchema.safeParse(await request.json());
 	if (!parsed.success) throw error(400, 'Invalid config payload');
 	try {
-		const config = await updateClassConfig(params.id, parsed.data);
+		// Empty `sortField` clears the per-class sort override (back to default).
+		const patch = { ...parsed.data };
+		if (patch.sortField === '') patch.sortField = undefined;
+		const config = await updateClassConfig(params.id, patch);
 		return json({ success: true, config });
 	} catch (err) {
 		const e = err as Error;

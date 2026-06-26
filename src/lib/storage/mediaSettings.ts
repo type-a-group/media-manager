@@ -17,6 +17,9 @@ import { writeJsonFileAtomic } from './json.js';
  * @param autoSaveOnAdvance - Save pending edits before moving to the previous/next item.
  * @param railCollapsed - Whether the Records Explorer type rail starts collapsed (layout pref).
  * @param classOrder - Optional persisted class ordering for the hub sidebar (preserved on write).
+ * @param sortField - The All Files hub list sort key (Item 9): a built-in (`name` | `created_at` |
+ *   `size`). Hub-wide (the hub has no per-class context); class catalogs persist their own in config.
+ * @param sortDir - The All Files hub sort direction; absent ⇒ `desc` (newest first).
  */
 export interface MediaSettings {
 	gridSize: 'small' | 'medium' | 'large';
@@ -24,6 +27,8 @@ export interface MediaSettings {
 	autoSaveOnAdvance: boolean;
 	railCollapsed: boolean;
 	classOrder?: string[];
+	sortField?: string;
+	sortDir?: 'asc' | 'desc';
 }
 
 /** Defaults applied when `media/settings.json` is missing or a field is absent/invalid. */
@@ -53,7 +58,9 @@ function coerce(raw: Record<string, unknown>): MediaSettings {
 				: DEFAULT_MEDIA_SETTINGS.railCollapsed,
 		classOrder: Array.isArray(raw.classOrder)
 			? (raw.classOrder.filter((x) => typeof x === 'string') as string[])
-			: undefined
+			: undefined,
+		sortField: typeof raw.sortField === 'string' ? raw.sortField : undefined,
+		sortDir: raw.sortDir === 'asc' || raw.sortDir === 'desc' ? raw.sortDir : undefined
 	};
 }
 

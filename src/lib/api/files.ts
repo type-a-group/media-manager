@@ -45,6 +45,10 @@ export interface ListFilesParams {
 	groupByField?: string;
 	/** Scope `query`: empty = filename/All-fields; `<classId>::<field>` = one intersected field. */
 	searchField?: string;
+	/** List sort key (Item 9): a built-in (`name` | `created_at` | `size`); empty = persisted/default. */
+	sort?: string;
+	/** Sort direction. */
+	dir?: 'asc' | 'desc';
 }
 
 /** GET /api/files — the All Files hub listing. */
@@ -62,6 +66,8 @@ export async function apiListFiles(
 		q.set('groupByField', params.groupByField);
 	}
 	if (params.searchField) q.set('searchField', params.searchField);
+	if (params.sort) q.set('sort', params.sort);
+	if (params.dir) q.set('dir', params.dir);
 	const res = await fetchFn(`/api/files?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list files');
 }
@@ -249,13 +255,21 @@ export async function apiDeleteClass(id: string, fetchFn: typeof fetch = fetch):
 /** GET /api/classes/[id]/members — the one-class catalog view. */
 export async function apiListClassMembers(
 	id: string,
-	opts: { groupBy?: string; query?: string; searchField?: string } = {},
+	opts: {
+		groupBy?: string;
+		query?: string;
+		searchField?: string;
+		sort?: string;
+		dir?: 'asc' | 'desc';
+	} = {},
 	fetchFn: typeof fetch = fetch
 ): Promise<FileListResponse> {
 	const q = new URLSearchParams();
 	if (opts.groupBy) q.set('groupBy', opts.groupBy);
 	if (opts.query) q.set('query', opts.query);
 	if (opts.searchField) q.set('searchField', opts.searchField);
+	if (opts.sort) q.set('sort', opts.sort);
+	if (opts.dir) q.set('dir', opts.dir);
 	const res = await fetchFn(`/api/classes/${id}/members?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list members');
 }

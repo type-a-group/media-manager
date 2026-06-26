@@ -14,6 +14,7 @@ import { listAllFiles } from '$lib/storage/classRepo.js';
  *   each item gets a `group_by_value` read from that class's record.
  * - `searchField` — scope `query`: empty = filename (or All fields in an intersection);
  *   `<classId>::<field>` = one field of one intersected class.
+ * - `sort` + `dir` — list sort (Item 9): a built-in (`name` | `created_at` | `size`) + `asc`|`desc`.
  */
 export const GET: RequestHandler = async ({ url }) => {
 	try {
@@ -30,6 +31,9 @@ export const GET: RequestHandler = async ({ url }) => {
 		const groupByClass = url.searchParams.get('groupByClass');
 		const groupByField = url.searchParams.get('groupByField');
 		const searchField = url.searchParams.get('searchField');
+		const sortField = url.searchParams.get('sort');
+		const sortDirRaw = url.searchParams.get('dir');
+		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : null;
 		const idPattern = /^[a-zA-Z0-9_-]+$/;
 		const groupBy =
 			groupByClass && groupByField && idPattern.test(groupByClass)
@@ -41,7 +45,9 @@ export const GET: RequestHandler = async ({ url }) => {
 			matchAll,
 			unclassified,
 			groupBy,
-			searchField
+			searchField,
+			sortField,
+			sortDir
 		});
 		return json(data);
 	} catch (err) {

@@ -25,6 +25,9 @@ export type MediaTypeKind = 'json';
  *   {@link ClassConfig.displayField}. Absent ⇒ fall back to the `name` field / first string field.
  * @param subtitleField - Optional schema field rendered as the muted secondary line under each record
  *   row ("subtitle by"). Persisted like {@link displayField}; absent ⇒ no subtitle (single-line rows).
+ * @param sortField - The list sort key (Item 9): a built-in (`name` | `last_modified`) or a schema
+ *   field key. Persisted per-type, like {@link displayField}; absent ⇒ the default (`last_modified`).
+ * @param sortDir - Sort direction (`asc` | `desc`); absent ⇒ `desc` (most recent first).
  *
  * Grid size and navigation prefs are **global** app settings (`media/settings.json` via
  * `mediaSettings.ts`), not per-type — they are intentionally absent here.
@@ -36,6 +39,8 @@ export interface MediaTypeSettingsFile {
 	dataFileName?: string;
 	displayField?: string;
 	subtitleField?: string;
+	sortField?: string;
+	sortDir?: 'asc' | 'desc';
 	/** Optional per-type icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
 	icon?: string;
 }
@@ -65,6 +70,8 @@ export function readMediaTypeSettingsFileSync(baseDir: string): MediaTypeSetting
 				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON,
 			displayField: typeof parsed.displayField === 'string' ? parsed.displayField : undefined,
 			subtitleField: typeof parsed.subtitleField === 'string' ? parsed.subtitleField : undefined,
+			sortField: typeof parsed.sortField === 'string' ? parsed.sortField : undefined,
+			sortDir: parsed.sortDir === 'asc' || parsed.sortDir === 'desc' ? parsed.sortDir : undefined,
 			icon: typeof parsed.icon === 'string' ? parsed.icon : undefined
 		};
 	} catch (err) {
@@ -94,6 +101,8 @@ export async function writeMediaTypeSettingsFile(
 				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON,
 				displayField: patch.displayField,
 				subtitleField: patch.subtitleField,
+				sortField: patch.sortField,
+				sortDir: patch.sortDir,
 				icon: patch.icon
 			};
 	const settingsPath = path.join(baseDir, 'settings.json');

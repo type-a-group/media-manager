@@ -45,3 +45,13 @@ Item is `ready`, so these are confirmations, not blockers:
 - [ ] UI capture (`test-ui-feature`) of the sort control + before/after ordering.
 - [ ] Persistence verified across reload (per the decided policy).
 - [ ] `FEATURES.md` updated (new query params on the list endpoints); Item 9 → **Shipped & folded**; triage HTML synced.
+
+## ✅ Shipped — manual smoke test (developer)
+
+Run `npm run test:serve` (throwaway fixture — never a real root) and confirm:
+
+1. **Records** (`/media` → Notes): toolbar shows **Sort [Last modified ↓]**; switch to **Name** → A→Z, toggle **↑/↓** reverses; sort by **Priority** → empty-value rows sink to the bottom in *both* directions; type in search → results stay sorted.
+2. **Persistence:** pick a sort, **reload** → it sticks; a second record type keeps its **own** sort.
+3. **Files — All Files** (`/files`): **Sort [Date added ↓]** → switch to Name/Size + toggle; reload → hub sort persists.
+4. **Files — catalog** (tick one class): sort options also include **Last modified** + the class's schema fields; reload in that class → persists **per class**; untick → All Files shows the **hub** sort (independent).
+5. **Timestamp:** open a file → header **"Added <date>"**, each class section **"Modified <date>"**; open a record / Globals (after an edit) → **"Modified <date>"**; confirm it is **not** on the grid tiles.

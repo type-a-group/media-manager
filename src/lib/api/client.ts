@@ -163,7 +163,14 @@ export async function apiRenameMediaType(
 export async function apiGetTypeSettings(
 	typeId: string,
 	fetchFn: typeof fetch = fetch
-): Promise<{ displayName: string; displayField: string; subtitleField: string; icon: string }> {
+): Promise<{
+	displayName: string;
+	displayField: string;
+	subtitleField: string;
+	sortField: string;
+	sortDir: string;
+	icon: string;
+}> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`);
 	await assertOk(res, 'Failed to read type settings');
 	const data = await res.json();
@@ -171,17 +178,26 @@ export async function apiGetTypeSettings(
 		displayName: typeof data.displayName === 'string' ? data.displayName : typeId,
 		displayField: typeof data.displayField === 'string' ? data.displayField : '',
 		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : '',
+		sortField: typeof data.sortField === 'string' ? data.sortField : '',
+		sortDir: data.sortDir === 'asc' || data.sortDir === 'desc' ? data.sortDir : '',
 		icon: typeof data.icon === 'string' ? data.icon : ''
 	};
 }
 
 /**
  * Update a `json` media type's per-type settings. `displayField: ''` clears the title-by override;
- * `subtitleField: ''` clears the subtitle line.
+ * `subtitleField: ''` clears the subtitle line; `sortField: ''` clears the sort override (default sort).
  */
 export async function apiUpdateTypeSettings(
 	typeId: string,
-	patch: { displayName?: string; displayField?: string; subtitleField?: string; icon?: string },
+	patch: {
+		displayName?: string;
+		displayField?: string;
+		subtitleField?: string;
+		sortField?: string;
+		sortDir?: 'asc' | 'desc';
+		icon?: string;
+	},
 	fetchFn: typeof fetch = fetch
 ): Promise<{ displayName: string; displayField: string; subtitleField: string; icon: string }> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`, {
@@ -374,6 +390,10 @@ export async function apiListRecordsForType(
 		searchQuery?: string;
 		/** Scope `searchQuery` to one field key; empty = All fields. */
 		searchField?: string;
+		/** Sort key (built-in `name`|`last_modified` or a schema field key); empty = persisted/default. */
+		sort?: string;
+		/** Sort direction. */
+		dir?: 'asc' | 'desc';
 	},
 	fetchFn: typeof fetch = fetch
 ): Promise<ListRecordsResponse> {
@@ -393,6 +413,8 @@ export async function apiListRecordsForType(
 	if (params?.subtitleField) url.searchParams.set('subtitleField', params.subtitleField);
 	if (params?.searchQuery) url.searchParams.set('searchQuery', params.searchQuery);
 	if (params?.searchField) url.searchParams.set('searchField', params.searchField);
+	if (params?.sort) url.searchParams.set('sort', params.sort);
+	if (params?.dir) url.searchParams.set('dir', params.dir);
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();

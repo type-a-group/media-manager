@@ -5,9 +5,11 @@
 	import RecordBulkActions from '$lib/components/RecordBulkActions.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
+	import SortControl from '$lib/components/SortControl.svelte';
 	import { ListChecks, Plus, X, AlertTriangle } from 'lucide-svelte';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import { recordListTitle, recordListSubtitle } from '$lib/core/recordDisplay.js';
+	import type { SortDir } from '$lib/core/sort.js';
 	import type { JsonListItem, SchemaDefinition } from '$lib/core/types.js';
 
 	/**
@@ -37,6 +39,9 @@
 		records,
 		loading,
 		groupBy = $bindable(''),
+		sortField = $bindable(''),
+		sortDir = $bindable('desc'),
+		onSortChange,
 		selectionMode,
 		selectedIds,
 		selectedRecordId,
@@ -55,6 +60,9 @@
 		records: JsonListItem[];
 		loading: boolean;
 		groupBy?: string;
+		sortField?: string;
+		sortDir?: SortDir;
+		onSortChange?: () => void;
 		selectionMode: boolean;
 		selectedIds: Set<string>;
 		selectedRecordId: string | null;
@@ -70,6 +78,13 @@
 
 	/** Schema field keys eligible for group-by / title (name first). */
 	const schemaFieldKeys = $derived(schema ? schemaUserFieldKeys(schema) : []);
+
+	/** Sort options (Item 9): built-ins + each schema field. */
+	const sortOptions = $derived([
+		{ value: 'name', label: 'Name' },
+		{ value: 'last_modified', label: 'Last modified' },
+		...schemaFieldKeys.map((k) => ({ value: k, label: fieldLabel(k) }))
+	]);
 
 	/** Records grouped by the server-provided `group_by_value`, or null when flat. */
 	const groupedRecords = $derived.by<[string, JsonListItem[]][] | null>(() => {
@@ -140,7 +155,7 @@
 		/>
 	</header>
 
-	<!-- Controls: group -->
+	<!-- Controls: group + sort -->
 	<div class="flex flex-wrap items-center gap-2 border-b p-2 text-sm">
 		<div class="flex items-center gap-1.5">
 			<span class="text-muted-foreground">Group</span>
@@ -154,6 +169,12 @@
 				</Select.Content>
 			</Select.Root>
 		</div>
+		<SortControl
+			options={sortOptions}
+			bind:field={sortField}
+			bind:dir={sortDir}
+			onchange={onSortChange}
+		/>
 	</div>
 
 	<!-- Bulk bar -->

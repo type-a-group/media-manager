@@ -31,13 +31,13 @@ acceptance: # what "done" looks like — the agent's definition of success
 | [npx-package vision](#cluster-npx-package-vision) | 30 · 31 · 32 · 33 · 7 | Run media-manager as an npx package inside a host repo |
 | [Data model & fields](#cluster-data-model--fields) | 36 · 26 · 25 · 4 · 0 | Field types, value editors, globals parity |
 | [Media kinds & preview](#cluster-media-kinds--preview) | 23 · 21 · 24 · 14 | Expand beyond images — video/gif, pdf, docx, markdown |
-| [Grid & display](#cluster-grid--display) | 8 · 9 · 10 | What each tile shows; sorting, filtering, verbose mode |
+| [Grid & display](#cluster-grid--display) | 8 · 10 | What each tile shows; filtering, verbose mode |
 | [Asset pipeline & deps](#cluster-asset-pipeline--deps) | 15 · 34 · 35 | Thumbnails, masonry, the `sharp` decision |
 | [Bulk & schema utilities](#cluster-bulk--schema-utilities) | 3 · 5 | Mostly shipped — small remainders to close |
 | [Integrations](#cluster-integrations) | 37 · 11 | External services, kept opt-in and out of core |
 | [Storage & routing — design](#cluster-storage--routing--design) | 20 · 18 · 19 · 16 | Decisions to make before code |
 | [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 12 · 13 · 29 | Small, self-contained quality-of-life |
-| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 | Archive — see `FEATURES.md` |
+| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 | Archive — see `FEATURES.md` |
 
 > A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
@@ -320,7 +320,7 @@ The user value (manage a set of `.md` files with schema-driven metadata, e.g. bl
 
 ## Cluster: Grid & display
 
-What each tile shows, plus the missing sort/filter controls. Several of these still name components removed in the file-first redesign — repointed below.
+What each tile shows, plus the empty/missing-field filter. (Sorting — Item 9 — shipped; see **Shipped & folded**.) Several of these still name components removed in the file-first redesign — repointed below.
 
 ### 8 · Configurable & Verbose Grid Display
 
@@ -343,23 +343,7 @@ acceptance:
 
 High priority, user-requested (lightroom-style scanning). **Open questions:** per-type persistent default vs. per-session; verbose layout (key/value rows vs. mini-table vs. chips); how many fields before lists get noisy/slow — cap or virtualize?
 
-### 9 · Sorting & Ordering
-
-```yaml
-status: ready
-size: M
-usefulness: 4
-priority: medium
-files: [src/lib/storage/classRepo.ts, src/lib/storage/jsonRepo.ts, src/lib/stores/settings.ts]
-depends_on: []
-open_questions: 0
-acceptance:
-  - A sort control (field + direction) in the grid/rail headers
-  - Built-in sorts: by last_modified/created, by name, by any schema field
-  - Applied in the list endpoints (records list / class members / files), choice persisted per-type and/or session
-```
-
-> 🔧 **Stale ref repointed.** Sorting belongs in [`classRepo.ts`](../src/lib/storage/classRepo.ts) / [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts) (the old `repo.ts` is gone). A basic, expected, daily-use control that's still missing — fully `ready`.
+> 🪧 **Reuse the freed second tile slot.** `GridItem.secondaryLabel` exists but is **unused on the Files side** (records use it for the subtitle). It's the natural mechanism for this item's compact per-tile metadata — wire the field-subset picker to populate `secondaryLabel`/a sibling meta line rather than inventing a new tile region. Item 9 (Sorting) deliberately left this slot free: it surfaces the last-modified timestamp **in the side panel, not the tile**, so the grid stays clean until this configurable-display work lands here.
 
 ### 10 · Filter for Missing / Empty Fields
 
@@ -683,4 +667,5 @@ Archive — kept as tombstones so cross-references and the triage board resolve.
 | 6 | Stable File IDs | ✅ **Shipped (Option 3)** — manifest UUIDs, O(1) rename, lazy-heal. Foundational for Items 7/12/17. See `STABLE_FILE_IDS.md`. |
 | 22 | Group-by across multiple classes ("all of" view) | ✅ **Shipped** — Group-by lists one `(class, field)` per intersected class; `listAllFiles` takes `groupBy`. |
 | 28 | Per-Type / Per-Class Icon Picker | ✅ **Shipped** — curated Lucide set in the unified `EntitySettingsDialog`; rendered on rails, breadcrumb, palette, grid chips. |
+| 9 | Sorting & Ordering | ✅ **Shipped** — shared `SortControl` + `core/sort.ts` comparator (empties-last, stable tie-break); `?sort&dir` on records `list` / `/api/files` / class `members`; persisted per-entity (type `settings.json` · class `config` · `media/settings.json`). Folded in: last-modified shown in the side panels (`core/datetime.ts`). |
 | 27 | npx Package Distribution | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)". |
