@@ -111,13 +111,14 @@ export function listClasses(): ClassSummary[] {
 	for (const id of listClassIds()) {
 		try {
 			const raw = JSON.parse(fssync.readFileSync(getClassFilePath(id), 'utf-8')) as {
-				config?: { displayName?: string };
+				config?: { displayName?: string; icon?: string };
 				records?: Record<string, unknown>;
 			};
 			out.push({
 				id,
 				displayName: raw.config?.displayName || id,
-				count: raw.records ? Object.keys(raw.records).length : 0
+				count: raw.records ? Object.keys(raw.records).length : 0,
+				icon: typeof raw.config?.icon === 'string' ? raw.config.icon : undefined
 			});
 		} catch {
 			/* skip corrupt class file */

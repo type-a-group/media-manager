@@ -41,15 +41,18 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 			const detail = await apiGetClass(classId);
 			return {
 				displayName: detail.config.displayName ?? '',
+				icon: detail.config.icon ?? '',
 				titleBy: detail.config.displayField ?? '',
 				subtitleBy: '',
 				groupBy: detail.config.gridGroupByField ?? '',
 				fields: classFields(detail.schema)
 			};
 		},
-		save: async ({ displayName, titleBy, groupBy }) => {
+		save: async ({ displayName, icon, titleBy, groupBy }) => {
 			await apiUpdateClassConfig(classId, {
 				displayName,
+				// '' is sent verbatim to clear (it resolves to the generic fallback when rendered).
+				icon,
 				displayField: titleBy || undefined,
 				gridGroupByField: groupBy || undefined
 			});
@@ -93,15 +96,17 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 			]);
 			return {
 				displayName: settings.displayName,
+				icon: settings.icon,
 				titleBy: settings.displayField,
 				subtitleBy: settings.subtitleField,
 				groupBy: '',
 				fields: typeFields(schema)
 			};
 		},
-		save: async ({ displayName, titleBy, subtitleBy }) => {
+		save: async ({ displayName, icon, titleBy, subtitleBy }) => {
 			await apiUpdateTypeSettings(typeId, {
 				displayName,
+				icon,
 				displayField: titleBy,
 				subtitleField: subtitleBy
 			});

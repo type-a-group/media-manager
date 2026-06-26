@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Future Changes — Triage Board</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --line: #2a2f3a;
+    --txt: #e6e9ef;
+    --muted: #9aa3b2;
+    --accent: #ff6fb5;
+    --accent-dim: #5a2740;
+
+    --done: #3ecf8e;
+    --verify: #f0b429;
+    --active: #6aa8ff;
+    --discussion: #b692ff;
+
+    --s: #3ecf8e;
+    --m: #6aa8ff;
+    --l: #ff7a7a;
+    --warn: #f0b429;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    padding: 0 0 80px;
+  }
+  a { color: var(--accent); }
+
+  header.top {
+    position: sticky; top: 0; z-index: 30;
+    background: linear-gradient(180deg, rgba(15,17,21,.98), rgba(15,17,21,.92));
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 18px 26px 14px;
+  }
+  h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: .2px; }
+  h1 .pink { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 2px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; min-width: 96px;
+  }
+  .stat .n { font-size: 20px; font-weight: 700; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 0 26px; }
+
+  .controls { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin: 18px 0 8px; }
+  .filtergroup { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .filtergroup .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; margin-right: 2px; }
+  .chip {
+    cursor: pointer; user-select: none;
+    border: 1px solid var(--line); background: var(--panel);
+    color: var(--txt); border-radius: 999px; padding: 4px 11px; font-size: 12.5px;
+    transition: all .12s ease;
+  }
+  .chip:hover { border-color: var(--muted); }
+  .chip.active { background: var(--accent-dim); border-color: var(--accent); color: #fff; }
+  .chip .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+  .search {
+    background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 8px; padding: 7px 11px; font-size: 13px; min-width: 200px;
+  }
+  .search:focus { outline: none; border-color: var(--accent); }
+
+  .group { margin-top: 30px; }
+  .group h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+    border-bottom: 1px solid var(--line); padding-bottom: 8px; margin: 0 0 14px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .group h2 .cnt { font-size: 12px; color: var(--accent); }
+  .group h2 .blurb { font-size: 12px; color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: auto; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 14px 14px; position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--active);
+  }
+  .card.s-done::before { background: var(--done); }
+  .card.s-verify::before { background: var(--verify); }
+  .card.s-active::before { background: var(--active); }
+  .card.s-discussion::before { background: var(--discussion); }
+
+  .card .ttl { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .card .num {
+    font-variant-numeric: tabular-nums; font-weight: 700; color: var(--muted);
+    background: var(--panel-2); border-radius: 6px; padding: 1px 7px; font-size: 12px; flex: none;
+  }
+  .card .name { font-weight: 600; font-size: 14.5px; line-height: 1.3; }
+
+  .badges { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0 6px; }
+  .b {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--muted); white-space: nowrap;
+  }
+  .b.size-S { color: var(--s); border-color: #1f4736; }
+  .b.size-M { color: var(--m); border-color: #1f3a5c; }
+  .b.size-L { color: var(--l); border-color: #5c2626; }
+  .b.prio-high { color: #ffb3d1; border-color: var(--accent-dim); }
+  .b.oq { color: var(--warn); border-color: #4a3a14; }
+  .b.stale { color: #ff9a9a; border-color: #5c2626; background: #2a1717; }
+  .b.status { font-weight: 600; }
+  .b.status.s-done { color: var(--done); }
+  .b.status.s-verify { color: var(--verify); }
+  .b.status.s-active { color: var(--active); }
+  .b.status.s-discussion { color: var(--discussion); }
+  .b.dep { color: #cdd3df; }
+  .b.use { font-weight: 600; letter-spacing: 1px; }
+  .b.use.u5 { color: #3ecf8e; border-color: #1f4736; }
+  .b.use.u4 { color: #8fe3b8; border-color: #1f4736; }
+  .b.use.u3 { color: #f0b429; border-color: #4a3a14; }
+  .b.use.u2 { color: #c79a3a; border-color: #3a3018; }
+  .b.use.u1 { color: #9aa3b2; }
+  .b.use.u0 { color: #6b7280; text-decoration: line-through; }
+
+  .rank {
+    font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent);
+    background: var(--accent-dim); border-radius: 6px; padding: 1px 7px; font-size: 12px; flex: none;
+  }
+
+  .note { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+  .note b { color: var(--txt); font-weight: 600; }
+
+  .legend { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .hidden { display: none !important; }
+
+  .reco {
+    background: var(--panel); border: 1px solid var(--accent-dim); border-radius: 12px;
+    padding: 16px 18px; margin-top: 14px;
+  }
+  .reco h3 { margin: 0 0 8px; font-size: 14px; color: var(--accent); }
+  .reco ol { margin: 0; padding-left: 20px; }
+  .reco li { margin: 5px 0; color: var(--txt); }
+  .reco li span { color: var(--muted); }
+  details summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1><span class="pink">Future Changes</span> — Triage Board</h1>
+  <p class="sub">Live read of <code>docs/FUTURE_CHANGES.md</code> · 38 items classified by status, size, cluster, and open-question load · generated 2026-06-23</p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <div class="filtergroup">
+      <span class="lbl">Status</span>
+      <span class="chip active" data-f="status" data-v="all">All</span>
+      <span class="chip" data-f="status" data-v="active"><span class="dot" style="background:var(--active)"></span>Active</span>
+      <span class="chip" data-f="status" data-v="verify"><span class="dot" style="background:var(--verify)"></span>Verify / likely done</span>
+      <span class="chip" data-f="status" data-v="discussion"><span class="dot" style="background:var(--discussion)"></span>Discussion</span>
+      <span class="chip" data-f="status" data-v="done"><span class="dot" style="background:var(--done)"></span>Done / folded</span>
+    </div>
+    <div class="filtergroup">
+      <span class="lbl">Size</span>
+      <span class="chip active" data-f="size" data-v="all">All</span>
+      <span class="chip" data-f="size" data-v="S">S</span>
+      <span class="chip" data-f="size" data-v="M">M</span>
+      <span class="chip" data-f="size" data-v="L">L</span>
+    </div>
+    <div class="filtergroup">
+      <span class="lbl">View</span>
+      <span class="chip active" data-f="view" data-v="cluster">By cluster</span>
+      <span class="chip" data-f="view" data-v="ranked">Ranked by usefulness</span>
+    </div>
+    <div class="filtergroup">
+      <span class="lbl">Flags</span>
+      <span class="chip" data-f="flag" data-v="oq">Has open questions</span>
+      <span class="chip" data-f="flag" data-v="stale">Stale code refs</span>
+      <span class="chip" data-f="flag" data-v="high">High priority</span>
+    </div>
+    <input id="search" class="search" placeholder="Search title / note…" />
+  </div>
+  <p class="legend">Click chips to filter (combine across rows). <b>● ●/5</b> = usefulness (product leverage/value); switch to <b>Ranked by usefulness</b> for a single high→low list. <b>Use —</b> = done/folded (no remaining value). <b>Stale code refs</b> = the item still names files deleted in the file-first redesign — valid feature, broken pointers. <b>OQ</b> = unresolved design decisions that block agent-readiness.</p>
+
+  <div class="reco">
+    <h3>Recommended cleanup (from the agent-backlog research)</h3>
+    <ol>
+      <li><b>Archive the 6 Done/folded items</b> (1, 2, 6, 22, 28, 27) into a collapsed bottom section — they pad the file and re-litigate settled work. <span>Keep a one-line "shipped → see FEATURES.md".</span></li>
+      <li><b>Delete the 4 Verify items after a 5-min check</b> (0, 3, 5, 29). 0 is fully shipped; 3 & 5 are mostly shipped (only bulk-export / repair-scope remain) — demote to a one-liner; 29 is still valid.</li>
+      <li><b>Fix the 5 stale-ref items</b> (8, 9, 12, 14, 17) — repoint to <code>classRepo.ts</code> / <code>DataGrid</code> / <code>FieldInput</code>; Item 14 also predates the file-first model and needs a rethink, not just a re-link.</li>
+      <li><b>Make "ready" a real state.</b> Adopt per-item frontmatter (<code>status · size · files · depends_on · open_questions · acceptance</code>). An item with any open question = <code>blocked</code>, never handed to an agent.</li>
+      <li><b>Group by cluster, not by number.</b> The npx (30–33+7) and media-kinds (14/21/23/24) clusters already exist implicitly — make them headers with explicit ordering.</li>
+    </ol>
+  </div>
+
+  <div id="board"></div>
+</div>
+
+<script>
+const ITEMS = [
+  // status: done | verify | active | discussion
+  // use: usefulness 1-5 (5 = highest product leverage / value)
+  // group keys defined in GROUPS below
+  {n:1, name:"File Field Picker UI", status:"done", size:null, use:4, group:"fields", note:"Shipped — FilePicker over the global blob store."},
+  {n:2, name:"Missing File Indicators (API + UI)", status:"done", size:null, use:4, group:"fields", note:"Shipped end-to-end (badges + inline warnings)."},
+  {n:6, name:"Stable File IDs", status:"done", size:null, use:5, group:"storage", note:"Shipped (Option 3) — manifest UUIDs, O(1) rename. Foundational for 7/12/17."},
+  {n:22, name:"Group-by across multiple classes", status:"done", size:null, use:3, group:"grid", note:"Shipped — 'all of' view groups by (class, field)."},
+  {n:28, name:"Per-Type / Per-Class Icon Picker", status:"done", size:null, use:3, group:"misc", note:"Shipped — curated Lucide set in the unified settings dialog."},
+  {n:27, name:"npx Package Distribution", status:"done", size:null, use:0, group:"npx", folded:30, note:"Folded into Item 30 (publish mechanics). Keep as a redirect only."},
+
+  {n:0, name:"Make URL fields editable", status:"verify", size:"S", use:0, group:"fields", note:"<b>Already shipped.</b> FieldInput.svelte has a full url {display_name,url} editor. Recommend delete."},
+  {n:3, name:"Bulk Operations", status:"verify", size:"S", prio:"low", use:1, group:"bulk", note:"<b>Mostly shipped:</b> bulk-update + bulk-delete exist (RecordBulkActions). Only bulk-<b>export</b> JSON remains. Demote to a one-liner."},
+  {n:5, name:"Data Validation & Repair", status:"verify", size:"M", prio:"low", use:2, group:"bulk", note:"<b>Partially shipped:</b> a records <code>repair</code> endpoint already exists. Confirm it covers orphan-key + type-coerce, then close or narrow."},
+  {n:4, name:"Schema Import/Export", status:"active", size:"M", prio:"low", use:2, group:"bulk", note:"Export/import/clone a type's or class's embedded schema as standalone JSON. Self-contained, low priority. Both schema endpoints already exist to build on."},
+  {n:29, name:"Records Explorer — Mobile drill-down", status:"verify", size:"M", prio:"low", use:2, group:"misc", note:"<b>Still valid</b> — the three-pane Records Explorer (RecordsRail, /media) does exist. Keep, but verify viewport scope vs. Item 20."},
+
+  {n:7, name:"Static Site Export (read-only)", status:"active", size:"L", prio:"med", use:1, group:"npx", oq:3, deps:[6], note:"Read-only export target. Sequences with the npx cluster; needs the same root-threading refactor as Item 33."},
+  {n:8, name:"Configurable & Verbose Grid Display", status:"active", size:"L", prio:"high", use:5, group:"grid", oq:3, stale:true, note:"High / user-requested. Display-field (title-by) <b>partly shipped</b>; verbose multi-field mode not. Pointers name removed JsonRecordGrid/ImageViewGrid/selection.svelte — repoint to DataGrid."},
+  {n:9, name:"Sorting & Ordering", status:"active", size:"M", prio:"med", use:4, group:"grid", stale:true, note:"No explicit sort yet — a basic, expected, daily-use control. Pointer to removed repo.ts → classRepo.ts/jsonRepo.ts."},
+  {n:10, name:"Filter for Missing / Empty Fields", status:"active", size:"M", prio:"med", use:3, group:"grid", note:"filters.ts already supports empty checks; needs a first-class entry point in the rail filter UI."},
+  {n:12, name:"Fix / Normalize File Extension", status:"active", size:"S", prio:"low", use:2, group:"misc", stale:true, note:"Pointer to removed propagateFilenameRename — post Item 6 this is a pure rename. Add magic-byte type detection."},
+  {n:13, name:"Swap Width/Height (orientation fix)", status:"active", size:"S", prio:"low", use:2, group:"misc", note:"Per-record swap action + optional heuristic warning. Niche bug-fix. Heuristic would lean on sharp (see Item 35)."},
+  {n:14, name:"Markdown Blog Media Kind", status:"active", size:"L", prio:"med", use:3, group:"kinds", oq:2, stale:true, note:"<b>Predates the file-first model</b> — references MediaTypeKind / blob_store kinds that no longer exist. Needs a redesign against classes, not just a re-link. High value if blogging is a real use."},
+  {n:15, name:"Image Compression Management", status:"active", size:"M", prio:"low", use:2, group:"assets", note:"Compressed variants via sharp. Non-urgent. Strong overlap with Item 7 (thumbnails) — design the resize pipeline once."},
+  {n:17, name:"Capture Nested Folder Path on Upload", status:"active", size:"M", prio:"med", use:3, group:"misc", oq:4, stale:true, note:"User-requested; decisions locked. Pointers name removed ImageEditorPane/repo.ts. Collisions sequence after Item 6."},
+  {n:21, name:"Full PDF Preview", status:"active", size:"M", prio:"low", use:3, group:"kinds", note:"PDF storage/metadata shipped. Inline &lt;iframe&gt; preview + first-page thumbnail remain — solid scan/browse win."},
+  {n:23, name:"Video & GIF Media Support", status:"active", size:"L", prio:"med", use:4, group:"kinds", note:"User-requested. Expands what the tool can actually manage. Inline &lt;video&gt;, poster thumbnails, range requests, exiftool duration/codec."},
+  {n:24, name:"DOCX Support (+ convert-to-PDF)", status:"active", size:"L", prio:"med", use:3, group:"kinds", deps:[21], note:"User-requested but narrower. LibreOffice-headless vs pure-JS converter — decide against npx footprint (Item 30)."},
+  {n:25, name:"Globals Panel Overhaul", status:"active", size:"M", prio:"med", use:3, group:"fields", note:"User-requested but globals is a niche surface. Rich previews + nicer layout. Overlaps Item 26 — design together."},
+  {n:26, name:"File-Field UI Overhaul (preview + go-to-file)", status:"active", size:"M", prio:"med", use:4, group:"fields", deps:[20], note:"User-requested. Improves the core linking UX everywhere FieldInput renders. Larger preview + 'go to file' deep-link. Ties to Item 20."},
+  {n:36, name:"`relation` field type (record→record)", status:"active", size:"L", prio:"med", use:5, group:"fields", note:"Highest-leverage data-model edge — turns the islands into a graph. Deferred 2026-06-22; ?record= deep links now exist to click through. Ship single-target first."},
+  {n:11, name:"AI / External Field Enrichment", status:"active", size:"L", prio:"low", use:2, group:"integrations", note:"Downstream-app ideas (vision API, local vector search). Explicitly non-core — park / spin out."},
+  {n:37, name:"Import from Google Photos (Picker API)", status:"active", size:"L", prio:"med", use:3, group:"integrations", oq:4, note:"User-requested but explicitly a rare-use feature. Full design doc + mockup exist. Collapses onto the upload path. Loopback port overlaps Item 31."},
+
+  {n:30, name:"Editor npx Setup — zero-config root discovery", status:"active", size:"L", prio:"med", use:4, group:"npx", oq:3, note:"Cluster umbrella (Mode A) — makes the tool actually usable inside a host repo. Decisions locked 2026-06-20. Publishing folded in from 27."},
+  {n:31, name:"Ephemeral Server Port + auto-open", status:"active", size:"M", prio:"med", use:3, group:"npx", oq:2, note:"Pairs with 30; unblocks running alongside a host dev server. <b>Main spike:</b> does adapter-node support PORT=0 and report the bound port?"},
+  {n:32, name:"Quiet Heal — persist reconcile only on real change", status:"active", size:"M", prio:"med", use:4, group:"npx", oq:3, note:"Unblocks editing a git-committed workspace (zero spurious diffs). Load-bearing path — needs unit coverage. Research which write paths churn first."},
+  {n:33, name:"Reader Package (Mode B, read-only)", status:"active", size:"L", prio:"low", use:2, group:"npx", oq:3, note:"Deferred + speculative — library-vs-export undecided. Gated by the root-threading refactor (shared with Item 7). Don't pre-build."},
+  {n:34, name:"Reimplement masonry grid layout", status:"active", size:"M", prio:"low", use:2, group:"assets", note:"@masonry-grid/svelte kept but unused. Visual polish only; wire behind the GridSize control. Pairs with thumbnails (35)."},
+  {n:35, name:"Remove (or use) the `sharp` dependency", status:"active", size:"S", prio:"low", use:2, group:"assets", note:"Hygiene — low direct user value but cuts install/native-build cost. Either drop it, or adopt for thumbnails (pairs with 15/34)."},
+
+  {n:16, name:"Open Design Questions", status:"discussion", size:null, use:1, group:"storage", oq:2, note:"Meta — defaults storage policy + Svelte-5 do/don't guidance. Decisions you owe before related work."},
+  {n:18, name:"Records Storage Reorganization", status:"discussion", size:null, use:2, group:"storage", oq:3, note:"Internal layout change, low direct user value. Revisit now the classes layout is settled."},
+  {n:19, name:"Per-Class 'Should/Shouldn't Be Here' Review", status:"discussion", size:"M", prio:"low", use:2, group:"storage", note:"excludedFiles successor — per-class triage/dismiss. Design idea, post file-first."},
+  {n:20, name:"File-Based Routing", status:"discussion", size:null, use:3, group:"storage", note:"Enabler — shareable/bookmarkable URLs + unblocks clean 'go-to-file' (26) and mobile (29). Partly shipped (?record=)."},
+];
+
+const GROUPS = [
+  {k:"npx",          t:"npx-package vision cluster", b:"Items 30·31·32·33 (+7) — run media-manager as an npx package inside a host repo."},
+  {k:"kinds",        t:"Media kinds & preview",      b:"Expand beyond images — markdown, pdf, video/gif, docx."},
+  {k:"fields",       t:"Data model & fields",        b:"Field types, value editors, globals parity — the relation edge is the high-leverage one."},
+  {k:"grid",         t:"Grid & display",             b:"What each tile shows; sorting, filtering, verbose mode."},
+  {k:"assets",       t:"Asset pipeline & deps",      b:"Thumbnails, masonry, the sharp decision — design the resize pipeline once."},
+  {k:"storage",      t:"Storage & routing — design", b:"Decisions to make before code: layout, routing, triage."},
+  {k:"bulk",         t:"Bulk & schema utilities",    b:"Mostly shipped — small remainders to close out."},
+  {k:"integrations", t:"Integrations",               b:"External services — kept opt-in and out of the core."},
+  {k:"misc",         t:"Misc fixes & polish",        b:"Small, self-contained quality-of-life items."},
+];
+
+const STATUS_LABEL = {done:"Done", verify:"Verify", active:"Active", discussion:"Discussion", folded:"Folded"};
+const filters = {status:"all", size:"all", view:"cluster", flags:new Set()};
+let searchTerm = "";
+
+function statusLabel(it){ return it.folded ? "Folded → "+it.folded : STATUS_LABEL[it.status]; }
+
+function useBadge(u){
+  if(u===0) return `<span class="b use u0" title="no remaining value (done/folded)">Use —</span>`;
+  return `<span class="b use u${u}" title="usefulness ${u}/5">${'●'.repeat(u)}${'○'.repeat(5-u)} ${u}/5</span>`;
+}
+
+function cardHTML(it, rank){
+  const badges = [];
+  badges.push(useBadge(it.use));
+  badges.push(`<span class="b status s-${it.status}">${statusLabel(it)}</span>`);
+  if(it.size) badges.push(`<span class="b size-${it.size}">${it.size}</span>`);
+  if(it.prio==="high") badges.push(`<span class="b prio-high">High prio</span>`);
+  if(it.oq) badges.push(`<span class="b oq">${it.oq} open Q</span>`);
+  if(it.stale) badges.push(`<span class="b stale">stale refs</span>`);
+  if(it.deps) it.deps.forEach(d=>badges.push(`<span class="b dep">needs #${d}</span>`));
+  const rankTag = rank ? `<span class="rank" title="usefulness rank">#${rank}</span>` : '';
+  return `<div class="card s-${it.status}" data-status="${it.status}" data-size="${it.size||''}"
+       data-oq="${it.oq?1:0}" data-stale="${it.stale?1:0}" data-high="${it.prio==='high'?1:0}"
+       data-text="${(it.name+' '+(it.note||'')).toLowerCase().replace(/"/g,'')}">
+    <div class="ttl">${rankTag}<span class="num">${it.n}</span><span class="name">${it.name}</span></div>
+    <div class="badges">${badges.join('')}</div>
+    <p class="note">${it.note||''}</p>
+  </div>`;
+}
+
+function render(){
+  const board = document.getElementById('board');
+  if(filters.view==="ranked"){
+    const ranked = [...ITEMS].sort((a,b)=>
+      (b.use-a.use) || (a.n-b.n)
+    );
+    board.innerHTML = `<div class="group" data-group="ranked">
+      <h2>Ranked by usefulness <span class="cnt">${ranked.length}</span><span class="blurb">All items, highest product leverage first. ● = usefulness points (out of 5).</span></h2>
+      <div class="cards">${ranked.map((it,i)=>cardHTML(it, i+1)).join('')}</div>
+    </div>`;
+  } else {
+    board.innerHTML = GROUPS.map(g=>{
+      const items = ITEMS.filter(i=>i.group===g.k).sort((a,b)=>{
+        const ord={active:0,verify:1,discussion:2,done:3};
+        return (ord[a.status]-ord[b.status]) || (b.use-a.use) || (a.n-b.n);
+      });
+      if(!items.length) return '';
+      return `<div class="group" data-group="${g.k}">
+        <h2>${g.t} <span class="cnt">${items.length}</span><span class="blurb">${g.b}</span></h2>
+        <div class="cards">${items.map(it=>cardHTML(it)).join('')}</div>
+      </div>`;
+    }).join('');
+  }
+  applyFilters();
+  renderStats();
+}
+
+function applyFilters(){
+  document.querySelectorAll('.card').forEach(c=>{
+    let show = true;
+    if(filters.status!=="all" && c.dataset.status!==filters.status) show=false;
+    if(filters.size!=="all" && c.dataset.size!==filters.size) show=false;
+    if(filters.flags.has("oq") && c.dataset.oq!=="1") show=false;
+    if(filters.flags.has("stale") && c.dataset.stale!=="1") show=false;
+    if(filters.flags.has("high") && c.dataset.high!=="1") show=false;
+    if(searchTerm && !c.dataset.text.includes(searchTerm)) show=false;
+    c.classList.toggle('hidden', !show);
+  });
+  document.querySelectorAll('.group').forEach(g=>{
+    const any = g.querySelectorAll('.card:not(.hidden)').length;
+    g.classList.toggle('hidden', any===0);
+    const cnt = g.querySelector('.cnt'); if(cnt) cnt.textContent = any;
+  });
+}
+
+function renderStats(){
+  const c = {active:0, verify:0, discussion:0, done:0, oq:0, stale:0, S:0, M:0, L:0};
+  ITEMS.forEach(i=>{
+    c[i.status]++;
+    if(i.oq) c.oq++;
+    if(i.stale) c.stale++;
+    if(i.size) c[i.size]++;
+  });
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="n" style="color:var(--active)">${c.active}</div><div class="k">Active</div></div>
+    <div class="stat"><div class="n" style="color:var(--verify)">${c.verify}</div><div class="k">Verify / likely done</div></div>
+    <div class="stat"><div class="n" style="color:var(--discussion)">${c.discussion}</div><div class="k">Discussion</div></div>
+    <div class="stat"><div class="n" style="color:var(--done)">${c.done}</div><div class="k">Done / folded</div></div>
+    <div class="stat"><div class="n" style="color:var(--warn)">${c.oq}</div><div class="k">Have open Qs</div></div>
+    <div class="stat"><div class="n" style="color:#ff9a9a">${c.stale}</div><div class="k">Stale refs</div></div>
+    <div class="stat"><div class="n">${c.S}/${c.M}/${c.L}</div><div class="k">S / M / L</div></div>`;
+}
+
+document.querySelectorAll('.chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    const f = chip.dataset.f, v = chip.dataset.v;
+    if(f==="flag"){
+      chip.classList.toggle('active');
+      if(filters.flags.has(v)) filters.flags.delete(v); else filters.flags.add(v);
+      applyFilters();
+    } else {
+      filters[f] = v;
+      chip.parentElement.querySelectorAll('.chip').forEach(s=>s.classList.remove('active'));
+      chip.classList.add('active');
+      if(f==="view") render(); else applyFilters();
+    }
+  });
+});
+document.getElementById('search').addEventListener('input', e=>{
+  searchTerm = e.target.value.toLowerCase().trim();
+  applyFilters();
+});
+
+render();
+</script>
+</body>
+</html>

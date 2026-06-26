@@ -5,7 +5,8 @@
 	import { apiListClasses } from '$lib/api/files.js';
 	import { apiListMediaTypes, type MediaTypeSummary } from '$lib/api/client.js';
 	import type { ClassSummary } from '$lib/core/types.js';
-	import { Files, Layers, SlidersHorizontal, Home, Tag, FileText } from 'lucide-svelte';
+	import EntityIcon from '$lib/components/EntityIcon.svelte';
+	import { Files, Layers, SlidersHorizontal, Home } from 'lucide-svelte';
 
 	/**
 	 * The global **⌘K command palette** — a cross-sub-app quick switcher mounted once in the root layout.
@@ -85,7 +86,7 @@
 						value="class {c.displayName}"
 						onSelect={() => run(`/files?class=${encodeURIComponent(c.id)}`)}
 					>
-						<Tag class="size-4" />
+						<EntityIcon name={c.icon} fallback="tag" />
 						<span>{c.displayName}</span>
 					</Command.Item>
 				{/each}
@@ -100,7 +101,7 @@
 						value="record type {t.displayName}"
 						onSelect={() => run(`/media?type=${encodeURIComponent(t.id)}`)}
 					>
-						<FileText class="size-4" />
+						<EntityIcon name={t.icon} fallback="file-text" />
 						<span>{t.displayName}</span>
 					</Command.Item>
 				{/each}

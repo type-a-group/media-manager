@@ -4,7 +4,8 @@
 	},
 	"config": {
 		"displayName": "Documents",
-		"displayField": "description"
+		"displayField": "description",
+		"icon": "file-text"
 	},
 	"records": {
 		"57ac8e2e-20f8-4a7f-acf4-394e48c6ad75": {

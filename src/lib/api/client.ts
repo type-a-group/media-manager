@@ -14,7 +14,9 @@ import { z } from 'zod';
 export const MediaTypeSummarySchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
-	kind: z.enum(['images', 'json', 'generic', 'blob_store'])
+	kind: z.enum(['images', 'json', 'generic', 'blob_store']),
+	/** Per-type icon id (see `core/icons.ts`); absent ⇒ generic fallback in the rail/palette. */
+	icon: z.string().optional()
 });
 export type MediaTypeSummary = z.infer<typeof MediaTypeSummarySchema>;
 
@@ -161,14 +163,15 @@ export async function apiRenameMediaType(
 export async function apiGetTypeSettings(
 	typeId: string,
 	fetchFn: typeof fetch = fetch
-): Promise<{ displayName: string; displayField: string; subtitleField: string }> {
+): Promise<{ displayName: string; displayField: string; subtitleField: string; icon: string }> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`);
 	await assertOk(res, 'Failed to read type settings');
 	const data = await res.json();
 	return {
 		displayName: typeof data.displayName === 'string' ? data.displayName : typeId,
 		displayField: typeof data.displayField === 'string' ? data.displayField : '',
-		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : ''
+		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : '',
+		icon: typeof data.icon === 'string' ? data.icon : ''
 	};
 }
 
@@ -178,9 +181,9 @@ export async function apiGetTypeSettings(
  */
 export async function apiUpdateTypeSettings(
 	typeId: string,
-	patch: { displayName?: string; displayField?: string; subtitleField?: string },
+	patch: { displayName?: string; displayField?: string; subtitleField?: string; icon?: string },
 	fetchFn: typeof fetch = fetch
-): Promise<{ displayName: string; displayField: string; subtitleField: string }> {
+): Promise<{ displayName: string; displayField: string; subtitleField: string; icon: string }> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -191,7 +194,8 @@ export async function apiUpdateTypeSettings(
 	return {
 		displayName: typeof data.displayName === 'string' ? data.displayName : typeId,
 		displayField: typeof data.displayField === 'string' ? data.displayField : '',
-		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : ''
+		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : '',
+		icon: typeof data.icon === 'string' ? data.icon : ''
 	};
 }
 

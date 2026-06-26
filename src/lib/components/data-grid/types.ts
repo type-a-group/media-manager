@@ -13,6 +13,10 @@ export interface GridChip {
 	label: string;
 	/** `muted` renders a low-emphasis hint (e.g. "unclassified"); defaults to a solid secondary chip. */
 	tone?: 'default' | 'muted';
+	/** Optional leading icon — a stored {@link IconId}; rendered via `EntityIcon` (e.g. a class icon). */
+	icon?: string;
+	/** Generic glyph used when `icon` is missing/unknown (required to render any icon at all). */
+	iconFallback?: import('$lib/core/icons.js').IconId;
 }
 
 /** One tile in the grid. Carries only what a tile renders — no native row fields survive here. */

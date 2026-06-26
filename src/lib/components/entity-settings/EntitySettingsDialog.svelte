@@ -6,7 +6,11 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import SchemaEditorBody from '$lib/components/schema-editor/SchemaEditorBody.svelte';
+	import IconPicker from '$lib/components/IconPicker.svelte';
+	import { Check, Loader2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
+	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
+	import type { IconId } from '$lib/core/icons.js';
 	import type { EntitySettingsAdapter, EntityGeneralConfig } from './types.js';
 
 	/**
@@ -21,7 +25,9 @@
 	 * @param adapter - Data layer (load/save general config, schema adapter, delete).
 	 * @param name - Current display name (for the title; the General tab can rename it).
 	 * @param open - Bindable dialog open state.
-	 * @param onchanged - Called after a save / schema mutation (host refreshes names/counts/list).
+	 * @param onchanged - Called after a (debounced) autosave / schema mutation (host refreshes
+	 *   names/counts/list). The General tab has no Save button — edits persist on a ~600ms debounce and
+	 *   on close, mirroring the editor-panel autosave policy ({@link debouncedAutosave}).
 	 * @param ondeleted - Called after the entity is deleted (host clears selection + reloads).
 	 */
 	let {
@@ -43,14 +49,30 @@
 
 	let loading = $state(false);
 	let saving = $state(false);
+	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let deleting = $state(false);
 	let confirmDeleteOpen = $state(false);
 
 	let displayName = $state('');
+	let icon = $state('');
 	let titleBy = $state('');
 	let subtitleBy = $state('');
 	let groupBy = $state('');
 	let fields = $state<{ key: string; label: string }[]>([]);
+
+	/** JSON snapshot of the last persisted General-tab values (the autosave baseline). */
+	let savedSnapshot = $state('');
+
+	/** Live JSON snapshot of the General-tab form (name trimmed so trailing space isn't "dirty"). */
+	const snapshot = $derived(
+		JSON.stringify({ displayName: displayName.trim(), icon, titleBy, subtitleBy, groupBy })
+	);
+
+	// Dirty only when loaded, the name is non-empty (we never autosave a blank name), and the snapshot
+	// has drifted from the last save. This is the sole signal driving the debounced autosave.
+	const isDirty = $derived(!loading && displayName.trim() !== '' && snapshot !== savedSnapshot);
+
+	const autosave = debouncedAutosave({ isDirty: () => isDirty, save: saveGeneral });
 
 	const titleByLabel = $derived(
 		titleBy ? (fields.find((f) => f.key === titleBy)?.label ?? titleBy) : 'Default'
@@ -62,15 +84,21 @@
 		groupBy ? (fields.find((f) => f.key === groupBy)?.label ?? groupBy) : 'None'
 	);
 
+	/** Generic glyph for this entity kind when no icon is set (classes ⇒ tag, record types ⇒ doc). */
+	const fallbackIcon: IconId = $derived(adapter.noun === 'class' ? 'tag' : 'file-text');
+
 	async function load() {
 		loading = true;
+		saveStatus = 'idle';
 		try {
 			const cfg: EntityGeneralConfig = await adapter.load();
 			displayName = cfg.displayName;
+			icon = cfg.icon;
 			titleBy = cfg.titleBy;
 			subtitleBy = cfg.subtitleBy;
 			groupBy = cfg.groupBy;
 			fields = cfg.fields;
+			savedSnapshot = snapshot;
 		} catch (e) {
 			console.error(e);
 			toast.error(`Failed to load ${adapter.noun} settings`);
@@ -79,24 +107,33 @@
 		}
 	}
 
-	// (Re)load whenever the dialog opens; reset to the General tab each time.
+	// (Re)load whenever the dialog opens (reset to the General tab); flush any pending edit on close so
+	// nothing is lost if the user closes inside the debounce window.
 	$effect(() => {
 		if (open) {
 			tab = 'general';
 			load();
+		} else {
+			void autosave.flush();
 		}
 	});
 
+	/** Persist the General tab if dirty. Called by the debounced autosave and on close. */
 	async function saveGeneral() {
 		const trimmed = displayName.trim();
-		if (!trimmed) return toast.error('Display name is required');
+		// Never autosave a blank name; the snapshot is already up to date when nothing changed.
+		if (loading || saving || !trimmed || snapshot === savedSnapshot) return;
+		const committed = snapshot;
 		saving = true;
+		saveStatus = 'saving';
 		try {
-			await adapter.save({ displayName: trimmed, titleBy, subtitleBy, groupBy });
-			toast.success('Settings saved');
+			await adapter.save({ displayName: trimmed, icon, titleBy, subtitleBy, groupBy });
+			savedSnapshot = committed;
+			saveStatus = 'saved';
 			onchanged?.();
 		} catch (e) {
 			console.error(e);
+			saveStatus = 'error';
 			toast.error('Failed to save settings');
 		} finally {
 			saving = false;
@@ -107,6 +144,9 @@
 		deleting = true;
 		try {
 			await adapter.remove();
+			// Drop any pending autosave and mark clean so closing doesn't flush a write to the deleted entity.
+			autosave.cancel();
+			savedSnapshot = snapshot;
 			toast.success(`Deleted ${adapter.noun} “${name}”`);
 			confirmDeleteOpen = false;
 			open = false;
@@ -166,9 +206,20 @@
 				<p class="py-4 italic text-muted-foreground">Loading…</p>
 			{:else if tab === 'general'}
 				<div class="flex flex-col gap-4 py-2">
-					<div class="flex flex-col gap-2">
-						<Label for="entity-display-name">Display name</Label>
-						<Input id="entity-display-name" bind:value={displayName} placeholder="Name" />
+					<div class="flex items-end gap-3">
+						<div class="flex flex-col gap-2">
+							<Label>Icon</Label>
+							<IconPicker
+								value={icon}
+								fallback={fallbackIcon}
+								onSelect={(id) => (icon = id ?? '')}
+								label="Choose {adapter.noun} icon"
+							/>
+						</div>
+						<div class="flex flex-1 flex-col gap-2">
+							<Label for="entity-display-name">Display name</Label>
+							<Input id="entity-display-name" bind:value={displayName} placeholder="Name" />
+						</div>
 					</div>
 
 					<div class="flex flex-col gap-2">
@@ -224,8 +275,14 @@
 						</div>
 					{/if}
 
-					<div class="flex justify-end">
-						<Button onclick={saveGeneral} disabled={saving}>Save</Button>
+					<div class="flex h-4 justify-end text-xs text-muted-foreground">
+						{#if saveStatus === 'saving'}
+							<span><Loader2 class="inline size-3 animate-spin" /> Saving…</span>
+						{:else if saveStatus === 'saved' && !isDirty}
+							<span><Check class="inline size-3 text-green-600" /> Saved</span>
+						{:else if saveStatus === 'error'}
+							<span class="text-destructive">Save failed</span>
+						{/if}
 					</div>
 				</div>
 			{:else if tab === 'fields'}
@@ -251,10 +308,6 @@
 				</div>
 			{/if}
 		</div>
-
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (open = false)}>Close</Button>
-		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 

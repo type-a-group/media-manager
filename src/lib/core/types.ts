@@ -252,7 +252,9 @@ export type HealSummary = z.infer<typeof HealSummarySchema>;
 export const ClassConfigSchema = z.object({
 	displayName: z.string().default(''),
 	gridGroupByField: z.string().optional(),
-	displayField: z.string().optional()
+	displayField: z.string().optional(),
+	/** Optional per-class icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
+	icon: z.string().optional()
 });
 export type ClassConfig = z.infer<typeof ClassConfigSchema>;
 
@@ -275,7 +277,9 @@ export type ClassRecord = JsonRecord;
 export const ClassSummarySchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
-	count: z.number().default(0)
+	count: z.number().default(0),
+	/** Per-class icon id (see `core/icons.ts`); absent ⇒ generic fallback in the rail/header/palette. */
+	icon: z.string().optional()
 });
 export type ClassSummary = z.infer<typeof ClassSummarySchema>;
 

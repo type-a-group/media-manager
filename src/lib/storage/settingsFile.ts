@@ -36,6 +36,8 @@ export interface MediaTypeSettingsFile {
 	dataFileName?: string;
 	displayField?: string;
 	subtitleField?: string;
+	/** Optional per-type icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
+	icon?: string;
 }
 
 /**
@@ -62,7 +64,8 @@ export function readMediaTypeSettingsFileSync(baseDir: string): MediaTypeSetting
 			dataFileName:
 				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON,
 			displayField: typeof parsed.displayField === 'string' ? parsed.displayField : undefined,
-			subtitleField: typeof parsed.subtitleField === 'string' ? parsed.subtitleField : undefined
+			subtitleField: typeof parsed.subtitleField === 'string' ? parsed.subtitleField : undefined,
+			icon: typeof parsed.icon === 'string' ? parsed.icon : undefined
 		};
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException;
@@ -90,7 +93,8 @@ export async function writeMediaTypeSettingsFile(
 				schema: patch.schema ?? {},
 				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON,
 				displayField: patch.displayField,
-				subtitleField: patch.subtitleField
+				subtitleField: patch.subtitleField,
+				icon: patch.icon
 			};
 	const settingsPath = path.join(baseDir, 'settings.json');
 	await fs.mkdir(path.dirname(settingsPath), { recursive: true });

@@ -22,6 +22,8 @@ export interface MediaTypeSummary {
 	id: string;
 	displayName: string;
 	kind: MediaTypeKind;
+	/** Per-type icon id (see `core/icons.ts`); absent ⇒ generic fallback in the rail/palette. */
+	icon?: string;
 }
 
 /** List all valid top-level (`json`) media types with display name and kind. */
@@ -32,7 +34,12 @@ export function listMediaTypes(): MediaTypeSummary[] {
 	for (const id of ids) {
 		const settings = readMediaTypeSettingsFileSync(path.join(rootDir, id));
 		if (!settings) continue;
-		result.push({ id, displayName: settings.displayName ?? id, kind: settings.kind });
+		result.push({
+			id,
+			displayName: settings.displayName ?? id,
+			kind: settings.kind,
+			icon: settings.icon
+		});
 	}
 	return result;
 }

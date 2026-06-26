@@ -7,7 +7,9 @@ const ConfigPatchSchema = z.object({
 	displayName: z.string().min(1).max(256).optional(),
 	gridGroupByField: z.string().optional(),
 	displayField: z.string().optional(),
-	gridSize: z.enum(['small', 'medium', 'large']).optional()
+	gridSize: z.enum(['small', 'medium', 'large']).optional(),
+	// Per-class icon id (a curated Lucide id; '' resolves to the generic fallback when rendered).
+	icon: z.string().max(64).optional()
 });
 
 /** GET: A class's schema + config (the editor/grid bootstrap). */

@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { FileText, TriangleAlert } from 'lucide-svelte';
+	import EntityIcon from '$lib/components/EntityIcon.svelte';
 	import { gridColMin, type GridItem, type GridConfig, type GridCallbacks } from './types.js';
 
 	/**
@@ -99,9 +100,14 @@
 							{#if chip.tone === 'muted'}
 								<span class="text-[10px] text-muted-foreground">{chip.label}</span>
 							{:else}
-								<span class="rounded bg-secondary px-1 text-[10px] text-secondary-foreground"
-									>{chip.label}</span
+								<span
+									class="inline-flex items-center gap-0.5 rounded bg-secondary px-1 text-[10px] text-secondary-foreground"
 								>
+									{#if chip.iconFallback}
+										<EntityIcon name={chip.icon} fallback={chip.iconFallback} class="size-2.5" />
+									{/if}
+									{chip.label}
+								</span>
 							{/if}
 						{/each}
 						{#if item.extraChips}

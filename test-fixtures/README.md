@@ -3,15 +3,15 @@
 A **pristine, committed sample data root** in the **file-first layout**, so all storage/UI
 code paths can be exercised:
 
-| Path                           | What                                                                                      |
-| ------------------------------ | ----------------------------------------------------------------------------------------- |
-| `media/files/`                 | The global blob dir: three PNGs + one `.txt`                                              |
-| `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                          |
-| `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken) |
-| `media/classes/documents.json` | Class with the `.txt` as a member (any file type)                                         |
-| `media/settings.json`          | Media-wide prefs (class order, grid size)                                                 |
-| `notes/`                       | `json` type; two records; `attachment` **file** field (one valid, one broken)             |
-| `globals/`                     | The reserved `json` singleton                                                             |
+| Path                           | What                                                                                                             |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `media/files/`                 | The global blob dir: three PNGs + one `.txt`                                                                     |
+| `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                                                 |
+| `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken); `config.icon: image`  |
+| `media/classes/documents.json` | Class with the `.txt` as a member (any file type); `config.icon: file-text`                                      |
+| `media/settings.json`          | Media-wide prefs (class order, grid size)                                                                        |
+| `notes/`                       | `json` type; two records; `attachment` **file** field (one valid, one broken); `settings.json` `icon: newspaper` |
+| `globals/`                     | The reserved `json` singleton                                                                                    |
 
 Every blob lives in `media/files/` (`getGlobalFilesDir()`) and is registered in
 `media/manifest.json` with a stable id; a class is a member-keyed metadata table

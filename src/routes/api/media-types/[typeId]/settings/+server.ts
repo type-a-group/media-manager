@@ -13,7 +13,9 @@ const SettingsPatchSchema = z.object({
 	// The "title by" field for the Records Explorer list. Empty string clears it (back to default).
 	displayField: z.string().max(256).optional(),
 	// The optional "subtitle by" field. Empty string clears it (no subtitle line).
-	subtitleField: z.string().max(256).optional()
+	subtitleField: z.string().max(256).optional(),
+	// Per-type icon id (a curated Lucide id). Empty string clears it (back to the generic fallback).
+	icon: z.string().max(64).optional()
 });
 
 /** GET: Current settings for this `json` media type. */
@@ -29,7 +31,8 @@ export const GET: RequestHandler = async ({ params }) => {
 			kind: settings.kind,
 			dataFileName: settings.dataFileName,
 			displayField: settings.displayField ?? '',
-			subtitleField: settings.subtitleField ?? ''
+			subtitleField: settings.subtitleField ?? '',
+			icon: settings.icon ?? ''
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
@@ -63,12 +66,15 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		// Empty string clears the subtitle field; any other value persists it.
 		if (parsed.data.subtitleField !== undefined)
 			patch.subtitleField = parsed.data.subtitleField || undefined;
+		// Empty string clears the icon (back to the generic fallback); any other value persists it.
+		if (parsed.data.icon !== undefined) patch.icon = parsed.data.icon || undefined;
 		const updated = await writeMediaTypeSettingsFile(paths.baseDir, patch as never);
 		return json({
 			displayName: updated.displayName,
 			kind: updated.kind,
 			displayField: updated.displayField ?? '',
-			subtitleField: updated.subtitleField ?? ''
+			subtitleField: updated.subtitleField ?? '',
+			icon: updated.icon ?? ''
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>media-manager — npx package & host integration vision</title>
+		<title>media-manager — npx package &amp; host integration vision</title>
 		<style>
 			:root {
 				--bg: #ffffff;
@@ -59,6 +59,14 @@
 				max-width: 78ch;
 				margin: 0 0 8px;
 			}
+			.stamp {
+				font-size: 12px;
+				color: var(--muted);
+				margin: 0 0 6px;
+			}
+			.stamp b {
+				color: var(--fg);
+			}
 			code,
 			.mono {
 				font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -85,6 +93,10 @@
 			.tag.warn {
 				background: var(--warn-bg);
 				color: var(--warn);
+			}
+			.tag.muted {
+				background: var(--muted-bg);
+				color: var(--muted);
 			}
 			.cols {
 				display: grid;
@@ -166,6 +178,9 @@
 				margin-bottom: 6px;
 				background: var(--bg);
 			}
+			.chain li.dim {
+				opacity: 0.62;
+			}
 			.chain li::before {
 				counter-increment: step;
 				content: counter(step);
@@ -193,6 +208,8 @@
 				line-height: 1.5;
 			}
 			.tree {
+				margin: 0;
+				color: var(--fg);
 				background: var(--muted-bg);
 				border: 1px solid var(--border);
 				border-radius: 8px;
@@ -200,7 +217,11 @@
 				white-space: pre;
 				font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 				font-size: 13px;
+				line-height: 1.7;
 				overflow-x: auto;
+			}
+			.tree .c {
+				color: var(--muted);
 			}
 			.callout {
 				border-left: 3px solid var(--warn);
@@ -210,24 +231,143 @@
 				margin-top: 12px;
 				font-size: 14px;
 			}
+			.callout.ok {
+				border-left-color: var(--ok);
+				background: var(--ok-bg);
+			}
+			table.verbs {
+				width: 100%;
+				border-collapse: collapse;
+				margin-top: 8px;
+				font-size: 14px;
+			}
+			table.verbs th,
+			table.verbs td {
+				text-align: left;
+				padding: 8px 10px;
+				border-bottom: 1px solid var(--border);
+				vertical-align: top;
+			}
+			table.verbs th {
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				color: var(--muted);
+			}
+			table.verbs td:first-child {
+				white-space: nowrap;
+			}
+			.road {
+				list-style: none;
+				counter-reset: road;
+				margin: 8px 0 0;
+				padding: 0;
+				display: grid;
+				gap: 8px;
+			}
+			.road li {
+				position: relative;
+				padding: 12px 14px 12px 46px;
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				background: var(--bg);
+			}
+			.road li::before {
+				counter-increment: road;
+				content: counter(road);
+				position: absolute;
+				left: 12px;
+				top: 12px;
+				width: 22px;
+				height: 22px;
+				border-radius: 6px;
+				background: var(--accent);
+				color: #fff;
+				font-size: 13px;
+				font-weight: 700;
+				display: grid;
+				place-items: center;
+			}
+			.road li.later::before {
+				background: var(--muted);
+			}
+			.road b {
+				display: block;
+				margin-bottom: 2px;
+			}
+			.road small {
+				color: var(--muted);
+			}
 			.footer {
-				margin-top: 40px;
+				margin-top: 44px;
 				color: var(--muted);
 				font-size: 13px;
 				border-top: 1px solid var(--border);
 				padding-top: 14px;
+			}
+			@media (max-width: 720px) {
+				.cols {
+					grid-template-columns: 1fr;
+				}
 			}
 		</style>
 	</head>
 	<body>
 		<div class="wrap">
 			<h1>media-manager as an npx package</h1>
-			<p class="lede">
-				Vision diagram — run <code>npx media-manager</code> inside a host repo (e.g.
-				<code>nicb.at</code>) and have it find the right folder, plus a read-only path for the host
-				build to consume the on-disk format. Companion to
-				<code>docs/plans/npx-package-vision.md</code>. <strong>No code yet.</strong>
+			<p class="stamp">
+				Refined <b>2026-06-22</b> · companion to <code>docs/plans/npx-package-vision.md</code> ·
+				<b>no code yet</b>
 			</p>
+			<p class="lede">
+				Run <code>npx media-manager</code> inside a host repo (e.g. <code>nicb.at</code>) and have
+				it find the right folder with zero config, plus a read-only path for the host build to
+				consume the on-disk format. This pass is grounded in a read of the current code — two of the
+				original "open questions" turned out smaller than assumed.
+			</p>
+
+			<h2>Decisions locked this pass</h2>
+			<div class="cols">
+				<div class="card ok">
+					<h3><span class="tag b">Decided</span> Editor (Mode A)</h3>
+					<ul>
+						<li>
+							<b>Quiet heal is mostly done.</b> <code>reconcile</code> already writes only
+							<code>if&nbsp;(changed)</code> — browsing committed data is zero-write. #1 shrinks to
+							<b>write-format stability</b>.
+						</li>
+						<li>
+							<b>Ephemeral port:</b> the <b>CLI picks a free port</b> (<code>net…listen(0)</code>),
+							passes it to the child, opens that exact URL. No <code>PORT=0</code>, no 2s race.
+						</li>
+						<li>
+							<b>Distribution:</b> local dep in nicb.at now; scoped publish / <code>npm link</code>
+							later.
+						</li>
+						<li><b>Config:</b> standalone <code>media-manager.config.json</code>, root only.</li>
+					</ul>
+				</div>
+				<div class="card">
+					<h3><span class="tag muted">Design-only</span> Reader (Mode B)</h3>
+					<ul>
+						<li>
+							<b>Build nothing yet</b> — refine the design until nicb.at's needs are concrete.
+						</li>
+						<li>
+							<b>Shape:</b> library-first (<code>media-manager/fs</code>); <code>export</code> JSON
+							is a thin wrapper over it.
+						</li>
+						<li>
+							<b>Blobs:</b> point the host static dir at <code>media/files/</code> (pattern 1);
+							copy-into-build deferred.
+						</li>
+						<li>
+							<b>Gating refactor:</b> thread an explicit root through the read paths — deliberately
+							not started.
+						</li>
+					</ul>
+				</div>
+			</div>
 
 			<h2>The two modes (don't conflate them)</h2>
 			<div class="cols">
@@ -237,7 +377,7 @@
 					<ul>
 						<li><b>Mutates</b> the root: heals manifest, can rename/strip blobs</li>
 						<li>Interactive curation of files &amp; metadata</li>
-						<li>Launching on committed data can produce git diffs</li>
+						<li>Real change → one minimal manifest diff (format-stable)</li>
 					</ul>
 				</div>
 				<div class="card ok">
@@ -273,7 +413,103 @@
 				</li>
 			</ol>
 
-			<h2>Mode B — host reads the format at build time</h2>
+			<h2>CLI verbs (positional form kept for back-compat)</h2>
+			<table class="verbs">
+				<thead>
+					<tr>
+						<th>Command</th>
+						<th>Purpose</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><code>media-manager</code></td>
+						<td>Discover root → <b>serve</b> (the headline)</td>
+						<td><span class="tag a">near-term</span></td>
+					</tr>
+					<tr>
+						<td><code>serve [root]</code></td>
+						<td>Explicit serve (today's positional behavior)</td>
+						<td><span class="tag b">exists</span></td>
+					</tr>
+					<tr>
+						<td><code>init [root]</code></td>
+						<td>Scaffold an empty workspace (<code>media/</code>, manifest, settings)</td>
+						<td><span class="tag a">near-term</span></td>
+					</tr>
+					<tr>
+						<td><code>doctor [root]</code></td>
+						<td>
+							Validate / report <code>healed</code> &amp; <code>missing</code> without serving
+						</td>
+						<td><span class="tag muted">later</span></td>
+					</tr>
+					<tr>
+						<td><code>export …</code></td>
+						<td>Mode B — emit denormalized JSON snapshot</td>
+						<td><span class="tag muted">design-only</span></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<h2>#1 Quiet heal — already write-guarded</h2>
+			<div class="callout ok">
+				<b>Premise corrected:</b> <code>reconcile</code> (<code>manifest.ts</code>) writes only
+				<code>if&nbsp;(changed)</code>; so do <code>setClassMembership</code> /
+				<code>applyMembershipIndex</code>. Pure browsing of unchanged committed data is
+				<b>zero-write</b> today — there is no new quiet-heal code path to add.
+			</div>
+			<div class="cols" style="margin-top: 12px">
+				<div class="card">
+					<h3>Residual A — resync churn (CPU only)</h3>
+					<p class="sub">
+						The mtime-gated resync re-fires after every <code>git</code> checkout (git drops
+						mtimes), but recomputes membership and <b>skips the write when content matches</b>.
+						Wasted CPU, no diff.
+					</p>
+				</div>
+				<div class="card">
+					<h3>Residual B — format stability <span class="tag warn">the real task</span></h3>
+					<p class="sub">
+						A genuine change rewrites the whole <code>manifest.json</code>. Commit files in the
+						writer's exact byte-format so that one change is a minimal diff, not a whole-file
+						reformat.
+					</p>
+				</div>
+			</div>
+
+			<h2>#2 Ephemeral port — the CLI owns the port</h2>
+			<div class="cols">
+				<div class="card">
+					<h3>Today</h3>
+					<pre>
+// bin/media-manager.js
+env.PORT = '3000';        // fixed
+spawn(node, [build], { env });
+setTimeout(() => open(
+  `localhost:${PORT}`), 2000); // race</pre
+					>
+				</div>
+				<div class="card accent">
+					<h3>Target — CLI picks a free port</h3>
+					<pre>
+const port = await freePort();   // net…listen(0)
+env.PORT = String(port);
+spawn(node, [build], { env });
+open(`http://localhost:${port}`); // exact, no race</pre
+					>
+				</div>
+			</div>
+			<p class="sub" style="margin-top: 8px">
+				Deterministic, can't collide with the host dev server, and removes the 2-second open-the-
+				browser guess. Chosen over <code>PORT=0</code> (which would force reading the bound port
+				back out of the child's stdout).
+			</p>
+
+			<h2>
+				Mode B — host reads the format at build time <span class="tag muted">design-only</span>
+			</h2>
 			<div class="flow">
 				<div class="node">
 					<b>media/ workspace</b><small>manifest.json · files/ · classes/ · settings.json</small>
@@ -289,7 +525,7 @@
 			</div>
 			<div class="cols" style="margin-top: 16px">
 				<div class="card">
-					<h3>Library (Node hosts)</h3>
+					<h3>Library (the primitive)</h3>
 					<pre>
 import { openWorkspace } from 'media-manager/fs';
 
@@ -301,7 +537,7 @@ await ws.getGlobals();</pre
 					>
 				</div>
 				<div class="card">
-					<h3>Export (any host)</h3>
+					<h3>Export (thin wrapper)</h3>
 					<pre>
 media-manager export --class photos \
   --out photos.json
@@ -310,25 +546,61 @@ media-manager export --all \
   &gt; workspace.json</pre
 					>
 					<p class="sub" style="margin-top: 10px">
-						Denormalized snapshot → host reads with plain <code>JSON.parse</code>.
+						Just <code>openWorkspace(root).serialize()</code> piped to a file → any host reads it
+						with plain <code>JSON.parse</code>.
 					</p>
 				</div>
 			</div>
 			<div class="callout">
-				<b>Refactor that gates Mode B:</b> the storage layer resolves the root from
-				<code>getRootDir()</code> (the <code>MEDIA_MANAGER_ROOT</code> env global). A library API
-				must thread an <em>explicit</em> root instead of mutating <code>process.env</code>.
+				<b>Refactor that gates Mode B (deferred):</b> the storage layer resolves the root from
+				<code>getRootDir()</code> (the <code>MEDIA_MANAGER_ROOT</code> env global). Thread an
+				explicit <code>WorkspacePaths</code> struct through the read paths; keep env-reading
+				<code>getRootDir()</code> as the Mode-A default factory so the server is untouched.
 			</div>
+
+			<h2>Sequencing</h2>
+			<ol class="road">
+				<li>
+					<b>Ephemeral port</b
+					><small>CLI-only, tiny, self-contained. Ships the "no port config" win first.</small>
+				</li>
+				<li>
+					<b>Write-format stability</b
+					><small
+						>Commit files in the writer's exact format → committed-data diffs disappear.</small
+					>
+				</li>
+				<li>
+					<b>Root-discovery chain + <code>media-manager.config.json</code> + local-dep wiring</b
+					><small>The headline Mode A experience inside nicb.at.</small>
+				</li>
+				<li class="later">
+					<b>Mode B (deferred)</b
+					><small
+						>root-threading (#5) → library (<code>media-manager/fs</code>) → export wrapper →
+						blob-serving. Design-only until nicb.at's needs are concrete.</small
+					>
+				</li>
+			</ol>
 
 			<h2>North-star layout in nicb.at</h2>
-			<div class="tree">
-				~/Projects/nicb.at/ ├─ media-manager.config.json { root: "src/assets/media_manager" } (port
-				is ephemeral) ├─ src/assets/media_manager/ the workspace (committed) │ └─
-				media/{manifest.json, files/, classes/, settings.json} └─ src/lib/media.ts imports
-				media-manager/fs → renders at build
-			</div>
+			<!-- prettier-ignore -->
+			<pre class="tree">~/Projects/nicb.at/
+├─ media-manager.config.json          <span class="c"># { root: "src/assets/media_manager" } — no port (ephemeral)</span>
+├─ src/assets/media_manager/          <span class="c"># the workspace (committed to git)</span>
+│  └─ media/
+│     ├─ manifest.json
+│     ├─ files/
+│     ├─ classes/
+│     └─ settings.json
+└─ src/lib/media.ts                   <span class="c"># imports media-manager/fs → renders galleries at build</span></pre>
+			<p class="sub" style="margin-top: 10px">
+				<b>Curate:</b> <code>npx media-manager</code> from anywhere in the repo → editor opens on
+				the right folder. <b>Build:</b> the site reads the same files via the reader (Mode B,
+				later).
+			</p>
 
-			<h2>Packaging gotchas <span class="tag warn">measure first</span></h2>
+			<h2>Packaging gotchas <span class="tag warn">measure first — all deferred</span></h2>
 			<div class="cols">
 				<div class="card">
 					<h3>Install size</h3>
@@ -355,7 +627,7 @@ media-manager export --all \
 			</div>
 
 			<p class="footer">
-				media-manager · npx-package vision · diagram companion to
+				media-manager · npx-package vision · refined 2026-06-22 · companion to
 				<code>docs/plans/npx-package-vision.md</code>
 			</p>
 		</div>

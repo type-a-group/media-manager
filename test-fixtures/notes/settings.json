@@ -15,5 +15,6 @@
 	},
 	"dataFileName": "data.json",
 	"displayField": "title",
-	"subtitleField": "priority"
+	"subtitleField": "priority",
+	"icon": "newspaper"
 }

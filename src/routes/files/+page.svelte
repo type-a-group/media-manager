@@ -29,6 +29,7 @@
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { classSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
 	import DataGrid from '$lib/components/data-grid/DataGrid.svelte';
+	import EntityIcon from '$lib/components/EntityIcon.svelte';
 	import type { GridItem, GridConfig, GridCallbacks } from '$lib/components/data-grid/types.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
@@ -166,11 +167,13 @@
 		classes.find((c) => c.id === bulkClassId)?.displayName ?? 'Add to class…'
 	);
 
-	/** Breadcrumb trail: Home › Files › <solo class | All Files>. */
+	/** Breadcrumb trail: Home › Files › <solo class | All Files>. The solo class crumb shows its icon. */
 	const crumbs = $derived([
 		{ label: 'Home', href: '/' },
 		{ label: 'Files', href: '/files' },
-		{ label: soloClass ? classLabel(soloClass) : 'All Files' }
+		soloClass
+			? { label: classLabel(soloClass), icon: classIcon(soloClass), iconFallback: 'tag' as const }
+			: { label: 'All Files' }
 	]);
 
 	/** Load a class's catalog config (group-by default, grid size, schema keys) for the catalog view. */
@@ -250,6 +253,11 @@
 		return classes.find((c) => c.id === cid)?.displayName ?? cid;
 	}
 
+	/** Resolve a class id to its stored icon id (undefined ⇒ chip/header use the generic `tag` fallback). */
+	function classIcon(cid: string): string | undefined {
+		return classes.find((c) => c.id === cid)?.icon;
+	}
+
 	/** Group files by their server-provided `group_by_value` (solo-class field or cross-class field). */
 	function groupByFieldValue(): [string, FileItem[]][] {
 		const groups: Record<string, FileItem[]> = {};
@@ -309,7 +317,11 @@
 			chips:
 				f.classes.length === 0
 					? [{ label: 'unclassified', tone: 'muted' }]
-					: shown.map((cid) => ({ label: classLabel(cid) })),
+					: shown.map((cid) => ({
+							label: classLabel(cid),
+							icon: classIcon(cid),
+							iconFallback: 'tag' as const
+						})),
 			extraChips: f.classes.length > 3 ? f.classes.length - 3 : undefined,
 			warning: f.missing_file_fields?.length
 				? `Missing file reference: ${f.missing_file_fields.join(', ')}`
@@ -605,6 +617,11 @@
 							for={`cls-${c.id}`}
 							class="flex flex-1 cursor-pointer items-center gap-2 py-1 text-sm font-normal"
 						>
+							<EntityIcon
+								name={c.icon}
+								fallback="tag"
+								class="size-4 shrink-0 text-muted-foreground"
+							/>
 							<span class="flex-1 truncate">{c.displayName}</span>
 							<span class="text-xs text-muted-foreground">{c.count}</span>
 						</Label>
@@ -684,7 +701,7 @@
 										size="icon"
 										onclick={() => toggleClassFilter(c.id)}
 									>
-										<span class="text-xs font-semibold uppercase">{c.displayName.slice(0, 2)}</span>
+										<EntityIcon name={c.icon} fallback="tag" class="size-4" />
 									</Button>
 								{/snippet}
 							</Tooltip.Trigger>

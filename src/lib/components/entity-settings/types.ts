@@ -7,6 +7,8 @@ import type { SchemaEditorAdapter } from '../schema-editor/types.js';
  */
 export interface EntityGeneralConfig {
 	displayName: string;
+	/** Persisted icon id ('' = unset → generic fallback). A curated Lucide id (see `core/icons.ts`). */
+	icon: string;
 	/** Persisted "title by" field key ('' = default). */
 	titleBy: string;
 	/** Persisted "subtitle by" field key ('' = none). Only meaningful when {@link EntitySettingsAdapter.hasSubtitle}. */
@@ -28,8 +30,8 @@ export interface EntityGeneralConfig {
  *   Records keeps group-by as an ephemeral header control).
  * @param hasSubtitle - When true the General tab shows a persisted "subtitle by" select (Records only;
  *   the records list rows are text-first and can carry a secondary line).
- * @param load - Read current general config (name + title-by + subtitle-by + group-by + eligible fields).
- * @param save - Persist the general config (display name, title-by, subtitle-by, group-by).
+ * @param load - Read current general config (name + icon + title-by + subtitle-by + group-by + eligible fields).
+ * @param save - Persist the general config (display name, icon, title-by, subtitle-by, group-by).
  * @param schema - Data layer for the Fields tab (the shared {@link SchemaEditorBody}).
  * @param remove - Delete the entity.
  */
@@ -41,6 +43,7 @@ export interface EntitySettingsAdapter {
 	load: () => Promise<EntityGeneralConfig>;
 	save: (patch: {
 		displayName: string;
+		icon: string;
 		titleBy: string;
 		subtitleBy: string;
 		groupBy: string;

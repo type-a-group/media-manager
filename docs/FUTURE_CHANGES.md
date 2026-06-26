@@ -1,662 +1,686 @@
 # Future Changes
 
-Planned improvements and features that were identified during the codebase audit but deferred to later work.
+Non-committal backlog of deferred improvements identified during codebase audits. **This is not the shipped feature set** — that's [`FEATURES.md`](FEATURES.md). Items here are candidates, not commitments.
 
-> **Major in-flight design:** the **file-first "classes" redesign** — see [`FILE_FIRST_CLASSES.md`](FILE_FIRST_CLASSES.md). It is the umbrella for Items **18** (records reorg), **19** (per-class triage), and **20** (file-based routing), and informs Items **8** and **10**.
->
-> **npx-package vision cluster:** running media-manager as an npx package inside a host repo (e.g. `nicb.at`) — see [`plans/npx-package-vision.md`](plans/npx-package-vision.md) (+ diagram [`npx-package-vision.html`](npx-package-vision.html)). Umbrella for Items **30** (editor npx setup / zero-config discovery — **now also carries the publish mechanics folded from Item 27**), **31** (ephemeral port), **32** (quiet heal), and **33** (reader package, Mode B). Sequences with Item **7** (static export).
+> **🚀 1.0 release plan:** a committed subset of these items is scheduled for **1.0** — see [`plans/v1.0/README.md`](plans/v1.0/README.md) (per-feature briefs + the agile interview → HTML-plan → verification process). Committed: Items **8 · 9 · 10 · 3 · 5 · 12 · 13 · 34 · 15 · 18 · 19** and the npx sub-project (**30 · 31 · 32 · 33**). When one of those ships, retire it here as usual.
 
----
+> **How to read & maintain this file:** see the **"Managing FUTURE_CHANGES.md"** section in [`../CLAUDE.md`](../CLAUDE.md). The short version: items are grouped by **cluster** (not by number), every active item carries a machine-readable **frontmatter block**, item **numbers are immutable IDs** (never renumber — they're cross-referenced from `FEATURES.md` and the plan docs), and `status: ready` is a promise that an agent can pick it up with **zero open questions**.
 
-## 0. Make URL fields editable
+## Frontmatter legend
 
-## 1. File Field Picker UI — ✅ Shipped
+Each active item opens with a fenced `yaml` block:
 
-**Status**: **Shipped.** `file`-type fields render [`FilePicker.svelte`](../src/lib/components/FilePicker.svelte) in [`ImageEditorPane.svelte`](../src/lib/components/ImageEditorPane.svelte) and [`JsonEditorPane.svelte`](../src/lib/components/JsonEditorPane.svelte): a dialog over the global blob store with debounced search and image thumbnails, storing the chosen blob's `file_id`. The selected value shows an inline thumbnail (for images) + filename + open-in-new-tab link + clear, and can be re-picked. See the "File field picker" row in [`FEATURES.md`](FEATURES.md).
+```yaml
+status: ready # ready | blocked | discussion | shipped
+size: M # S (hours) | M (a day) | L (multi-day / design-heavy)
+usefulness: 3 # 1–5 — product leverage / value to the user
+priority: medium # high | medium | low
+files: [path, …] # current owning files (verified, not stale)
+depends_on: [] # item numbers that must land first
+open_questions: 0 # count of unresolved design decisions
+acceptance: # what "done" looks like — the agent's definition of success
+  - …
+```
 
----
+**The cardinal rule:** `status: ready` ⇔ `open_questions: 0`. The moment an item has an unresolved design decision it is `blocked` (engineering unknown) or `discussion` (product/scope unknown) — **never `ready`**. An agent should be safe to grab any `ready` item and finish it without coming back to ask.
 
-## 2. Missing File Indicators (API + UI) — ✅ Shipped
+## Cluster index
 
-**Status**: **Shipped.** A `file`-field value pointing at a blob that is absent from disk/manifest is flagged end-to-end. Detection helpers live in [`manifest.ts`](../src/lib/storage/manifest.ts) (`getAvailableFileIds`, `missingFileFields`, `missingFilesMap`); list endpoints (`listImages`/`listRecords`) return `missing_file_fields: string[]` per item, and record detail (both `getRecordById`) returns `_missing_files: Record<string, string>` (field key → expected filename). The grids ([`ImageViewGrid`](../src/lib/components/ImageViewGrid.svelte), [`JsonRecordGrid`](../src/lib/components/JsonRecordGrid.svelte)) show a subtle warning badge on affected cards, and the editor panes show an inline warning with **Clear** + re-pick. See the "Missing-file indicators" row in [`FEATURES.md`](FEATURES.md).
+| Cluster | Items | Theme |
+| --- | --- | --- |
+| [npx-package vision](#cluster-npx-package-vision) | 30 · 31 · 32 · 33 · 7 | Run media-manager as an npx package inside a host repo |
+| [Data model & fields](#cluster-data-model--fields) | 36 · 26 · 25 · 4 · 0 | Field types, value editors, globals parity |
+| [Media kinds & preview](#cluster-media-kinds--preview) | 23 · 21 · 24 · 14 | Expand beyond images — video/gif, pdf, docx, markdown |
+| [Grid & display](#cluster-grid--display) | 8 · 9 · 10 | What each tile shows; sorting, filtering, verbose mode |
+| [Asset pipeline & deps](#cluster-asset-pipeline--deps) | 15 · 34 · 35 | Thumbnails, masonry, the `sharp` decision |
+| [Bulk & schema utilities](#cluster-bulk--schema-utilities) | 3 · 5 | Mostly shipped — small remainders to close |
+| [Integrations](#cluster-integrations) | 37 · 11 | External services, kept opt-in and out of core |
+| [Storage & routing — design](#cluster-storage--routing--design) | 20 · 18 · 19 · 16 | Decisions to make before code |
+| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 12 · 13 · 29 | Small, self-contained quality-of-life |
+| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 | Archive — see `FEATURES.md` |
 
----
-
-## 3. Bulk Operations
-
-**Priority**: Low  
-**Context**: The multiselect system exists but has limited actions.
-
-### Potential features
-
-- Bulk-update a field across selected records
-- Bulk-delete selected records
-- Bulk-export selected records as JSON
-
----
-
-## 4. Schema Import/Export
-
-**Priority**: Low  
-**Context**: Media types have embedded schemas. Users may want to share or duplicate schemas.
-
-### What's needed
-
-- Export schema as standalone JSON
-- Import schema from JSON (merge or replace)
-- Clone schema from another media type
+> A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
 ---
 
-## 5. Data Validation & Repair
+## Cluster: npx-package vision
 
-**Priority**: Low  
-**Context**: Records may have orphaned keys (schema field deleted, value remains) or type mismatches.
+Running media-manager as an **npx package inside a host repo** (e.g. `nicb.at`, workspace at `src/assets/media_manager`). Full design: [`plans/npx-package-vision.md`](plans/npx-package-vision.md) (+ diagram [`npx-package-vision.html`](npx-package-vision.html)). Decisions locked 2026-06-20: **editor-first**, distribute as a **local dep** for now (publish later). Items 30/31/32 are the "safe to open committed data" trio.
 
-### What's needed
+### 30 · Editor npx Setup — Zero-Config Root Discovery (Mode A)
 
-- A "repair" action that scans all records and:
-  - Removes keys not in schema
-  - Coerces values to match field type
-  - Reports and optionally fixes issues
+```yaml
+status: blocked
+size: L
+usefulness: 4
+priority: medium
+files: [bin/media-manager.js, src/lib/storage/paths.ts]
+depends_on: []
+open_questions: 3
+acceptance:
+  - Bare `npx media-manager` from inside a host repo finds the workspace with zero config
+  - Root-resolution precedence chain implemented (arg → env → config file → convention auto-detect → friendly error)
+  - `media-manager.config.json` loader (parse/validate; resolve `root` relative to the config file, not cwd)
+  - CLI grows verbs (`serve` default, `init`, `doctor`) while keeping the bare/positional form
+```
 
----
+Today [`bin/media-manager.js`](../bin/media-manager.js) **requires** an explicit `<root-dir>` and errors without it. Goal: bare `npx media-manager` discovers the right folder. This is the "editor" half (Mode A — the server that _mutates_ the root), distinct from Item 33 (read-only reader). Distribute as a **local dep** (host `package.json` `file:../media-manager` or git URL) for now; publishing is a later phase (folds in former Item 27 — the npm `bin`/`files`/`engines` fields, prepublish build, scoped name `@nicbat/media-manager`, cross-platform native-dep audit of `exiftool-vendored`/`heic-convert`).
 
-## 6. Stable File IDs (decouple identity from filename) — ✅ Shipped
+**Open questions:** (1) precedence when both config file and env/arg present — arg/env should win, confirm + document; (2) auto-detect walks **up** the tree (monorepo-friendly) vs. probes `cwd` only; (3) `init` scaffolding — reuse the app's own first-launch healing for the empty workspace rather than hand-rolling.
 
-**Status**: **Shipped (Option 3).** Blobs are now identified by a stable, workspace-scoped id in a global manifest ([`files/manifest.json`](../src/lib/storage/manifest.ts)); a file-backed catalog row's `id` value **is** that manifest id, and the filename is resolved from the manifest at read time. Rename is an O(1) manifest update (the old `propagateFilenameRename` fan-out is gone), the `unlinked:` id scheme is gone (an unlinked file is a manifest id with no row; linking keeps the same id), `excludedFiles` and `file`-field values store ids, and list calls lazy-heal the manifest against disk (`healed: { added, missing }` + a toast). See [`STABLE_FILE_IDS.md`](STABLE_FILE_IDS.md) and the "Shared global blob store + manifest" section of [`FEATURES.md`](FEATURES.md).
+### 31 · Ephemeral Server Port + Auto-Open (drop the fixed PORT)
 
-### Decisions locked at implementation
+```yaml
+status: blocked
+size: M
+usefulness: 3
+priority: medium
+files: [bin/media-manager.js]
+depends_on: []
+open_questions: 2
+acceptance:
+  - Server binds an ephemeral port (port 0 → OS-assigned) and auto-opens the actually-bound URL
+  - `port`/`PORT` removed from the config surface + docs (keep an optional `--port`/`PORT` override)
+  - Auto-open fires on a readiness signal, not a fixed setTimeout guess
+```
 
-- **id = random UUID** (not a content hash); a `hash?` slot may be added later.
-- **Unified identity on `id` everywhere** (disk + API + selection + json). A file-backed row's `id` value is the blob's manifest id (shared across catalogs); a `json` row's `id` is record-local. They share the field name and differ only in uniqueness scope (documented on `ImageRecordSchema`). The per-row `id` value and stored `file_name` from the old layout were removed.
-  - *(Interim note: the first implementation keyed file-backed rows by a distinct `file_id` field; that was renamed to `id` for whole-system consistency. The migration handles both layouts, and `manifest.ts` / the `*FileId` helpers keep "file id" as the name for the manifest concept.)\*
-- **Migration is explicit-only** via `npm run upgrade-data -- <root> --apply` (Check 4); the app errors loudly on a row not in the current `id`-keyed shape rather than fabricating identity.
+A fixed `PORT=3000` collides with the host's dev server. The server itself is **mandatory** (real FS IO, `exiftool-vendored`, `heic-convert`, manifest locking — can't be a static page) but the fixed port isn't.
 
-### Follow-ups not in scope of the initial ship
+**Open questions / main spike:** does `@sveltejs/adapter-node` accept `PORT=0` and let us read back the bound port? If not, the CLI may need to pre-bind a probe socket (race-y) or parse the "listening on" stdout line. **Research this before building.** Second: auto-open timing once the bound port is known.
 
-- Content hashing for dedupe / duplicate detection (would change the name-based idempotency assumption — documented in [`manifest.ts`](../src/lib/storage/manifest.ts)).
-- Clearing embedded `file`-field references (not just whole rows) when a blob is deleted.
-- Centralized per-file metadata beyond `size`/`created_at` (tags, hash).
+### 32 · Quiet Heal — Persist Manifest Reconcile Only on Real Change
 
----
+```yaml
+status: blocked
+size: M
+usefulness: 4
+priority: medium
+files: [src/lib/storage/manifest.ts, src/lib/storage/manifest.test.ts]
+depends_on: []
+open_questions: 3
+acceptance:
+  - `reconcile` (and the membership-index resync) diff against on-disk state and skip the write when equivalent
+  - Browsing a clean, git-committed workspace produces zero `git status` churn
+  - `healed: { added, missing }` + the toast still fire for real changes
+  - Unit coverage asserts "no change ⇒ no write" and "real change ⇒ write + report"
+```
 
-## 7. Static Site Export (no runtime API for customers)
+Every list call lazy-heals the manifest ([`manifest.ts`](../src/lib/storage/manifest.ts) `reconcile`), so _just browsing_ a git-committed workspace can rewrite `media/manifest.json` (mtime/no-op churn) and dirty the tree. Chosen **over** a hard `--read-only` mode (which would block editing). Load-bearing path (manifest lock taken before any class lock) — needs the unit coverage above.
 
-**Priority**: Medium
-**Context**: The app is a SvelteKit server (Node adapter) that reads/writes the data root at runtime via `/api/...` routes ([`src/routes/api`](../src/routes/api)). For **publishing**, a customer shouldn't need to run/manage a live API: they should be able to edit their data locally, then **rebuild a static site** they can host on any static host (S3, GitHub Pages, Netlify, etc.). This is a separate **read-only export** target, not a replacement for the editing app.
+**Open questions / research:** (1) is the churn from `reconcile`, the mtime-gated membership resync, or `settings.json` healing — audit which write paths fire on a pure browse; (2) does any caller depend on the manifest mtime advancing every list (the mtime-gated resync)?; (3) equivalence granularity — structural deep-equality is safer than byte-equal JSON against formatting drift.
 
-### What's needed
+### 33 · Reader Package — Read-Only Host Integration (Mode B)
 
-- A build script (e.g. `npm run export -- <root> --out <dir>`) that:
-  - Reads every media type from `MEDIA_MANAGER_ROOT` using the existing storage layer ([`mediaTypes.ts`](../src/lib/storage/mediaTypes.ts), [`repo.ts`](../src/lib/storage/repo.ts), [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)) — reuse, don't duplicate, the read logic.
-  - Emits static JSON snapshots per type (catalog + schema + globals) and copies referenced blobs from the global `files/` store into the output (e.g. `out/files/...`).
-  - Generates a static, read-only browsing UI (galleries, record views, filters that run client-side) with no write endpoints.
-- A clear split between **editor** (server, read/write) and **published site** (static, read-only).
+```yaml
+status: discussion
+size: L
+usefulness: 2
+priority: low
+files: [src/lib/storage/paths.ts, src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts, src/lib/storage/jsonRepo.ts, src/lib/core/types.ts]
+depends_on: []
+open_questions: 3
+acceptance:
+  - (Decide library-vs-export face first — do not pre-build)
+  - Read functions take an explicit root (no process.env mutation) and never write/heal/lock
+```
 
-### Design considerations
+The "reader" half: let a host build (nicb.at) **consume the on-disk format** to render galleries without booting the editor — pure read-only. **Deferred** — the consumption shape stays open until nicb.at's build needs are concrete. Overlaps Item 7 (this is the programmatic/library face of the same read logic).
 
-- **Adapter strategy**: a dedicated read-only route tree built with `@sveltejs/adapter-static` + prerendering, OR a standalone generator that emits HTML/JSON. The current API routes can't be prerendered as-is (they mutate state), so export should target a separate read-only view, not the live `/api` surface.
-- **Client-side features**: filtering/search/sort must run against the prebuilt JSON in the browser (no server). Decide which of the existing [`filters.ts`](../src/lib/core/filters.ts) capabilities to port client-side.
-- **Asset volume**: blob stores can be large; support selective export (per media type, or only `linked`/non-excluded files), image resizing/thumbnail generation, and content hashing for cache-busting.
-- **Path/identity stability**: published asset URLs should be stable across rebuilds — this is **much simpler if Item 6 (stable file IDs) lands first**, since ids give durable, collision-free asset names. Worth sequencing #6 before/with #7.
-- **Globals + schema**: include the globals singleton and per-type schema so the static UI can render labels, field types, and dropdown options without the server.
-- **Incremental rebuilds**: ideally only re-emit changed types/assets (hash- or mtime-based) so large datasets rebuild quickly.
+**The one piece worth scoping early** (Item 7 needs it too): the **root-threading refactor** — the storage layer reads the root from `process.env.MEDIA_MANAGER_ROOT` ([`paths.ts`](../src/lib/storage/paths.ts)); a library API must take an **explicit root** instead. **Open questions:** library (subpath export `media-manager/fs` with `openWorkspace(root)` etc.) vs. export CLI (denormalized JSON snapshot); blob-serving strategy (point static dir at `media/files/` vs. copy/hardlink needed blobs); on-disk format versioning.
 
-### Open questions
+### 7 · Static Site Export (no runtime API for customers)
 
-- One static bundle per media type, or a single combined site with navigation?
-- How much interactivity (filters, compare view) to keep vs. a pure read-only gallery?
-- Hosting target assumptions (flat static host vs. one allowing redirects/clean URLs)?
+```yaml
+status: blocked
+size: L
+usefulness: 1
+priority: medium
+files: [src/lib/storage/mediaTypes.ts, src/lib/storage/classRepo.ts, src/lib/storage/jsonRepo.ts, src/lib/core/filters.ts]
+depends_on: [6]
+open_questions: 3
+acceptance:
+  - `npm run export -- <root> --out <dir>` reuses the storage read layer (no duplicated read logic)
+  - Emits static JSON snapshots per type/class + globals + schema, copies referenced blobs
+  - Generates a read-only browsing UI (galleries, record views, client-side filters) with no write endpoints
+```
 
----
+A customer shouldn't need to run a live API to **publish**: edit locally, then rebuild a static, host-anywhere site (S3/Pages/Netlify). A separate **read-only export** target, not a replacement for the editor. Item 6 (stable file IDs) **shipped**, so durable collision-free asset names are available — the dependency is satisfied.
 
-## 8. Configurable & Verbose Grid Display
-
-**Priority**: High (user-requested)
-**Context**: The grid views surface very little per card today. The JSON grid ([`JsonRecordGrid.svelte`](../src/lib/components/JsonRecordGrid.svelte)) shows a single label via `getDisplayName` (the `name` field, else `group_by_value`, else the id prefix) — there's no way to choose which field is shown or to see several fields at once. The image grid ([`ImageViewGrid.svelte`](../src/lib/components/ImageViewGrid.svelte)) shows the thumbnail plus one display name. Users want (a) to pick which field is displayed for JSON records, and (b) a "verbose" mode that shows a lot of information at once for visual scanning (lightroom-style). Supersedes the `tasks.md` "Verbose mode", "larger grid view", and "experiment with an image grid renderer" notes.
-
-### What's needed
-
-- **Display-field selector** in the grid header (mirroring the existing Group by / Size selectors) to choose which schema field is the primary label for JSON records.
-- **Verbose view mode** toggle that renders a multi-field card (key/value rows or compact chips) showing a chosen subset of fields per record; for image grids, show metadata fields next to a larger thumbnail.
-- **Field-subset picker** for verbose mode (multi-select of schema fields) with a sensible default (e.g. `name`/`image_name` + first few user fields).
-- Persistence: per-session via selection state and/or durable per-type defaults via settings.
-
-### Implementation pointers
-
-- Generalize `getDisplayName` in [`JsonRecordGrid.svelte`](../src/lib/components/JsonRecordGrid.svelte) to render the selected field(s); reuse the `gridSchemaFields` fetch and the Group by/Size `Select` pattern already present in both grids.
-- Extend selection state ([`selection.svelte.ts`](../src/lib/state/selection.svelte.ts), which already holds `gridGroupByField`/`gridSize`) with `gridDisplayField` / `gridVerbose` / `gridVerboseFields`; optionally persist defaults in [`settingsFile.ts`](../src/lib/storage/settingsFile.ts) + the `.../settings` API.
-- List items are currently sparse (the list response carries `group_by_value` but not arbitrary field values). Verbose/custom display needs the selected field values per item — either extend the list response (`records/list` + repos) to include requested fields, or fetch per record. Prefer extending the list response for grid performance.
-
-### Open questions
-
-- Per-type persistent default vs. per-session only?
-- Verbose layout: key/value rows, a mini table, or chips?
-- How many fields before large lists get noisy / slow, and do we cap or virtualize?
-
----
-
-## 9. Sorting & Ordering
-
-**Priority**: Medium
-**Context**: Grids and lists support Group by and filters but have no explicit sort. From `tasks.md`: "optionally organize by timestamp."
-
-### What's needed
-
-- A sort control (field + direction) in the grid/sidebar headers.
-- Built-in sorts: by `last_modified`/created timestamp, by name, and by any schema field.
-- Persist the choice per type and/or session.
-
-### Implementation pointers
-
-- Apply sorting in the list endpoints (`records/list`) via the repos ([`repo.ts`](../src/lib/storage/repo.ts) `listImages`, [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)), with the active sort tracked in selection state.
-
----
-
-## 10. Filter for Missing / Empty Fields
-
-**Priority**: Medium
-**Context**: From `tasks.md`: "filter for images with missing fields." The filter engine ([`filters.ts`](../src/lib/core/filters.ts)) already supports multi-clause filters including empty checks, but there's no first-class "show records with missing/empty fields" entry point. Complements Item 2 (missing **file** references).
-
-### What's needed
-
-- A quick filter for records with any empty user field, or a specific empty field.
-- Compose with existing multi-clause filters; surface it in the sidebar filter UI.
+**Open questions:** one bundle per type vs. a single combined site; how much interactivity (filters/compare) vs. pure gallery; hosting assumptions (flat host vs. clean URLs). Also needs the same root-threading refactor as Item 33, and overlaps Item 15's resize/thumbnail concerns (design the asset pipeline once).
 
 ---
 
-## 11. AI / External Field Enrichment (application-specific)
+## Cluster: Data model & fields
 
-**Priority**: Low (downstream apps; not core)
-**Context**: Ideas from `tasks.md` aimed at specific downstream uses (e.g. a food/web catalog), not the core local tool. Listed so they aren't lost.
+Field types, value editors, and globals feature-parity. The `relation` edge (36) is the high-leverage one — it turns the three sub-app "islands" into a graph.
 
-### Ideas
+### 36 · `relation` field type — record-to-record references
 
-- Auto-fill schema fields via an external vision API (labels, OCR, etc.).
-- Offline semantic search over the enriched fields.
-- A local vector database over field values (and possibly EXIF) for fast, fully-local search.
+```yaml
+status: ready
+size: L
+usefulness: 5
+priority: medium
+files: [src/lib/core/types.ts, src/lib/components/FieldInput.svelte, src/lib/storage/jsonRepo.ts, src/lib/components/GlobalsEditorPane.svelte]
+depends_on: []
+open_questions: 0
+acceptance:
+  - `relation` added to FieldTypeSchema with a `{ typeId, recordId }` value shape (single-target first)
+  - Per-field config stores the target type id (like a dropdown's options)
+  - FieldInput gains a relation editor: picks from the target type's records, renders a title chip, click-through deep-links to `/media?type=<t>&record=<id>`
+  - Server normalizes/validates the target exists and flags dangling relations (mirrors the `_missing_files` pattern)
+  - Globals parity: target-type hint stored in `__field_meta`
+```
 
-### Considerations
+We have a `file` field (record→blob) but no way for a record to point at **another record** (a movie's `director` → a row in "People"). Today you retype "Christopher Nolan" in every movie — no typed pointer, no click-through. A `relation` field adds that edge. Deferred during the sub-app restructure (2026-06-22), which shipped the `?record=` deep links that make click-through trivial — so this is now unblocked and `ready`.
 
-- Keep the core app provider-agnostic; gate any integration behind opt-in config.
-- Privacy: prefer local-first; be explicit when data would leave the machine.
+**Deliberately deferred (not open questions):** `relation[]` multi-target (ship single first), reverse "referenced by" back-references (needs a derived index — defer unless needed). A relation targeting a class member (blob) is what `file` already does — keep `relation` record→record to avoid overlap.
 
----
+### 26 · File-Field UI Overhaul (preview + navigate-to-file)
 
-## 12. Fix / Normalize File Extension
+```yaml
+status: ready
+size: M
+usefulness: 4
+priority: medium
+files: [src/lib/components/FilePicker.svelte, src/lib/components/FieldInput.svelte, src/lib/components/FileEditorPanel.svelte]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Larger/expandable preview of the referenced blob (reuse the FileEditorPanel lightbox; support non-image kinds as Items 23/24 land)
+  - A "go to file" affordance that opens the referenced blob in the Files hub editor
+  - Applied consistently everywhere FieldInput renders a `file` field (FileEditorPanel, RecordDetailPane, GlobalsEditorPane)
+```
 
-**Priority**: Low
-**Context**: From the vault backlog: "some sort of option to fix the file extension." Uploaded blobs may carry a wrong, missing, or mis-cased extension (e.g. a JPEG named `.jpeg` vs `.jpg`, or no extension), which affects per-kind extension filtering in `images` catalogs.
+A `file`-field value is a manifest id ref, edited via [`FilePicker.svelte`](../src/lib/components/FilePicker.svelte) inside [`FieldInput.svelte`](../src/lib/components/FieldInput.svelte). Today: small inline thumbnail (images only) + filename + open-in-new-tab + clear. Users want a richer preview and a jump-to-file. The preview half is fully `ready`; the "go to file" deep-link is cleanest with stable per-file routes (Item 20) but can ship today against `/files` with the editor opened — does **not** block this item. Overlaps Item 25 (apply once in the shared `FieldInput`).
 
-### What's needed
+### 25 · Globals Panel Overhaul (previews + nicer layout)
 
-- A per-file action to rename the extension (reusing the existing rename/`propagateFilenameRename` path in [`repo.ts`](../src/lib/storage/repo.ts) so cross-catalog references stay intact).
-- Optionally detect the true type (magic bytes / sharp) and suggest the correct extension.
+```yaml
+status: ready
+size: M
+usefulness: 3
+priority: medium
+files: [src/lib/components/GlobalsEditorPane.svelte, src/lib/core/fieldKeys.ts, src/lib/components/FieldInput.svelte]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Rich value previews in the globals editor (image/file thumbnails, url link previews) — overlaps Item 26, design together
+  - Nicer layout (grouped/sectioned fields, spacing) preserving the __field_kinds / __field_meta metadata model
+  - Full parity: any field type/feature the json RecordDetailPane supports still works here
+```
 
-### Considerations
+The reserved `globals` singleton keeps its bespoke free-form editor ([`GlobalsEditorPane.svelte`](../src/lib/components/GlobalsEditorPane.svelte)) but its presentation is plain. Per CLAUDE.md it must keep parity with `json` records. Consider converging further onto the shared `FieldInput` + panel chrome (it already feeds `FieldInput` a synthetic `FieldDefinition`) to reduce drift.
 
-- Sequence after / alongside Item 6 (stable file IDs): if identity decouples from filename, an extension fix becomes a pure display-name change.
+### 4 · Schema Import/Export
 
----
+```yaml
+status: ready
+size: M
+usefulness: 2
+priority: low
+files: [src/routes/api/media-types/[typeId]/schema, src/routes/api/classes/[id]/schema, src/lib/core/types.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Export a type's/class's schema as standalone JSON
+  - Import a schema from JSON (merge or replace) with validation
+  - Clone a schema from another media type / class
+```
 
-## 13. Swap Width/Height (orientation fix)
+Media types and classes have embedded schemas; users may want to share or duplicate them. Self-contained, low priority. (Both the `json`-type and class schema endpoints already exist to build on.)
 
-**Priority**: Low
-**Context**: From the vault backlog: "add a swap width/height option (for bugs) — or have a warning if they are swapped and recommend fixing them." Stored `width`/`height` (written automatically on upload) can end up transposed for some rotated/EXIF-oriented images.
+### 0 · Make URL fields editable
 
-### What's needed
+```yaml
+status: shipped
+```
 
-- A per-record action to swap the stored `width` and `height` values.
-- Optionally a heuristic warning when stored dimensions appear inconsistent with the actual decoded image (compare against `sharp` metadata) and offer the swap.
-
----
-
-## 14. Markdown Blog Media Kind
-
-**Priority**: Medium (part of the original multi-type vision)
-**Context**: From the vault backlog: "support markdown blogs as a project type — have a setting as to whether to include the metadata in the yaml, or just in a json as well, or sync between." A `markdown` kind would manage a set of markdown files (e.g. blog posts) with schema-driven metadata, alongside the existing `images`/`generic`/`json`/`blob_store` kinds.
-
-### What's needed
-
-- A new `markdown` value in [`MediaTypeKind`](../src/lib/storage/settingsFile.ts) and a repository (likely a sibling of [`repo.ts`](../src/lib/storage/repo.ts)/[`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)) that lists/reads/writes `.md` files.
-- A dedicated editor pane for markdown body + metadata, switched on by kind in [`media/[typeId]/+page.svelte`](../src/routes/media/[typeId]/+page.svelte).
-- A metadata-source setting: store metadata in the file's YAML frontmatter, in a sidecar JSON catalog, or keep both in sync.
-
-### Open questions
-
-- Frontmatter as source of truth vs. JSON catalog vs. bidirectional sync — sync is the most useful but the hardest to keep consistent.
-- How body content interacts with filtering/search (Item 10) and grid display (Item 8).
-
----
-
-## 15. Image Compression Management
-
-**Priority**: Low (explicitly non-urgent in the vault note)
-**Context**: From the vault backlog: a way to manage compressed variants of images. Idea: keep a folder of compressed copies, regenerate them on upload/modify, store paths to both the original and compressed variant in the catalog, and let the user pick which to use.
-
-### What's needed
-
-- A per-media-type compression setting (e.g. quality/target size).
-- On upload/modify, generate a compressed variant (via `sharp`) into a dedicated location and record both paths.
-- UI to choose original vs. compressed per record (or per export — ties into Item 7 Static Site Export, which also wants thumbnails/resizing).
-
-### Considerations
-
-- Strong overlap with Item 7's asset-volume concerns (thumbnails, selective export); consider designing them together to avoid two parallel resize pipelines.
-
----
-
-## 17. Capture Nested Folder Path on Folder Upload
-
-**Priority**: Medium (user-requested)
-**Context**: When a user uploads a **folder** containing nested subfolders, the directory structure is lost today — all blobs land flat in the shared global `files/` store (`getGlobalFilesDir()`), and only the basename (`file_name`) is recorded. Users want the option to **automatically save each file's relative path within the dropped folder** (e.g. `2024/trip/photo.jpg`) into a schema field, so the original organization isn't lost when files are flattened into the global store.
-
-### Decisions (from clarification)
-
-- **Captured value**: the **relative path within the uploaded folder** (not absolute, not just the parent segment). Portable and describes the import's internal structure.
-- **Storage target**: at upload time, the user **picks an existing schema field** to receive the path (e.g. a `string` field). Not auto-created and not a reserved key — the user opts in per upload by choosing where it goes.
-- **Browser limitation (accepted)**: a browser only exposes relative paths via a folder picker (`<input webkitdirectory>` / `webkitRelativePath`) or the drag-and-drop `FileSystemEntry` API. True absolute filesystem paths are **not available** from the browser, so this feature is **relative-path-only**. (A CLI/server-side import could capture absolute paths later — out of scope here.)
-
-### What's needed
-
-- Folder upload that preserves per-file relative paths: use `<input type="file" webkitdirectory>` and/or drag-drop directory traversal (`DataTransferItem.webkitGetAsEntry()` → recurse) so each `File` carries its `webkitRelativePath`.
-- An upload-time option ("Save folder path to field") with a **field selector** (existing schema fields, likely `string`/`url`-typed) — mirror the Group by / display-field `Select` pattern already used in the grids.
-- On import, write each file's relative path into the chosen field on the created/linked catalog record, alongside the existing `file_name`.
-- Wire through the upload path in [`ImageEditorPane.svelte`](../src/lib/components/ImageEditorPane.svelte) and the file-backed repo write in [`repo.ts`](../src/lib/storage/repo.ts); the relative path must ride along with each uploaded file from client → API → record.
-
-### Open questions
-
-- **Filename collisions**: the global store is flat, so `a/photo.jpg` and `b/photo.jpg` collide on `file_name`. Do we de-dupe/rename on import (and is the relative path then the disambiguator)? Sequences naturally after Item 6 (stable file IDs), which removes filename-as-identity.
-- Should the path field be **auto-populated only when empty**, or always overwritten on re-upload?
-- Default field choice / remembering the last-used field per media type (persist in [`settingsFile.ts`](../src/lib/storage/settingsFile.ts)?).
-- Drag-and-drop directory support is more involved than the `webkitdirectory` input — ship the input first, drag-drop folders later?
+**Already shipped** — [`FieldInput.svelte`](../src/lib/components/FieldInput.svelte) has a full `url` `{ display_name, url }` editor. Retained here only as a tombstone; safe to delete on the next pass.
 
 ---
 
-## 18. Records Storage Reorganization (to discuss)
+## Cluster: Media kinds & preview
 
-**Priority**: n/a (deferred discussion — flagged during the file-first / classes redesign)
-**Context**: As part of reorganizing the on-disk data root for the file-first "classes" model — renaming `files/` → `media/` with `media/files/` (blobs), `media/classes/` (per-class catalog JSON), and `media/settings.json` (saved views/filters) — we want to apply a parallel reorganization to the `json`-kind side under a top-level `records/` folder.
+Expand first-class preview/handling beyond images. PDF storage + metadata already shipped (via `exiftool-vendored`); these add the previews and new kinds.
 
-### Sketch (not decided)
+### 23 · Video & GIF Media Support
 
-- `records/` containing a folder for the json record files, plus a `records/settings.json`.
-- Open: how `globals` (the reserved json singleton) fits; whether each json "type" is a subfolder; what lives in `records/settings.json` vs. per-type settings; migration from today's per-type top-level folders.
+```yaml
+status: ready
+size: L
+usefulness: 4
+priority: medium
+files: [src/lib/core/images.ts, src/lib/components/FileEditorPanel.svelte, src/lib/components/data-grid/DataGrid.svelte, src/lib/server/fileMetadata.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Recognize video (.mp4/.webm/.mov/…) + animated .gif (extend images.ts or add a sibling media.ts)
+  - Inline preview — <video controls> (and GIFs as images) in FileEditorPanel + the lightbox; poster/first-frame thumbnail in DataGrid tiles
+  - Thumbnail generation for the grid (first frame), mirroring the image thumbnail path
+  - exiftool duration/codec/dimensions in fileMetadata.ts; [id]/blob supports range requests for seeking
+```
 
-**Decision: revisit after the images/classes storage layout is settled.**
+The Files grid and [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte) gate previews on `hasAllowedImageExtension` ([`images.ts`](../src/lib/core/images.ts)), so video/GIF fall back to the generic icon. **Deliberately decided (not an open question):** large videos load lazily via range requests; GIFs are images on disk but preview like motion.
 
----
+### 21 · Full PDF Preview
 
-## 19. Per-Class "Should / Shouldn't Be Here" Review (excludedFiles successor)
+```yaml
+status: ready
+size: M
+usefulness: 3
+priority: low
+files: [src/lib/components/FileEditorPanel.svelte, src/lib/core/images.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Render PDFs inline via native browser embed (<iframe>/<embed>, no new deps) in FileEditorPanel, replacing the icon placeholder
+  - Generate/serve first-page PDF thumbnails so the Files grid shows a preview instead of the icon
+```
 
-**Priority**: Low (post file-first/classes redesign)
-**Context**: The file-first "classes" redesign removes the old per-class `excludedFiles` list entirely (membership becomes opt-in: a file is simply not a member until tagged, and "unclassified" is derived from zero memberships). This item reintroduces the _useful_ part of exclusion — **triage** — without the old opt-out burden.
+PDFs are stored, served as `application/pdf`, and read for document metadata already (see the `MetadataButton` "Document Information" section). Only the inline preview + first-page thumbnail remain — a solid scan/browse win.
 
-### Idea
+### 24 · DOCX Media Support (+ convert-to-PDF)
 
-A per-class review affordance that helps answer "which files should be in this class vs. not?":
+```yaml
+status: blocked
+size: L
+usefulness: 3
+priority: medium
+files: [src/lib/server/fileMetadata.ts, src/lib/components/FileEditorPanel.svelte]
+depends_on: [21]
+open_questions: 1
+acceptance:
+  - Recognize .docx/.doc; read basic metadata (title, author, word count) via exiftool
+  - A per-file "Convert to PDF" action that writes + registers a new PDF blob, optionally linking back to the source
+  - Once converted, the existing PDF preview/metadata path (Item 21) applies
+```
 
-- Per class, mark a file as **dismissed / not-relevant** so it stops showing up as a suggestion/candidate for that class (the productive half of the old `excludedFiles`), without affecting any other class.
-- A review/triage view: for a given class, show candidate files (e.g. unclassified, or matching some heuristic) and let the user quickly add-to-class or dismiss.
-- Strictly per-class and opt-in — never a global hide; "unclassified" remains derived from membership.
+Same treatment as PDFs, for Word docs, with an easy path to PDF (which the app previews + reads metadata from). **Open question (blocks):** converter choice — LibreOffice-headless (heavy, high fidelity) vs. pure-JS (light, lower fidelity) — decide against the npx-package distribution footprint (Item 30). Also depends on Item 21's PDF preview landing.
 
-### Considerations
+### 14 · Markdown Blog Media Kind
 
-- Store dismissals inside the class JSON file (source of truth), mirrored into the manifest membership index alongside `classes` if useful for fast filtering.
-- Keep distinct from deletion-from-disk (which still strips a blob globally) and from "remove from this class" (drops membership/metadata).
+```yaml
+status: discussion
+size: L
+usefulness: 3
+priority: medium
+files: [src/lib/storage/settingsFile.ts, src/lib/storage/mediaTypes.ts, src/routes/media/[typeId]/+page.svelte]
+depends_on: []
+open_questions: 2
+acceptance:
+  - (Redesign against the file-first/classes model FIRST — the original sketch predates it)
+```
 
----
+> ⚠️ **Predates the file-first redesign.** The original plan ("add a `markdown` value to `MediaTypeKind`, sibling repo to `repo.ts`, kind-switched editor pane") references a world that's gone: `MediaTypeKind` is now **`json`-only**, `repo.ts`/`blob_store`/`images` kinds were removed, and files are handled by **classes**, not media-type kinds. This needs a **redesign against classes**, not a re-link — hence `discussion`, not `ready`.
 
-## 20. File-Based Routing (to discuss)
-
-**Priority**: n/a (deferred discussion — flagged during the file-first/classes redesign)
-**Context**: Today editing happens inside a single `/media/[typeId]` page that switches editor panes by kind and selects records in-page (no per-record URL). The file-first/classes redesign keeps this in-page model for now (the per-file editor stays an editor pane on the Files hub page, not a drawer or dedicated route). In future we'd like **more file-based routing** — e.g. deep-linkable per-file routes (`/media/file/[id]`), per-class routes, and shareable view/filter URLs — so app state is addressable and bookmarkable.
-
-**Decision: revisit after the file-first/classes model ships; design the route tree then.**
-
----
-
-## 16. Open Design Questions
-
-**Priority**: n/a (decisions to make before related work)
-**Context**: Carried over from `tasks.md` so the backlog is captured in one place.
-
-- **Default values**: is storing explicit defaults (beyond `false` for booleans / `0` for numbers) worth it, or is filtering for empty values sufficient?
-- **Svelte usage guidance**: expand [`.cursor/rules/svelte5.mdc`](../.cursor/rules/svelte5.mdc) with an explicit do/don't list, including when `$bindable` is appropriate vs. confusing.
-
----
-
-## 21. Full PDF Preview
-
-**Priority**: low (PDF storage + metadata already shipped)
-**Context**: PDFs are stored, served as `application/pdf`, and read for document metadata (title, author, page count, etc. via exiftool — see [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts) and the `MetadataButton` "Document Information" section). The file editor and grids currently show a generic file icon for non-images.
-
-- Render PDFs inline via native browser embed (`<iframe>`/`<embed>`, no new deps) in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte), replacing the icon placeholder.
-- Generate/serve first-page PDF thumbnails so the Files grid shows a preview instead of the icon (`hasAllowedImageExtension` currently gates `thumbnailUrl`).
-
----
-
-## 23. Video & GIF Media Support
-
-**Priority**: Medium (user-requested)
-**Context**: The app stores arbitrary blobs but only images get a real preview — the Files grid and [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte) gate previews on `hasAllowedImageExtension` ([`images.ts`](../src/lib/core/images.ts)), so videos and GIFs fall back to the generic file icon. Users want first-class handling of motion media.
-
-### What's needed
-
-- Recognize video (`.mp4`, `.webm`, `.mov`, …) and animated `.gif` extensions/MIME types (extend [`images.ts`](../src/lib/core/images.ts) or add a sibling `media.ts` of allowed kinds).
-- Inline preview: render `<video controls>` (and play GIFs as images) in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte) and the full-screen lightbox; show a poster/first-frame thumbnail in the [`DataGrid`](../src/lib/components/data-grid/DataGrid.svelte) tiles.
-- Thumbnail generation for the grid (first frame via `ffmpeg`/`sharp`-equivalent), mirroring the image thumbnail path.
-- Metadata: extend [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts) (exiftool already reads video metadata) for duration, codec, dimensions.
-
-### Considerations
-
-- Asset volume / streaming: large videos shouldn't be loaded eagerly; the `[id]/blob` endpoint should support range requests for seeking.
-- GIFs are images on disk but behave like video in preview — decide whether they're a sub-kind of image or motion.
+The user value (manage a set of `.md` files with schema-driven metadata, e.g. blog posts) is real and high if blogging becomes a concrete use. **Open questions:** where a markdown kind sits in the file-first model (a class over `.md` blobs? a new top-level kind?); metadata source of truth (YAML frontmatter vs. sidecar JSON vs. bidirectional sync — sync is most useful, hardest to keep consistent).
 
 ---
 
-## 24. DOCX Media Support (+ convert-to-PDF)
+## Cluster: Grid & display
 
-**Priority**: Medium (user-requested)
-**Context**: PDF storage, serving, and metadata already shipped (Item 21 / [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts)). Users want the same for Word documents (`.docx`), with an easy path to turn them into PDFs (which the app already previews and reads metadata from).
+What each tile shows, plus the missing sort/filter controls. Several of these still name components removed in the file-first redesign — repointed below.
 
-### What's needed
+### 8 · Configurable & Verbose Grid Display
 
-- Recognize `.docx` (and `.doc`) blobs; read basic document metadata (title, author, word count) via exiftool in [`fileMetadata.ts`](../src/lib/server/fileMetadata.ts).
-- A per-file **"Convert to PDF"** action (server-side, e.g. LibreOffice headless / `libreoffice --convert-to pdf`, or a JS docx→pdf library) that writes a new PDF blob into the global store and registers it in the manifest, optionally linking it back to the source.
-- Surface the action in [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte); once converted, the existing PDF preview/metadata path (Item 21) applies.
+```yaml
+status: blocked
+size: L
+usefulness: 5
+priority: high
+files: [src/lib/components/data-grid/DataGrid.svelte, src/lib/components/data-grid/types.ts, src/lib/stores/settings.ts, src/lib/storage/jsonRepo.ts, src/lib/storage/classRepo.ts]
+depends_on: []
+open_questions: 3
+acceptance:
+  - A field-subset picker drives a "verbose" multi-field card (key/value rows or chips) per tile
+  - Image grids show metadata fields next to a larger thumbnail
+  - List responses carry the requested field values per item (extend list endpoints, don't fetch per-record)
+  - Choice persists (per-session and/or durable per-type default)
+```
 
-### Considerations
+> 🔧 **Stale refs repointed.** The original pointers named `JsonRecordGrid.svelte`, `ImageViewGrid.svelte`, `getDisplayName`, and `selection.svelte.ts` — **all removed.** The single tile grid is now [`DataGrid.svelte`](../src/lib/components/data-grid/DataGrid.svelte) (+ `types.ts`), grid state lives in [`stores/settings.ts`](../src/lib/stores/settings.ts) (the `selection` store is gone), and the **display-field / title-by selector partly shipped** (per-entity `displayField` in the unified `EntitySettingsDialog`). What remains is the **verbose multi-field mode** + the field-subset picker.
 
-- Conversion fidelity and the dependency footprint (LibreOffice is heavy; a pure-JS converter is lighter but lower fidelity) — decide based on the npx-package distribution goal (Item 30).
-- Whether to keep the source `.docx`, replace it, or store both with a relationship.
+High priority, user-requested (lightroom-style scanning). **Open questions:** per-type persistent default vs. per-session; verbose layout (key/value rows vs. mini-table vs. chips); how many fields before lists get noisy/slow — cap or virtualize?
 
----
+### 9 · Sorting & Ordering
 
-## 25. Globals Panel Overhaul (previews + nicer layout)
+```yaml
+status: ready
+size: M
+usefulness: 4
+priority: medium
+files: [src/lib/storage/classRepo.ts, src/lib/storage/jsonRepo.ts, src/lib/stores/settings.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - A sort control (field + direction) in the grid/rail headers
+  - Built-in sorts: by last_modified/created, by name, by any schema field
+  - Applied in the list endpoints (records list / class members / files), choice persisted per-type and/or session
+```
 
-**Priority**: Medium (user-requested)
-**Context**: The reserved `globals` singleton keeps its bespoke free-form editor ([`GlobalsEditorPane.svelte`](../src/lib/components/GlobalsEditorPane.svelte)) rather than the schema-driven grid/panel the rest of the app uses. Per CLAUDE.md it must keep feature parity with `json` records, but its presentation is plain — no previews for `file`/`url` values, a flat form layout. Users want a more useful, better-formatted globals view.
+> 🔧 **Stale ref repointed.** Sorting belongs in [`classRepo.ts`](../src/lib/storage/classRepo.ts) / [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts) (the old `repo.ts` is gone). A basic, expected, daily-use control that's still missing — fully `ready`.
 
-### What's needed
+### 10 · Filter for Missing / Empty Fields
 
-- Rich value previews in the globals editor: image/file thumbnails for `file`-type fields, link previews for `url`-type fields (overlaps with Item 26's file-field preview work — design together).
-- A nicer layout: grouped/sectioned fields, better spacing, possibly a read-vs-edit mode, while preserving the per-field metadata model (`__field_kinds` / `__field_meta`, [`fieldKeys.ts`](../src/lib/core/fieldKeys.ts)).
-- Keep parity: any field type / feature the `json` `RecordEditorPanel` supports must still work here.
+```yaml
+status: ready
+size: M
+usefulness: 3
+priority: medium
+files: [src/lib/core/filters.ts, src/routes/files/+page.svelte, src/lib/components/rail/EntityRail.svelte]
+depends_on: []
+open_questions: 0
+acceptance:
+  - A quick filter for records with any empty user field, or a specific empty field
+  - Composes with the existing multi-clause filters; surfaced in the rail filter UI
+```
 
-### Considerations
-
-- Whether to converge globals onto the shared `FieldInput` + panel chrome more fully (it already feeds `FieldInput` a synthetic `FieldDefinition`) vs. keep a bespoke pane — converging reduces drift (see the UI-consistency guidance).
-
----
-
-## 26. File-Field UI Overhaul (preview + navigate-to-file)
-
-**Priority**: Medium (user-requested)
-**Context**: A `file`-type field value is a manifest id reference, edited via [`FilePicker.svelte`](../src/lib/components/FilePicker.svelte) inside the shared [`FieldInput.svelte`](../src/lib/components/FieldInput.svelte). Today the selected value shows a small inline thumbnail (images only) + filename + open-in-new-tab + clear. Users want a richer preview and a way to **jump to the referenced file** in the Files hub.
-
-### What's needed
-
-- A larger/expandable preview of the referenced blob (reuse the full-screen lightbox added to [`FileEditorPanel.svelte`](../src/lib/components/FileEditorPanel.svelte); support non-image kinds as those land — Items 23/24).
-- A **"go to file"** affordance that opens the referenced blob in the Files hub editor (deep-link to `/files` with the file's editor open — ties into Item 20 file-based routing, e.g. `/media/file/[id]`).
-- Apply consistently everywhere `FieldInput` renders a `file` field: `FileEditorPanel`, `RecordEditorPanel`, and `GlobalsEditorPane` (overlaps Item 25).
-
-### Considerations
-
-- A stable per-file route makes "navigate to file" clean — sequence with Item 20.
-
----
-
-## 27. npx Package Distribution (for customers) — ➡️ Folded into Item 30
-
-**Status**: **Folded into [Item 30](#30-editor-npx-setup--zero-config-root-discovery-mode-a)** as part of the npx-package vision cluster. The publish mechanics (npm `bin`/`files`/`engines`, prepublish build, scoped name, cross-platform native-dep audit) now live in Item 30's **"Publishing (later phase)"** section, sequenced after the local-dep / zero-config-discovery ergonomics. Item 24 references this distribution goal — read it as Item 30.
-
----
-
-## 28. Per-Type / Per-Class Icon Picker
-
-**Priority**: Low (nice-to-have; surfaced during the Records Explorer design)
-**Context**: The [Records Explorer](RECORDS_EXPLORER.md) rail shows record types with a **generic glyph** (no per-type icon), and the Files dashboard/class list likewise use fixed icons. Users want to assign a distinct icon per record type **and** per class so the rail / dashboard / class filter are scannable.
-
-### What's needed
-
-- An icon picker in **type settings** (`json` types) and **class settings** (`ClassSettingsDialog.svelte`), storing the chosen icon id alongside the existing `displayName` (in the type `settings.json` / class `config`).
-- A shared icon set (e.g. a curated subset of `lucide-svelte`) + a small picker component reused by both sides.
-- Render the chosen icon in the Records Explorer rail, the dashboard cards (`/+page.svelte`), and the Files class filter list / catalog header.
-
-### Considerations
-
-- Keep the stored value a stable id (not a component), validated against the known set, with a generic fallback when missing/unknown.
-- Persisting per class touches `config`; per `json` type touches `settings.json` — both already carry `displayName`, so this is an additive field, no migration.
+[`filters.ts`](../src/lib/core/filters.ts) already supports empty checks — this is a first-class entry point in the rail filter UI. Complements Item 2 (missing **file** references, shipped).
 
 ---
 
-## 29. Records Explorer — Mobile / Narrow Drill-Down
+## Cluster: Asset pipeline & deps
 
-**Priority**: Low (deferred from the Records Explorer build)
-**Context**: The [Records Explorer](RECORDS_EXPLORER.md) ships as a desktop **three-pane** layout (rail → list → detail). On narrow viewports three columns don't fit.
+Thumbnails, masonry layout, and the unused-dependency decisions. **Design the resize pipeline once** — Items 7, 15, 23, 34, 35 all touch it.
 
-### What's needed
+### 15 · Image Compression Management
 
-- A responsive drill-down: show one pane at a time on small widths — rail → (tap type) → list → (tap record) → detail — with back navigation, reusing the `is-mobile.svelte.ts` viewport hook.
-- Decide whether the rail becomes a top type-switcher or an offcanvas drawer on mobile.
+```yaml
+status: blocked
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/server/fileMetadata.ts, src/lib/storage/settingsFile.ts]
+depends_on: []
+open_questions: 1
+acceptance:
+  - Per-media-type compression setting (quality/target size)
+  - On upload/modify, generate a compressed variant and record both paths
+  - UI to choose original vs. compressed per record (or per export)
+```
 
-### Considerations
+Manage compressed variants (via `sharp`). **Open question (blocks):** strong overlap with Item 7's asset-volume concerns (thumbnails, selective export) and Items 34/35 — decide the **one** resize pipeline before building two parallel ones. Explicitly non-urgent.
 
-- Sequences naturally with Item 20 (file-based routing): per-pane URLs make the drill-down's back/forward behavior fall out of routing rather than bespoke state.
+### 34 · Reimplement masonry grid layout
 
----
+```yaml
+status: ready
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/components/data-grid/DataGrid.svelte, src/lib/components/data-grid/types.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Variable-height tiles packed without the dead space the fixed grid leaves
+  - Wired into DataGrid behind the existing GridSize control (both files hub + record views inherit it)
+  - Preserves the side-agnostic GridItem contract (incl. the reserved `secondaryLabel`)
+```
 
-## 30. Editor npx Setup — Zero-Config Root Discovery (Mode A)
+`@masonry-grid/svelte` is a kept-but-unused dependency (retained deliberately, 2026-06-21). Visual polish only. **Decided (not blocking):** pick `@masonry-grid/svelte` vs. CSS `columns` vs. a small JS packer at implementation time — it's an implementation detail, not a product question. Masonry applies to the **tile grid** (files hub), not the records-native vertical list (`RecordListColumn`).
 
-**Priority**: Medium (user-requested; editor-first milestone)
-**Context**: Today [`bin/media-manager.js`](../bin/media-manager.js) **requires** an explicit `<root-dir>` positional arg and errors without it. The vision is to run bare **`npx media-manager`** from inside a host repo (e.g. `~/Projects/nicb.at`, workspace at `src/assets/media_manager`) and have it find the right folder with **zero config**. This is the "editor" half of the [npx-package vision](plans/npx-package-vision.md) (Mode A — the server that _mutates_ the root), distinct from Item 33 (the read-only reader). Decision (2026-06-20): **editor-first**, and distribute as a **local dep** in the host repo for now (publish/`npm link` later).
+### 35 · Remove (or actually use) the `sharp` dependency
 
-### Decisions (2026-06-20)
+```yaml
+status: ready
+size: S
+usefulness: 2
+priority: low
+files: [package.json, src/lib/server/fileMetadata.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - EITHER remove `sharp` from package.json (confirm nothing in build/scripts pulls it in)
+  - OR adopt it for server-side thumbnail generation (pairs with Items 15/34)
+```
 
-- **Local dep, not published (for now).** media-manager goes into the host `package.json` as a devDependency via `file:../media-manager` or a git URL, so `npx media-manager` inside that repo resolves the **local** install — no npm publish, stays private, bare command works. Publishing scoped (`@nicbat/media-manager`) or global `npm link` is a _later_ phase (folded in below — see "Publishing").
-- **Config lives in a standalone `media-manager.config.json`** at the host repo root (not a `package.json` key), holding the root path (and `open`, `bodySizeLimit`) — but **not** a port (see Item 31).
-
-_(Folds in former Item 27 "npx Package Distribution" — the publish mechanics now live in the "Publishing (later phase)" section below.)_
-
-### What's needed
-
-- A **root-resolution precedence chain** in the CLI (first match wins): (1) explicit arg _(current)_; (2) `MEDIA_MANAGER_ROOT` env _(current)_; (3) nearest `media-manager.config.json` found by walking up from `cwd`; (4) convention auto-detect — walk up looking for a folder with `media/manifest.json` (strongest signal) / a `media/` dir, probing `./media_manager`, `./src/assets/media_manager`, `./media`, `./.media-manager`; (5) friendly error printing the chain it tried + suggesting `media-manager init`.
-- A **config-file loader** (parse + validate `media-manager.config.json`; resolve `root` relative to the config file's location, not `cwd`).
-- Grow the CLI toward **verbs** while keeping the bare/positional form for back-compat: `serve` (default), `init` (scaffold an empty workspace), `doctor` (validate/heal-report without serving). `export` belongs to Item 33.
-
-### Publishing (later phase — folded from Item 27)
-
-Once the local-dep ergonomics land, make it installable by non-developer customers via a plain `npx media-manager` (no clone/build step):
-
-- Package the built `build/` output + [`bin/media-manager.js`](../bin/media-manager.js) for npm publish: correct `bin`, `files`, and **`engines.node`** fields in `package.json`; ensure the CLI runs against the bundled build without a dev checkout.
-- A **prepublish build step** so the published tarball contains the production server (`prepublishOnly` already runs `npm run build` — verify the tarball actually contains `build/`).
-- Decide scope/name: `media-manager` is likely taken on npm → publish scoped (`@nicbat/media-manager`) and document the resulting `npx @nicbat/media-manager` string.
-- **Audit the native/heavy dependency footprint** (`exiftool-vendored`, `heic-convert`, plus any video/docx conversion tooling from Items 23/24) so it installs/runs cleanly via `npx` across platforms — ties into the deferred bundle-size work in the [vision doc](plans/npx-package-vision.md).
-
-### Open questions / research
-
-- Config precedence if both a config file **and** env/arg are present (arg/env should win — confirm and document).
-- Should auto-detect walk **up** the tree (monorepo-friendly) or only probe `cwd`? Up-walk is more magic but more forgiving.
-- `init` scaffolding: minimum viable empty workspace (`media/manifest.json`, `media/settings.json`, empty `files/`/`classes/`) — reuse the app's own first-launch healing rather than hand-rolling.
-
-### Considerations
-
-- **Sequencing:** local-dep ergonomics (discovery + verbs) first; the Publishing phase later. Complements (doesn't replace) Item 7's static-site export — this is the **editor** distributed as a package; Item 7 is the **read-only published site**.
-
----
-
-## 31. Ephemeral Server Port + Auto-Open (drop the fixed PORT)
-
-**Priority**: Medium (editor-first milestone; pairs with Item 30)
-**Context**: The CLI defaults `PORT=3000` ([`bin/media-manager.js`](../bin/media-manager.js)) and opens `http://localhost:3000`. Running inside a host repo, a fixed port can **collide with the host's dev server**, and it forces "which port?" config. A server itself is **mandatory** — the app does real filesystem IO, `exiftool-vendored`, `heic-convert`, and manifest locking (`withFileLock`), so it cannot be a static page — but the _fixed port_ isn't. Decision (2026-06-20): **keep the server, bind an ephemeral port (port 0), auto-open the OS-assigned URL**, and drop `port` from config entirely.
-
-### What's needed
-
-- Launch the server on an **ephemeral port** (port 0 → OS assigns a free port), then **open the actually-bound URL**.
-- Remove `port`/`PORT` from the config surface and docs (the README + CLAUDE.md mention `PORT` default 3000); keep an optional `--port`/`PORT` override for power users who _want_ a fixed port.
-
-### Open questions / research
-
-- **Does `@sveltejs/adapter-node` support `PORT=0`?** The adapter reads `PORT` and calls `server.listen`. Confirm it (a) accepts 0 and (b) lets us read back the bound port. If the adapter doesn't expose the assigned port, the CLI may need to **pre-bind a probe socket to find a free port** (race-y) or parse the server's stdout "listening on" line — research which is cleanest. **This is the main spike before building.**
-- Auto-open timing: today there's a fixed 2s `setTimeout` before `xdg-open`. With ephemeral ports we should open only once the bound port is known — prefer a readiness signal over a guess.
-
-### Considerations
-
-- A possible _later_ alternative to the browser-tab model is a **desktop-window shell** (Tauri/Electron/`webview`) — cleaner lifecycle (closing the window ends the session) but a big toolchain add. Deferred; noted in the vision doc, not this item.
+`sharp` is declared but **unreferenced in `src/`** (upload uses `heic-convert`, EXIF uses `exiftool-vendored`). Heavy native dep carried unused. Dependency hygiene — low direct user value, but decide one way or the other rather than leaving it dangling.
 
 ---
 
-## 32. Quiet Heal — Persist Manifest Reconcile Only on Real Change
+## Cluster: Bulk & schema utilities
 
-**Priority**: Medium (unblocks editing a git-committed workspace)
-**Context**: Every list call **lazy-heals** the manifest against disk (`reconcile` in [`manifest.ts`](../src/lib/storage/manifest.ts)): new blobs get an id, vanished blobs are flagged `missing`. The host workspace (`nicb.at/src/assets/media_manager`) is **committed to git**, so _just opening the editor and browsing_ can rewrite `media/manifest.json` (mtime/formatting/no-op churn) and dirty the tree even when nothing semantically changed. Decision (2026-06-20): **quiet heal** — make reconcile **persist to disk only when something actually changed** (a blob added/missing/renamed), suppressing no-op rewrites. Editing stays fully functional; browsing produces zero diffs. Chosen _over_ a hard `--read-only` mode (which would block editing).
+Mostly shipped during the records work — small remainders to close out.
 
-### What's needed
+### 3 · Bulk Operations — bulk-export remainder
 
-- In `reconcile` (and the membership-index resync path), compute the new manifest state in memory and **diff it against the on-disk state**; skip the write entirely when they're equivalent.
-- Ensure the equivalence check is **canonical** — stable key ordering / serialization so semantically-identical manifests compare equal and don't trip on formatting.
-- Confirm `healed: { added, missing }` reporting + the toast still fire for _real_ changes (the UX signal is intentional); only the **no-op disk write** is suppressed.
+```yaml
+status: ready
+size: S
+usefulness: 1
+priority: low
+files: [src/lib/components/RecordBulkActions.svelte, src/routes/api/media-types/[typeId]/records/bulk-update, src/routes/api/media-types/[typeId]/records/bulk-delete]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Bulk-export selected records as JSON (the only remaining bulk action)
+```
 
-### Open questions / research
+> ✅ **Mostly shipped.** Bulk-**update** a field and bulk-**delete** across selected records both exist ([`RecordBulkActions.svelte`](../src/lib/components/RecordBulkActions.svelte) + the `bulk-update`/`bulk-delete` endpoints). Only **bulk-export to JSON** remains — demoted from a full item to this one-liner.
 
-- Is the spurious churn coming from `reconcile`, the **mtime-gated membership resync**, `settings.json` healing, or all three? Audit which write paths fire on a pure browse of a clean workspace — **research before implementing** (serve the committed fixture read-only-ish and watch `git status`).
-- Does any caller _depend on_ the manifest mtime advancing on every list (e.g. the mtime-gated resync that rebuilds the index from class files if any is newer)? Make sure suppressing the write doesn't break that staleness detection.
-- Decide the equivalence granularity: byte-equal serialized JSON vs. deep structural equality on the parsed object (structural is safer against formatting drift).
+### 5 · Data Validation & Repair — verify coverage
 
-### Considerations
+```yaml
+status: ready
+size: S
+usefulness: 2
+priority: low
+files: [src/routes/api/media-types/[typeId]/records/repair/+server.ts, src/lib/storage/jsonRepo.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Confirm the existing `repairRecords(dryRun)` covers orphan-key removal + type coercion + a report
+  - Extend only the gaps; close the item otherwise
+```
 
-- This is a behavior change in a **load-bearing path** (the manifest lock taken before any class lock) — needs unit coverage in [`manifest.test.ts`](../src/lib/storage/manifest.test.ts) asserting "no change ⇒ no write" and "real change ⇒ write + report".
-- Pairs with Item 30/31 as the "safe to open committed data" trio.
-
----
-
-## 33. Reader Package — Read-Only Host Integration (Mode B)
-
-**Priority**: Low–Medium (deferred; design captured, don't pre-build)
-**Context**: The "reader" half of the [npx-package vision](plans/npx-package-vision.md): let a host build (e.g. nicb.at) **consume the on-disk format** to render galleries/pages **without booting the editor**. Opposite constraints from Mode A — it must be **pure read-only** (never write, never heal, never lock-then-rename). Decision (2026-06-20): **deferred** — the consumption shape (library vs export JSON) and blob-serving strategy stay open until nicb.at's build needs are concrete. Overlaps Item 7 (static export); this is the _programmatic/library_ face of the same read logic.
-
-### Two possible faces (undecided)
-
-- **Library** — a subpath export (e.g. `media-manager/fs`) with pure, **root-explicit** read functions: `openWorkspace(root)`, `listFiles({ classIds, match })`, `listClasses()`, `listMembers(classId)`, `getFileMeta(id)`, `resolveBlobPath(id)`, `listJsonRecords(typeId)`, `getGlobals()`; re-export the Zod DTOs from [`types.ts`](../src/lib/core/types.ts) for a typed, frozen contract. Best for Node/Vite/Astro/SvelteKit hosts.
-- **Export CLI** — `media-manager export --class <id> | --type <id> | --all [--out file]` emits a denormalized JSON snapshot the host reads with plain `JSON.parse`. Best for non-Node or fully-decoupled hosts.
-
-### Research / refactor that gates this
-
-- **Root-threading refactor (the gating chunk):** the storage layer resolves the root from `getRootDir()` → `process.env.MEDIA_MANAGER_ROOT` ([`paths.ts`](../src/lib/storage/paths.ts)). A library API **must take an explicit root** rather than mutate `process.env` (hostile to a host build). Scope: how invasive is binding the repos ([`classRepo.ts`](../src/lib/storage/classRepo.ts), [`manifest.ts`](../src/lib/storage/manifest.ts), [`jsonRepo.ts`](../src/lib/storage/jsonRepo.ts)) to an explicit root? **Research before committing to the library face.**
-- **Reuse, don't re-parse:** the reader must reuse the existing read paths (same requirement as Item 7), but guarantee they take the read-only branch — no `reconcile` writes, no membership resync writes. Ties into Item 32.
-
-### Open questions
-
-- **Blob-serving strategy** (undecided): point the host's static/asset dir at `media/files/` (or symlink) and reference by manifest filename, **vs.** an export step that copies/hardlinks only the needed blobs into `public/`/`dist/` (better for pruning + content-hashed pipelines). `resolveBlobPath(id)` is the primitive both build on.
-- Which `filters.ts` capabilities (if any) the reader exposes vs. leaves to the host.
-- Versioning the on-disk format so a host pinned to an older media-manager keeps reading cleanly.
-
-### Considerations
-
-- Don't over-build: decide library-vs-export only when nicb.at's stack/build is concrete. The root-threading refactor is the one piece worth scoping early since Item 7 needs it too.
+> ✅ **Partially shipped.** A records [`repair` endpoint](../src/routes/api/media-types/[typeId]/records/repair/+server.ts) already exists with `repairRecords(dryRun)`. This is now a **verify-and-close** task: check it removes keys not in schema, coerces values to field type, and reports — extend only if a gap is found.
 
 ---
 
-## 34. Reimplement masonry grid layout for the file/record tiles
+## Cluster: Integrations
 
-**Priority**: Low (visual polish)
+External services — kept opt-in, out of the core, and out of the way.
 
-**Context**: `@masonry-grid/svelte` is a declared dependency but **unreferenced** in `src/` — it was dropped when the shared `DataGrid` (`src/lib/components/data-grid/DataGrid.svelte`) was built as a uniform CSS grid of fixed-aspect tiles. We deliberately **keep the dependency** (2026-06-21) because we want to bring back a true **masonry** layout for the tile grid — variable-height tiles packed without the dead space a fixed grid leaves under short images/text.
+### 37 · Import from Google Photos (Picker API)
 
-### What's needed
+```yaml
+status: blocked
+size: L
+usefulness: 3
+priority: medium
+files: [src/routes/files/+page.svelte, src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts]
+depends_on: []
+open_questions: 4
+acceptance:
+  - New googlePhotos server module (OAuth2 loopback + PKCE; Picker REST), googleConfig storage (media/google.json, chmod 600 — NEVER seed into test-fixtures/), client wrappers
+  - New /api/google-photos/* routes (status, credentials, auth/start, auth/callback, session, session/[id], import)
+  - GooglePhotosDialog + a "⋮ More" overflow menu next to Upload; on success call loadMeta()/loadFiles()
+  - heic-convert factored into a shared helper so /upload and /import don't duplicate it
+  - FEATURES.md updated (new feature row + 7 endpoints)
+```
 
-- Decide whether to use `@masonry-grid/svelte` as-is, a CSS `columns`/`grid-template-rows: masonry` approach (the latter still behind flags in most engines), or a small JS packer — then wire it into `DataGrid` behind the existing `GridSize` control so both the files hub and record views inherit it.
-- Preserve the side-agnostic `GridItem` contract (incl. the unused `secondaryLabel` already reserved for Files-tile subtitles) — masonry is a layout concern, hosts shouldn't change.
+Full design: [`plans/google-photos-import.md`](plans/google-photos-import.md) + mockup [`google-photos-import.html`](google-photos-import.html). **Verdict (2026-06-22): feasible** — a picked photo collapses onto the existing upload path. **Decisions locked:** bring-your-own OAuth credentials (no Google app verification); import to All Files (unclassified); a `⋮ More` overflow menu, not a primary button (rare action). **Hard constraints** (Google 2025 API): Picker API only (no library browse/sync), can't embed (new tab + poll), ~60-min download window, ~weekly re-login.
 
-### Considerations
+**Open questions / research before building:** scope tier (`photospicker.mediaitems.readonly` sensitive vs. restricted); loopback OAuth port (overlaps Item 31's ephemeral-port work); partial-import resilience (`{ imported, failed }`); token-expiry UX.
 
-- Records currently render a **records-native vertical list** (`RecordListColumn`), not the tile grid — masonry would apply to the files hub tiles (and any future record tile view), not the records list. Confirm scope before building.
+### 11 · AI / External Field Enrichment
 
----
+```yaml
+status: discussion
+size: L
+usefulness: 2
+priority: low
+files: []
+depends_on: []
+open_questions: 0
+acceptance:
+  - (Downstream/app-specific — park or spin out of the core repo)
+```
 
-## 35. Remove (or actually use) the `sharp` dependency
-
-**Priority**: Low (dependency hygiene)
-
-**Context**: `sharp` is declared in `package.json` but **not referenced anywhere in `src/`** (image work goes through `heic-convert` on upload and `exiftool-vendored` for EXIF in `src/lib/server/fileMetadata.ts`). It's a heavy native dependency to carry unused. Left in place for now (2026-06-21) pending a decision.
-
-### What's needed
-
-- Either **remove `sharp`** from `package.json` (and confirm nothing in build/scripts pulls it in), **or** adopt it for a concrete need — e.g. server-side thumbnail generation / downscaled grid previews instead of shipping full-resolution blobs to the tile grid (which would pair well with Item 34).
-
-### Considerations
-
-- If thumbnails land, `sharp` earns its keep; otherwise it's pure install-size/native-build cost. Decide one way or the other rather than leaving it dangling.
-
----
-
-## 22. Group-by-field across multiple classes ("all of" view) — ✅ Shipped
-
-**Status**: **Shipped.** In the multi-class **"all of"** view the Group-by dropdown lists one entry per `(class, field)` across the intersected classes, labelled `Class: field` (so same-named fields disambiguate). [`listAllFiles`](../src/lib/storage/classRepo.ts) accepts `groupBy: { classId, field }` and populates each item's `group_by_value` from that class's record (reusing the same `groupByValue` helper as the solo-class catalog); `GET /api/files` takes `groupByClass` + `groupByField`, and [`files/+page.svelte`](../src/routes/files/+page.svelte) loads each selected class's schema keys lazily to build the options and groups client-side over `group_by_value`. See the "All Files hub" row in [`FEATURES.md`](FEATURES.md).
-
----
-
-## 36. `relation` field type — record-to-record references (turn the islands into a graph)
-
-**Priority**: Medium (data model — high leverage, non-trivial)
-
-**Context**: We have a `file` field type that stores a **manifest id pointing at a blob** (a physical file in `media/files/`, picked via `FilePicker` over `/api/files`). What we _don't_ have is a way for a record to point at **another record** — e.g. a "Movies" record's `director` field referencing a row in a "People" record type. Today you retype "Christopher Nolan" as a plain string in every movie; there's no typed pointer, no click-through, no rename propagation. The three sub-apps are effectively islands; `file` only bridges record→blob, never record→record (or record→class-member). A `relation` field would add that edge and make the data a small graph.
-
-|            | references               | picker source           | use case                     |
-| ---------- | ------------------------ | ----------------------- | ---------------------------- |
-| `file`     | a blob                   | `/api/files`            | attach an uploaded file      |
-| `relation` | a record in another type | that type's record list | link a movie to its director |
-
-### What's needed
-
-- Add `relation` to `FieldTypeSchema` (`src/lib/core/types.ts`) and a value shape — e.g. `{ typeId: string, recordId: string }` (single) and/or `relation[]` for multi-target. Per-field config stores the **target type id** (analogous to a `dropdown`'s options).
-- `FieldInput.svelte` gains a relation editor: a picker that lists the target type's records (reuse the records `list` endpoint + the chosen type's `title_value` for labels), renders the selected target as a **title chip**, and **clicks through** to it (deep link: `/media?type=<targetType>&record=<id>` — the `?record=` deep link shipped with the sub-app restructure makes this trivial).
-- Server-side: normalize/validate relation values (target exists), and extend the `_missing_files`-style annotation to flag **dangling relations** (target record deleted) so the UI can warn, mirroring the missing-files pattern.
-- Globals parity: store the relation's target-type hint in `__field_meta` so `GlobalsEditorPane` supports it too (per the globals feature-parity rule in `CLAUDE.md`).
-
-### Considerations
-
-- **Single vs. multi target** — ship single first (smaller), add `relation[]` later.
-- **Reverse "referenced by"** — optionally show, on the target record, what points at it (a back-reference list). Requires a scan or a derived index; defer unless needed.
-- **Cross-sub-app scope** — a relation could also target a **class member** (a blob), but that's already what the `file` field does; keep `relation` for record→record to avoid overlap.
-- Decided to **defer** during the sub-app restructure (2026-06-22) — that change shipped Globals split + switcher + breadcrumbs/deep-links + ⌘K palette; relation is the natural next step now that `?record=` deep links exist to click through to.
+Ideas aimed at specific downstream uses (vision-API auto-fill, offline semantic search, a local vector DB over field values/EXIF), **not** the core local tool. Listed so they aren't lost. Keep the core provider-agnostic and local-first; gate any integration behind opt-in config and be explicit when data leaves the machine.
 
 ---
 
-## 37. Import from Google Photos (Picker API)
+## Cluster: Storage & routing — design
 
-**Priority**: Medium (user-requested; rare-use feature, kept out of the way)
-**Full design**: [`plans/google-photos-import.md`](plans/google-photos-import.md) (backend sequence diagram + file-by-file integration map) · UI mockup [`google-photos-import.html`](google-photos-import.html) (6-step walkthrough).
+Decisions to make **before** code. These unblock other items (esp. routing → 26/29) more than they deliver standalone value.
 
-**Context**: Let a user pull photos from their Google Photos library into the All Files hub from the UI. Researched 2026-06-22 (two subagents: Google API + our upload path). **Verdict: feasible** — a picked photo collapses onto the existing upload path (`write to media/files/` + `registerBlob()` in [`classRepo.ts`](../src/lib/storage/classRepo.ts)/[`manifest.ts`](../src/lib/storage/manifest.ts)); no DB, schema migration, or fixture change. Everything server-side is additive.
+### 20 · File-Based Routing
 
-### Decisions locked (2026-06-22)
+```yaml
+status: discussion
+size: M
+usefulness: 3
+priority: medium
+files: [src/routes/files/+page.svelte, src/routes/media/[typeId]/+page.svelte]
+depends_on: []
+open_questions: 2
+acceptance:
+  - (Design the route tree — deep-linkable per-file/per-class routes + shareable view/filter URLs)
+```
 
-- **Bring-your-own credentials.** Each user supplies their own Google Cloud OAuth client (Desktop app), so we never need Google app verification. Standard self-hosted pattern (rclone, Home Assistant). The alternative — one shared verified app — was rejected as too heavy for a local-first project.
-- **Import target: All Files (unclassified).** Imported blobs are plain files, classified later like any upload — no `addMembers()` call.
-- **Entry point: a "⋮ More" overflow `DropdownMenu`** next to Upload in [`files/+page.svelte`](../src/routes/files/+page.svelte) (not a primary toolbar button — rare action). Compose the existing shadcn `DropdownMenu` (same primitive as `EntityRowMenu`).
+Partly shipped already (the `?record=` deep link landed with the sub-app restructure). The fuller vision: per-file routes (`/media/file/[id]`), per-class routes, shareable filter URLs — so app state is addressable and bookmarkable. **Enabler:** unblocks the clean "go to file" affordance (Item 26) and the mobile drill-down (Item 29). **Open questions:** the route-tree shape; how much in-page state migrates to URLs.
 
-### Hard constraints (from Google's 2025 API changes — not engineerable away)
+### 18 · Records Storage Reorganization
 
-- **No library browsing or sync.** The old Library API was removed 2025-03-31; the **Picker API** is the only path. Users hand-pick photos in **Google's own hosted window**; we only ever receive their explicit selection. Every import is manual.
-- **Picker can't be embedded** (no iframe) — opens in a new tab; we poll for completion.
-- **~60-min download window** — picked-item `baseUrl`s expire in ~1h and require the OAuth bearer header, so download immediately.
-- **~weekly re-login** — Testing-mode OAuth apps expire refresh tokens after 7 days.
-- **First-run setup wizard** — the bring-your-own-credentials Cloud Console walkthrough.
+```yaml
+status: discussion
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/storage/jsonRepo.ts, src/lib/storage/paths.ts]
+depends_on: []
+open_questions: 3
+acceptance:
+  - (Decide the json-side layout before moving any files)
+```
 
-### What's needed (see plan for the full map)
+Parallel to the file-first `media/` reorg: move the `json`-kind side under a top-level `records/` folder (record files + `records/settings.json`). Internal layout change, low direct user value. **Now revisitable** since the classes layout is settled. **Open questions:** how `globals` fits; whether each json "type" is a subfolder; what lives in `records/settings.json` vs. per-type; migration from today's top-level per-type folders.
 
-- New `src/lib/server/googlePhotos.ts` (OAuth2 loopback + PKCE via `google-auth-library`; Picker REST: session/poll/list/download), `src/lib/storage/googleConfig.ts` (`media/google.json`, chmod 600 — **never** seed into `test-fixtures/`), `src/lib/api/googlePhotos.ts` (client wrappers).
-- New routes under `src/routes/api/google-photos/`: `status`, `credentials`, `auth/start`, `auth/callback`, `session`, `session/[id]`, `import`.
-- New `GooglePhotosDialog.svelte` (setup → connect → pick → progress → done) + the `⋮` menu in `files/+page.svelte`; on success call the existing `loadMeta()`/`loadFiles()`.
-- Add `google-auth-library` to `package.json` (skip `googleapis` — no first-party Picker client; hit the REST endpoints via the auth client's `.request()`). Update [`FEATURES.md`](FEATURES.md) (new feature row + 7 endpoints) per repo rules.
-- Factor the upload route's `heic-convert` step into a shared helper so `/upload` and `/import` don't duplicate it.
+### 19 · Per-Class "Should / Shouldn't Be Here" Review (excludedFiles successor)
 
-### Open questions / research before building
+```yaml
+status: discussion
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - Per class, mark a file "dismissed / not-relevant" so it stops surfacing as a candidate (per-class, never a global hide)
+  - A triage view: for a class, show candidate files (unclassified / heuristic) and quick add-to-class or dismiss
+  - Dismissals stored in the class JSON (source of truth), optionally mirrored into the manifest index
+```
 
-- **Scope tier:** confirm in the Cloud Console whether `photospicker.mediaitems.readonly` is *sensitive* (brand verification) or *restricted* (annual CASA audit). Bring-your-own-credentials sidesteps it for us, but verify.
-- **Loopback port** for the OAuth redirect: pick a free ephemeral port at `auth/start` time (Desktop clients allow any `127.0.0.1` port). Note the overlap with Item 31 (ephemeral server port).
-- **Partial-import resilience:** the download loop must survive one bad/expired `baseUrl` and report `{ imported, failed }`.
-- **Token-expiry UX:** surface "connected · expires in N days" from a stored `tokenObtainedAt` so the weekly re-login isn't a surprise.
+The file-first redesign removed per-class `excludedFiles` (membership is opt-in). This reintroduces the **useful** half — triage — without the opt-out burden. `discussion` because it's a design idea (the value/shape isn't confirmed), even though the mechanics are clear. Keep distinct from delete-from-disk (global) and remove-from-class (drops membership).
+
+### 16 · Open Design Questions
+
+```yaml
+status: discussion
+size: S
+usefulness: 1
+priority: low
+files: [.cursor/rules/svelte5.mdc]
+depends_on: []
+open_questions: 2
+acceptance:
+  - Decide the defaults-storage policy (explicit defaults vs. filter-for-empty)
+  - Expand the Svelte 5 do/don't guidance ($bindable when appropriate vs. confusing)
+```
+
+Meta — decisions owed before related work, captured here so they're not lost.
+
+---
+
+## Cluster: Misc fixes & polish
+
+Small, self-contained quality-of-life. Several name files removed in the file-first redesign — repointed below.
+
+### 17 · Capture Nested Folder Path on Folder Upload
+
+```yaml
+status: blocked
+size: M
+usefulness: 3
+priority: medium
+files: [src/routes/files/+page.svelte, src/routes/api/files/upload/+server.ts, src/lib/storage/classRepo.ts]
+depends_on: []
+open_questions: 4
+acceptance:
+  - Folder upload preserves per-file relative paths (webkitdirectory and/or drag-drop directory traversal)
+  - An upload-time "Save folder path to field" option with a field selector (existing schema fields)
+  - On import, write each file's relative path into the chosen field on the created/linked record
+```
+
+> 🔧 **Stale refs repointed.** Original pointers named `ImageEditorPane.svelte` + `repo.ts` (removed). Upload now flows through [`files/+page.svelte`](../src/routes/files/+page.svelte) → [`/api/files/upload`](../src/routes/api/files/upload/+server.ts) → [`classRepo.ts`](../src/lib/storage/classRepo.ts).
+
+User-requested; **decisions locked:** capture the relative path within the dropped folder; user picks an existing schema field per upload; relative-path-only (browser limitation). **Open questions (block):** filename collisions in the flat global store (Item 6 shipped, which helps — relative path can disambiguate); populate-only-when-empty vs. always-overwrite; remember last-used field per type; ship `webkitdirectory` input first vs. drag-drop directory support too.
+
+### 12 · Fix / Normalize File Extension
+
+```yaml
+status: ready
+size: S
+usefulness: 2
+priority: low
+files: [src/lib/storage/classRepo.ts, src/lib/server/fileMetadata.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - A per-file action to rename the extension (via the O(1) renameBlobById path — references stay intact)
+  - Optionally detect the true type (magic bytes) and suggest the correct extension
+```
+
+> 🔧 **Stale ref repointed + simplified by Item 6.** The old `propagateFilenameRename` fan-out is gone — rename is now O(1) via `renameBlobById` ([`classRepo.ts`](../src/lib/storage/classRepo.ts)/[`manifest.ts`](../src/lib/storage/manifest.ts)). Since identity is decoupled from filename, an extension fix is a pure display-name change. `fileMetadata.ts` already sniffs magic bytes — reuse it for type detection.
+
+### 13 · Swap Width/Height (orientation fix)
+
+```yaml
+status: ready
+size: S
+usefulness: 2
+priority: low
+files: [src/lib/components/FileEditorPanel.svelte, src/lib/storage/classRepo.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - A per-record action to swap the stored width and height values
+  - Optionally a heuristic warning when stored dims look inconsistent with the decoded image, offering the swap
+```
+
+Stored `width`/`height` (written on upload) can end up transposed for some EXIF-oriented images. Niche bug-fix. The heuristic-warning half would lean on `sharp` (see Item 35) — but the manual swap action needs no new dep, so this is `ready`.
+
+### 29 · Records Explorer — Mobile / Narrow Drill-Down
+
+```yaml
+status: ready
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/components/records/RecordsRail.svelte, src/routes/media/[typeId]/+page.svelte, src/lib/hooks/is-mobile.svelte.ts]
+depends_on: []
+open_questions: 0
+acceptance:
+  - On narrow viewports, show one pane at a time (rail → list → detail) with back navigation, reusing the is-mobile hook
+  - Decide whether the rail becomes a top type-switcher or an offcanvas drawer on mobile
+```
+
+The Records Explorer ships as a desktop three-pane layout; three columns don't fit on narrow viewports. Sequences naturally with Item 20 (per-pane URLs make back/forward fall out of routing) but doesn't strictly need it.
+
+---
+
+## Shipped & folded
+
+Archive — kept as tombstones so cross-references and the triage board resolve. **Authoritative status lives in [`FEATURES.md`](FEATURES.md).** Do not re-litigate these here.
+
+| # | Item | Disposition |
+| --- | --- | --- |
+| 1 | File Field Picker UI | ✅ **Shipped** — `FilePicker` over the global blob store (search + thumbnails), stores the chosen blob id. |
+| 2 | Missing File Indicators (API + UI) | ✅ **Shipped** — flagged end-to-end (`missing_file_fields` / `_missing_files`); grid badges + inline editor warnings. |
+| 6 | Stable File IDs | ✅ **Shipped (Option 3)** — manifest UUIDs, O(1) rename, lazy-heal. Foundational for Items 7/12/17. See `STABLE_FILE_IDS.md`. |
+| 22 | Group-by across multiple classes ("all of" view) | ✅ **Shipped** — Group-by lists one `(class, field)` per intersected class; `listAllFiles` takes `groupBy`. |
+| 28 | Per-Type / Per-Class Icon Picker | ✅ **Shipped** — curated Lucide set in the unified `EntitySettingsDialog`; rendered on rails, breadcrumb, palette, grid chips. |
+| 27 | npx Package Distribution | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)". |

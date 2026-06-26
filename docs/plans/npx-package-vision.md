@@ -4,6 +4,32 @@
 > Written to be referenced and refined in future chats. See the companion diagram
 > [`docs/npx-package-vision.html`](../npx-package-vision.html).
 
+## Refined decisions (2026-06-22)
+
+A second planning pass, grounded in a read of the current code. These supersede the
+2026-06-20 notes where they overlap:
+
+- **Quiet heal is largely already implemented.** The earlier note assumed `reconcile`
+  "always rewrites." It does not — `reconcile` (`manifest.ts`) writes only `if (changed)`,
+  and so do `setClassMembership` / `removeClassFromIndex` / `applyMembershipIndex`. Pure
+  browsing of unchanged committed data produces **zero writes** from those paths today.
+  Two residuals remain: (a) the **mtime-gated resync** (`classRepo.ts: reconcileAndResync`)
+  re-fires on every list after a `git` checkout/clone (git doesn't preserve mtimes), but it
+  recomputes membership and skips the write when content matches — wasted CPU, **no diff**;
+  (b) when a _genuine_ change happens, the whole `manifest.json` is rewritten, so any
+  mismatch between the committed file's byte-format and the writer's output balloons into a
+  reformat diff. **So #1 shrinks to "lock write-format stability"** (commit files in exactly
+  the format the writer emits) — not a new quiet-heal code path.
+- **Ephemeral port → the CLI picks a free port itself** (not adapter `PORT=0`). The CLI
+  grabs a free port via `net.createServer().listen(0)`, passes that concrete value as `PORT`
+  to the child server, and opens that exact URL. Deterministic, no stdout parsing, and it
+  also removes today's `setTimeout(…, 2000)` open-the-browser race. (Plain `PORT=0` would
+  force reading the bound port back out of the child's stdout — racier and more plumbing.)
+- **Mode B stays design-only for now.** Keep refining the reader design (library-first,
+  `export` as a thin wrapper; point the host static dir at `media/files/`), but **build
+  nothing** until nicb.at's render needs are concrete. The root-threading refactor (#5) is
+  the gating work and is explicitly deferred.
+
 ## Decisions so far (2026-06-20)
 
 Captured from a planning chat — these steer the sequencing, not yet committed to code:
@@ -42,10 +68,11 @@ Captured from a planning chat — these steer the sequencing, not yet committed 
 1. **Root discovery chain** (steps 3–5 below) — the headline `npx` experience.
 2. **`media-manager.config.json`** at the nicb.at repo root pointing at
    `src/assets/media_manager` (root path only; **no `port`** — ephemeral).
-3. **Quiet heal** — make `reconcile` persist only on real change, so browsing committed
-   data produces zero git diffs while editing still works normally.
-4. **Ephemeral port + auto-open** — replace the fixed `PORT` default with port 0 and open
-   the assigned URL.
+3. **Write-format stability** (was "quiet heal") — `reconcile` already persists only on
+   real change; commit files in the writer's exact byte-format so the occasional real write
+   produces a minimal diff, not a whole-file reformat.
+4. **Ephemeral port + auto-open** — the **CLI picks a free port** (`net …listen(0)`), passes
+   it as `PORT` to the child, and opens that exact URL (also removes the 2s open race).
 5. **Local-dep wiring** — add media-manager to nicb.at's `package.json` so `npx
 media-manager` resolves the local install.
 
@@ -221,30 +248,34 @@ bytes in its output. Two patterns to document/support:
 - Serve model → **ephemeral port + auto-open**; keep the server; desktop shell deferred.
 - Dependency/bundle work → **deferred entirely**.
 
+**Resolved (2026-06-22):**
+
+- Quiet heal → already write-guarded; #1 reduces to **write-format stability** (commit
+  files in the writer's exact byte-format), not a new code path.
+- Ephemeral port → **CLI picks a free port itself** and opens that exact URL (not `PORT=0`).
+- Mode B → **design-only**; build nothing yet. Reader is library-first with `export` as a
+  thin wrapper; host static dir points at `media/files/` (pattern 1).
+
 Still open:
 
-1. **Quiet-heal implementation** _(near-term)_ — how to make `reconcile` detect "nothing
-   actually changed" cleanly so it skips the write. Needs a real-diff check before persist
-   (compare computed index/manifest to on-disk) rather than always rewriting.
-2. **Ephemeral-port plumbing** _(near-term)_ — `adapter-node` reads `PORT`; confirm port 0
-   works through the adapter, or whether the CLI must read back the actually-bound port to
-   build the auto-open URL.
-3. **Host consumption shape** _(deferred — Mode B)_ — library (`media-manager/fs`) vs
-   `export` JSON. Decide once nicb.at's build needs are concrete; don't pre-build.
-4. **Blob-serving strategy** _(deferred — Mode B)_ — point host asset dir at `media/files/`
-   vs copy/export needed blobs into the build.
-5. **Reader root-threading refactor** _(deferred — gates Mode B)_ — decouple the storage
-   layer from `getRootDir()`/env; only matters once #3 lands.
-6. **Desktop-window shell** _(someday)_ — Tauri/Electron/`webview` wrapper instead of a
+1. **Host consumption shape** _(deferred — Mode B, design-only)_ — confirmed
+   library-first (`media-manager/fs`) with `export` as a thin wrapper, but unbuilt until
+   nicb.at's build needs are concrete.
+2. **Blob-serving strategy** _(deferred — Mode B)_ — start with pattern 1 (host asset dir →
+   `media/files/`); copy/content-hash pipeline (pattern 2) only if pruning matters.
+3. **Reader root-threading refactor** _(deferred — gates Mode B)_ — thread an explicit
+   `WorkspacePaths` struct through the read paths; keep env-reading `getRootDir()` as the
+   Mode-A default factory. The real meat, deliberately not started.
+4. **Desktop-window shell** _(someday)_ — Tauri/Electron/`webview` wrapper instead of a
    browser tab, if the localhost-tab feel ever bothers you.
-7. **Bundle/deps** _(deferred)_ — drop unused `sharp`/`@masonry-grid/svelte`; consider
+5. **Bundle/deps** _(deferred)_ — drop unused `sharp`/`@masonry-grid/svelte`; consider
    lazy `exiftool-vendored`. Revisit only if cold `npx` install time annoys.
 
 ## Concrete nicb.at end-state (north star)
 
 ```
 ~/Projects/nicb.at/
-├─ media-manager.config.json          # { root: "src/assets/media_manager", port: 4321 }
+├─ media-manager.config.json          # { root: "src/assets/media_manager" } — no port (ephemeral)
 ├─ src/assets/media_manager/          # the workspace (committed)
 │  └─ media/{manifest.json, files/, classes/, settings.json}
 └─ src/lib/media.ts                   # imports media-manager/fs, renders galleries at build

@@ -5,7 +5,8 @@
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
-	import { FileText, Plus } from 'lucide-svelte';
+	import EntityIcon from '$lib/components/EntityIcon.svelte';
+	import { Plus } from 'lucide-svelte';
 	import type { MediaTypeSummary } from '$lib/api/client.js';
 
 	/**
@@ -86,7 +87,7 @@
 					class="min-w-0 flex-1 justify-start gap-2 hover:bg-transparent"
 					onclick={() => onSelect(t.id)}
 				>
-					<FileText class="size-4 shrink-0" />
+					<EntityIcon name={t.icon} fallback="file-text" class="size-4 shrink-0" />
 					<span class="truncate">{t.displayName}</span>
 				</Button>
 				<span
@@ -117,7 +118,7 @@
 									size="icon"
 									onclick={() => onSelect(t.id)}
 								>
-									<FileText class="size-4" />
+									<EntityIcon name={t.icon} fallback="file-text" class="size-4" />
 								</Button>
 							{/snippet}
 						</Tooltip.Trigger>

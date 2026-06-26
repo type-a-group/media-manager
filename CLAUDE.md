@@ -57,6 +57,18 @@ To **drive the UI and capture it** for a running feature, use Playwright (devDep
 
 When a change alters on-disk structure — `settings.json` / data-file layout, reserved-group behavior, or media-kind semantics — **update the `test-fixtures/` seed in the same change** (regenerate it by serving a scratch root and recreating the types, then copy back), the same discipline that applies to `docs/FEATURES.md`.
 
+### Managing `docs/FUTURE_CHANGES.md` (the backlog)
+
+`docs/FUTURE_CHANGES.md` is a **non-committal backlog** organized for agent hand-off, not a changelog and not the shipped feature set. It is the planning counterpart to `FEATURES.md` (which records what *is*). Keep it usable by following these rules:
+
+- **Numbers are immutable IDs — never renumber.** Item numbers are cross-referenced from `FEATURES.md`, the `plans/` docs, and `FUTURE_CHANGES_TRIAGE.html`. New items take the next free number; closed items become tombstones (a one-liner in **Shipped & folded**), not gaps to backfill. Organize by **cluster**, never by numeric order.
+- **Every active item carries a `yaml` frontmatter block** (`status · size · usefulness · priority · files · depends_on · open_questions · acceptance`) — see the "Frontmatter legend" at the top of the file. Match that shape; don't invent ad-hoc fields.
+- **`status: ready` ⇔ `open_questions: 0`.** This is the load-bearing invariant: `ready` means an agent can pick the item up and finish it without coming back to ask. The instant there's an unresolved decision, the status is `blocked` (engineering unknown) or `discussion` (product/scope unknown) — never `ready`. Don't mark something `ready` to make the board look better; an over-eager `ready` is worse than an honest `blocked`.
+- **`files:` must point at code that still exists.** This file rots fastest through stale pointers — items routinely outlive the components they name (the file-first redesign deleted `repo.ts`, `ImageViewGrid`, `JsonRecordGrid`, `selection.svelte.ts`, etc.). When you touch an item, **verify its `files:` against the tree** and repoint; a `🔧 stale refs repointed` note documents the fix.
+- **Acceptance criteria are the spec.** Write them as the concrete, checkable definition of done — that's what an agent implements against. Deliberately-deferred sub-scope (e.g. "multi-target later") is a **decision, not an open question** — record it in prose, don't inflate `open_questions`.
+- **When work ships, move it to *Shipped & folded* and update `FEATURES.md` in the same change** — don't leave a "done" item inflating the active board. Conversely, don't delete a shipped item's tombstone; cross-references resolve to it.
+- **Keep `FUTURE_CHANGES_TRIAGE.html` in sync.** It's a hand-maintained visual board over the same items (its `ITEMS` array mirrors the file: status, size, `use` = usefulness, cluster, `oq`, stale flag). When you add, close, re-cluster, or re-score an item, update both — and the item count in the header.
+
 ## Architecture
 
 ### On-disk layout and discovery

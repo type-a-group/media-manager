@@ -98,11 +98,13 @@
 	const activeType = $derived(types.find((t) => t.id === activeTypeId) ?? null);
 	const typeName = $derived(activeType?.displayName ?? activeTypeId ?? '');
 
-	/** Breadcrumb trail: Home › Records › <active type>. */
+	/** Breadcrumb trail: Home › Records › <active type>. The active-type crumb shows its icon. */
 	const crumbs = $derived([
 		{ label: 'Home', href: '/' },
 		{ label: 'Records', href: '/media' },
-		...(activeTypeId ? [{ label: typeName }] : [])
+		...(activeTypeId
+			? [{ label: typeName, icon: activeType?.icon, iconFallback: 'file-text' as const }]
+			: [])
 	]);
 
 	/**
