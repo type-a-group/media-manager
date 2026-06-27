@@ -5,8 +5,9 @@ code paths can be exercised:
 
 | Path                           | What                                                                                                             |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `media/files/`                 | The global blob dir: three PNGs + one `.txt`                                                                     |
+| `media/files/`                 | The global blob dir: three PNGs, one `.txt`, and one transposed `.jpg`                                           |
 | `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                                                 |
+| `media/files/rotated.jpg`      | Unclassified JPEG with EXIF Orientation 6 + intentionally **transposed** stored dims (1200×800 vs displayed 800×1200) — exercises the Item 13 dimension-mismatch warning + fix |
 | `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken); `config.icon: image`  |
 | `media/classes/documents.json` | Class with the `.txt` as a member (any file type); `config.icon: file-text`                                      |
 | `media/settings.json`          | Media-wide prefs (class order, grid size)                                                                        |

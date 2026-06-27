@@ -2,6 +2,7 @@ import { exiftool } from 'exiftool-vendored';
 import * as fssync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { orientationCorrectedDimensions } from '$lib/core/images.js';
 
 const OVERWRITE_ORIGINAL = '-overwrite_original';
 
@@ -349,6 +350,88 @@ export async function readImageDimensions(
 	} catch {
 		return { width: undefined, height: undefined };
 	}
+}
+
+/** Outcome of comparing a blob's stored manifest dimensions against the real image (Item 13). */
+export interface DimensionConsistency {
+	/** Dimensions currently stored in the manifest (either may be undefined). */
+	stored: { width: number | undefined; height: number | undefined };
+	/** Raw pixel dimensions read from the file (pre-orientation), or undefined if unreadable. */
+	fileRaw: { width: number | undefined; height: number | undefined };
+	/** EXIF Orientation tag value (1–8), or undefined when absent. */
+	orientation: number | undefined;
+	/** Orientation-corrected (displayed) dimensions — what the image actually looks like. */
+	corrected: { width: number; height: number } | undefined;
+	/** True iff stored dims exist and disagree with `corrected` (the actionable mismatch). */
+	mismatch: boolean;
+}
+
+/**
+ * Pure comparison of stored manifest dimensions against an image's raw dimensions + EXIF Orientation.
+ * No IO — the single source of the "are the stored dims right?" rule, shared by the standalone check
+ * (which reads the file) and the metadata endpoint (which already has these values).
+ *
+ * A mismatch is only flagged when stored dimensions actually exist — an un-backfilled blob is not
+ * "wrong", just unmeasured (the normal lazy backfill handles that). Missing raw dims ⇒ no mismatch.
+ *
+ * @param stored - Dimensions currently stored in the manifest.
+ * @param fileRaw - Raw (pre-orientation) pixel dimensions read from the file.
+ * @param orientation - EXIF Orientation tag value (1–8), or undefined when absent.
+ * @returns A {@link DimensionConsistency} describing the comparison.
+ */
+export function compareStoredVsImage(
+	stored: { width: number | undefined; height: number | undefined },
+	fileRaw: { width: number | undefined; height: number | undefined },
+	orientation: number | undefined
+): DimensionConsistency {
+	if (fileRaw.width == null || fileRaw.height == null) {
+		return { stored, fileRaw, orientation, corrected: undefined, mismatch: false };
+	}
+	const corrected = orientationCorrectedDimensions(fileRaw.width, fileRaw.height, orientation);
+	const mismatch =
+		stored.width != null &&
+		stored.height != null &&
+		(stored.width !== corrected.width || stored.height !== corrected.height);
+	return { stored, fileRaw, orientation, corrected, mismatch };
+}
+
+/**
+ * Compare a blob's stored manifest dimensions against the real image, accounting for EXIF Orientation.
+ *
+ * Reads the file's raw `ImageWidth`/`ImageHeight` + `Orientation` via exiftool, then defers to
+ * {@link compareStoredVsImage}. Fails safe: any read error, a PDF, or unreadable dimensions yield
+ * `mismatch: false`.
+ *
+ * @param filePath - Absolute path to the blob.
+ * @param stored - The dimensions currently stored in the manifest for this blob.
+ * @returns A {@link DimensionConsistency} describing the comparison.
+ *
+ * Use case:
+ * - Drives the Item 13 "stored dimensions look wrong" warning badge + the smart "Correct dimensions"
+ *   fix (the lightweight `/dimension-check` endpoint).
+ */
+export async function dimensionConsistency(
+	filePath: string,
+	stored: { width: number | undefined; height: number | undefined }
+): Promise<DimensionConsistency> {
+	const empty: DimensionConsistency = {
+		stored,
+		fileRaw: { width: undefined, height: undefined },
+		orientation: undefined,
+		corrected: undefined,
+		mismatch: false
+	};
+	if (path.extname(filePath).toLowerCase() === '.pdf') return empty;
+	let tags;
+	try {
+		tags = await exiftool.read(filePath);
+	} catch {
+		return empty;
+	}
+	const rawW = typeof tags.ImageWidth === 'number' ? tags.ImageWidth : undefined;
+	const rawH = typeof tags.ImageHeight === 'number' ? tags.ImageHeight : undefined;
+	const orientation = typeof tags.Orientation === 'number' ? tags.Orientation : undefined;
+	return compareStoredVsImage(stored, { width: rawW, height: rawH }, orientation);
 }
 
 /**

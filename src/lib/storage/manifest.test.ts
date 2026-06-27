@@ -8,6 +8,8 @@ import {
 	removeFileId,
 	reconcile,
 	readManifest,
+	getEntryDimensions,
+	setBlobDimensions,
 	getFilenameForFileId,
 	availableFromManifest,
 	missingFileFields,
@@ -83,6 +85,49 @@ describe('global blob manifest', () => {
 		// The single id maps a.png across both runs.
 		const m = await readManifest();
 		expect(Object.values(m.files).filter((e) => e.file_name === 'a.png')).toHaveLength(1);
+	});
+});
+
+describe('blob dimensions (Item 13)', () => {
+	beforeEach(() => {
+		const root = path.join(
+			tmpdir(),
+			`mm-dims-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		fs.mkdirSync(path.join(root, 'media', 'files'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	it('getEntryDimensions returns undefined dims for a fresh blob and unknown ids', async () => {
+		const id = await mintFileId('photo.jpg');
+		expect(await getEntryDimensions(id)).toEqual({ width: undefined, height: undefined });
+		expect(await getEntryDimensions('does-not-exist')).toEqual({
+			width: undefined,
+			height: undefined
+		});
+	});
+
+	it('setBlobDimensions persists exactly the two numbers and getEntryDimensions reads them back', async () => {
+		const id = await mintFileId('photo.jpg');
+		await setBlobDimensions(id, { width: 3000, height: 4000 });
+		expect(await getEntryDimensions(id)).toEqual({ width: 3000, height: 4000 });
+		const entry = (await readManifest()).files[id];
+		// Nothing else on the entry is disturbed by the dimension write.
+		expect(entry.file_name).toBe('photo.jpg');
+		expect(entry.classes).toEqual([]);
+	});
+
+	it('setBlobDimensions overwrites previously stored dims (a deliberate correction, unlike backfill)', async () => {
+		const id = await mintFileId('photo.jpg');
+		await setBlobDimensions(id, { width: 4000, height: 3000 });
+		await setBlobDimensions(id, { width: 3000, height: 4000 });
+		expect(await getEntryDimensions(id)).toEqual({ width: 3000, height: 4000 });
+	});
+
+	it('setBlobDimensions throws on an unknown id', async () => {
+		await expect(
+			setBlobDimensions('00000000-0000-4000-8000-000000000000', { width: 1, height: 1 })
+		).rejects.toThrow();
 	});
 });
 

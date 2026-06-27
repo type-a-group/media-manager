@@ -1,6 +1,8 @@
 # Item 13 — Swap Width / Height (orientation fix)
 
-> 1.0 brief. Backlog: [Item 13](../../FUTURE_CHANGES.md#13--swap-widthheight-orientation-fix). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: ready.**
+> 1.0 brief. Backlog: [Item 13](../../FUTURE_CHANGES.md#shipped--folded). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: ✅ shipped** — reframed into a dimension-consistency check + fix; design plan: [`13-swap-dimensions-plan.html`](13-swap-dimensions-plan.html).
+>
+> **Reframe (interview):** not a free-floating swap button — it surfaces **only when stored dims disagree with the real (orientation-corrected) image**, in the **Metadata popup** (warning badge + banner), with a smart **"Correct dimensions"** and a manual **"Swap W↔H"** escape hatch. EXIF-orientation is the root cause; detection is dependency-free (exiftool). Pixel re-encode / orientation-baking deferred (Item 35/`sharp`).
 
 ## Backlog snapshot
 
@@ -34,8 +36,26 @@ Stored `width`/`height` (written on upload) can end up **transposed** for some E
 
 ## Verification stages (Phase 4)
 
-- [ ] `npm run check` + `npm run lint` clean.
-- [ ] `npm run test` — swap writes the transposed values and nothing else changes.
-- [ ] `npm run test:serve` — swap a fixture file's dims, confirm persistence + that the grid/editor reflect the corrected orientation.
-- [ ] UI capture of the swap action (before → after dims).
-- [ ] `FEATURES.md` updated; Item 13 → **Shipped & folded**; triage HTML synced.
+- [x] `npm run check` + `npm run lint` clean (touched files).
+- [x] `npm run test` — orientation helpers (1–8), `compareStoredVsImage`, `setBlobDimensions` (108 pass).
+- [x] `npm run test:serve` — endpoint matrix: mismatch detected, correct/swap persist + clear, 400/404 guards.
+- [x] UI capture of the swap action (before → after dims).
+- [x] `FEATURES.md` updated; Item 13 → **Shipped & folded**; triage HTML synced.
+
+## ✅ Shipped — manual smoke test (developer)
+
+Run `npm run test:serve` (throwaway fixture — never a real root). The fixture now ships
+`rotated.jpg` (EXIF Orientation 6, stored dims **1200×800** but the image displays **800×1200**).
+
+1. **Badge:** `/files` → click **rotated.jpg** (it's unclassified, shows portrait). The side
+   panel's **ⓘ Metadata** button carries an **amber "!" dot**; hover → "Stored dimensions look wrong".
+   The three PNGs / the `.txt` show **no** badge.
+2. **Banner + correct:** open the metadata popup → amber banner _"Stored dimensions don't match the
+   image — Stored 1200 × 800, … corrected 800 × 1200 · EXIF Orientation 6."_ Click **Correct
+   dimensions → 800 × 1200** → toast, **banner + badge disappear**. (The "Image Properties" Width/Height
+   still read the file's raw EXIF 1200×800 — expected; we corrected the manifest's _displayed_ dims,
+   not the pixels.)
+3. **Persists:** reload the page → no badge on rotated.jpg (the manifest now stores 800×1200).
+4. **Swap escape hatch:** to see it again, the manual **Swap W↔H** transposes whatever is stored — use
+   it when the smart guess is wrong. (Both buttons live in the same on-mismatch banner.)
+5. **Not an image:** the `.txt` / a PDF never run the check — no badge, no banner.

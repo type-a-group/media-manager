@@ -9,8 +9,15 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
-	import { apiGetFileMetadata, apiStripFileMetadata, apiRenameFile } from '$lib/api/files.js';
-	import { supportsFileMetadata, fileExtension } from '$lib/core/images.js';
+	import {
+		apiGetFileMetadata,
+		apiStripFileMetadata,
+		apiRenameFile,
+		apiCheckFileDimensions,
+		apiSetFileDimensions,
+		type DimensionCheck
+	} from '$lib/api/files.js';
+	import { supportsFileMetadata, fileExtension, isPdfFilename } from '$lib/core/images.js';
 	import type { ImageId } from '$lib/core/ids.js';
 
 	/**
@@ -46,6 +53,12 @@
 
 	// Fix extension state
 	let fixExtLoading = $state(false);
+
+	// Dimension-consistency state (Item 13)
+	let dimCheck = $state<DimensionCheck | null>(null);
+	let dimFixLoading = $state(false);
+	/** True when the stored dimensions disagree with the real (orientation-corrected) image. */
+	const dimMismatch = $derived(dimCheck?.mismatch === true && dimCheck.corrected != null);
 
 	// Rename state
 	let renameMode = $state(false);
@@ -229,6 +242,57 @@
 	}
 
 	/**
+	 * Fetch the stored-vs-image dimension check (Item 13). Drives the warning badge before the dialog
+	 * is opened. Best-effort: failures leave `dimCheck` null (no badge), never surface an error.
+	 *
+	 * @param imageId - Blob id (manifest UUID).
+	 */
+	async function fetchDimensionCheck(imageId: ImageId) {
+		try {
+			dimCheck = await apiCheckFileDimensions(imageId);
+		} catch {
+			dimCheck = null;
+		}
+	}
+
+	/**
+	 * Persist new intrinsic dimensions, then refresh the metadata + check and notify the host so the
+	 * grid tile / panel reflect the corrected dimensions.
+	 *
+	 * @param width - Corrected width to store.
+	 * @param height - Corrected height to store.
+	 */
+	async function applyDimensions(width: number, height: number) {
+		if (!id) return;
+		dimFixLoading = true;
+		try {
+			await apiSetFileDimensions(id, width, height);
+			toast.success(`Dimensions set to ${width} × ${height}`);
+			dimCheck = await apiCheckFileDimensions(id);
+			if (isOpen) await fetchMetadata(id);
+			onchanged?.();
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : 'Failed to set dimensions');
+		} finally {
+			dimFixLoading = false;
+		}
+	}
+
+	/** Smart fix: write the orientation-corrected (displayed) dimensions. */
+	function handleCorrectDimensions() {
+		if (!dimCheck?.corrected) return;
+		applyDimensions(dimCheck.corrected.width, dimCheck.corrected.height);
+	}
+
+	/** Manual escape hatch: transpose whatever dimensions are currently stored. */
+	function handleSwapDimensions() {
+		const w = dimCheck?.stored.width;
+		const h = dimCheck?.stored.height;
+		if (w == null || h == null) return;
+		applyDimensions(h, w);
+	}
+
+	/**
 	 * Rename the file (base name only, extension locked).
 	 */
 	async function handleRename() {
@@ -269,6 +333,15 @@
 			renameError = null;
 		}
 	});
+
+	// Check stored-vs-image dimensions when a (raster) file is shown, so the warning badge can appear
+	// without opening the dialog. PDFs/vectors have no meaningful pixel dimensions.
+	$effect(() => {
+		dimCheck = null;
+		if (id && metadataSupported && !isPdfFilename(filename ?? '')) {
+			fetchDimensionCheck(id);
+		}
+	});
 </script>
 
 <Dialog.Root bind:open={isOpen}>
@@ -276,11 +349,17 @@
 		<Tooltip.Trigger>
 			{#if metadataSupported}
 				<Dialog.Trigger
-					class={buttonVariants({ variant: 'outline', size: 'icon' })}
-					title="Metadata"
-					aria-label="Metadata"
+					class={buttonVariants({ variant: 'outline', size: 'icon' }) + ' relative'}
+					title={dimMismatch ? 'Metadata — stored dimensions look wrong' : 'Metadata'}
+					aria-label={dimMismatch ? 'Metadata, stored dimensions look wrong' : 'Metadata'}
 				>
 					<InfoIcon />
+					{#if dimMismatch}
+						<span
+							class="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-amber-500 text-[8px] font-bold leading-none text-amber-950"
+							aria-hidden="true">!</span
+						>
+					{/if}
 				</Dialog.Trigger>
 			{:else}
 				<span
@@ -294,7 +373,13 @@
 			{/if}
 		</Tooltip.Trigger>
 		<Tooltip.Content side="top" sideOffset={6}>
-			{metadataSupported ? 'View file metadata' : unsupportedMessage}
+			{#if !metadataSupported}
+				{unsupportedMessage}
+			{:else if dimMismatch}
+				Stored dimensions look wrong
+			{:else}
+				View file metadata
+			{/if}
 		</Tooltip.Content>
 	</Tooltip.Root>
 	<Dialog.Content>
@@ -410,6 +495,60 @@
 												? 'Renaming...'
 												: `Fix extension to ${metadata.detectedFormatExtension}`}
 										</Button>
+									</div>
+								</div>
+							</div>
+						{/if}
+						<!-- Warning when stored dimensions disagree with the real image (Item 13) -->
+						{#if dimMismatch && dimCheck?.corrected && dimCheck.stored.width != null && dimCheck.stored.height != null}
+							<div class="rounded-md p-4 border border-amber-500/50 bg-amber-500/10">
+								<div class="flex">
+									<svg
+										class="h-5 w-5 text-amber-600 dark:text-amber-500 shrink-0 mr-2"
+										fill="currentColor"
+										viewBox="0 0 20 20"
+										aria-hidden="true"
+									>
+										<path
+											fill-rule="evenodd"
+											d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+											clip-rule="evenodd"
+										/>
+									</svg>
+									<div class="min-w-0">
+										<h3 class="text-sm font-medium text-amber-800 dark:text-amber-200">
+											Stored dimensions don't match the image
+										</h3>
+										<p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+											Stored
+											<code class="px-1 py-0.5 rounded bg-amber-500/20 text-xs"
+												>{dimCheck.stored.width} × {dimCheck.stored.height}</code
+											>, but the image (orientation-corrected) is
+											<code class="px-1 py-0.5 rounded bg-amber-500/20 text-xs"
+												>{dimCheck.corrected.width} × {dimCheck.corrected.height}</code
+											>{#if dimCheck.orientation != null}
+												· EXIF Orientation {dimCheck.orientation}{/if}.
+										</p>
+										<div class="mt-2 flex flex-wrap gap-2">
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={dimFixLoading || stripLoading}
+												onclick={handleCorrectDimensions}
+											>
+												{dimFixLoading
+													? 'Saving...'
+													: `Correct dimensions → ${dimCheck.corrected.width} × ${dimCheck.corrected.height}`}
+											</Button>
+											<Button
+												variant="ghost"
+												size="sm"
+												disabled={dimFixLoading || stripLoading}
+												onclick={handleSwapDimensions}
+											>
+												Swap W↔H
+											</Button>
+										</div>
 									</div>
 								</div>
 							</div>

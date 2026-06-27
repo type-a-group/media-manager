@@ -24,6 +24,14 @@
 			"classes": ["documents"],
 			"missing": false,
 			"created_at": "2026-06-12T00:38:45.400Z"
+		},
+		"9f1c7e84-2b6a-4d3f-9a1e-7c5b0d2e6f10": {
+			"file_name": "rotated.jpg",
+			"classes": [],
+			"missing": false,
+			"created_at": "2026-06-12T00:38:45.401Z",
+			"width": 1200,
+			"height": 800
 		}
 	}
 }

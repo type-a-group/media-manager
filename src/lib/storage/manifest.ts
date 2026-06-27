@@ -214,6 +214,48 @@ export async function setEntryDimensions(
 	});
 }
 
+/**
+ * Read the stored intrinsic dimensions of a single blob, or undefined values if the id is unknown or
+ * the dimensions were never backfilled.
+ *
+ * @param fileId - Blob id (manifest key).
+ * @returns `{ width, height }` (either may be undefined).
+ */
+export async function getEntryDimensions(
+	fileId: string
+): Promise<{ width: number | undefined; height: number | undefined }> {
+	const manifest = await readManifest();
+	const entry = manifest.files[fileId];
+	return { width: entry?.width, height: entry?.height };
+}
+
+/**
+ * Explicitly set the intrinsic dimensions of a single blob (the Item 13 "correct / swap dimensions"
+ * write). Unlike {@link setEntryDimensions} (a best-effort backfill), this is a deliberate user
+ * correction, so it overwrites whatever is stored.
+ *
+ * @param fileId - Blob id (manifest key).
+ * @param dims - The width/height to persist.
+ * @throws If the id is unknown.
+ *
+ * Concerns / future improvements:
+ * - The lazy backfill in the files repo only fills entries whose dims are absent, so these corrected
+ *   values survive subsequent listings (it won't clobber them).
+ */
+export async function setBlobDimensions(
+	fileId: string,
+	dims: { width: number; height: number }
+): Promise<void> {
+	await withFileLock(manifestLockPath(), async () => {
+		const manifest = await readManifest();
+		const entry = manifest.files[fileId];
+		if (!entry) throw new Error(`Unknown file_id: ${fileId}`);
+		if (entry.width === dims.width && entry.height === dims.height) return;
+		manifest.files[fileId] = { ...entry, width: dims.width, height: dims.height };
+		await writeJsonFileAtomic(getManifestPath(), manifest);
+	});
+}
+
 /** Result of {@link reconcile}: what changed, plus the up-to-date manifest. */
 export interface ReconcileResult {
 	/** Blobs newly seen on disk that were minted a `file_id`. */

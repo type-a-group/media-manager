@@ -197,6 +197,45 @@ export async function apiStripFileMetadata(
 	return res.json();
 }
 
+/** Stored-vs-image dimension comparison (Item 13); shape mirrors `DimensionConsistency` server-side. */
+export const DimensionCheckSchema = z.object({
+	stored: z.object({ width: z.number().optional(), height: z.number().optional() }),
+	fileRaw: z.object({ width: z.number().optional(), height: z.number().optional() }),
+	orientation: z.number().optional(),
+	corrected: z.object({ width: z.number(), height: z.number() }).optional(),
+	mismatch: z.boolean()
+});
+export type DimensionCheck = z.infer<typeof DimensionCheckSchema>;
+
+/** GET /api/files/[id]/dimension-check — compare stored dims to the real (orientation-corrected) image. */
+export async function apiCheckFileDimensions(
+	id: ImageId,
+	fetchFn: typeof fetch = fetch
+): Promise<DimensionCheck> {
+	const res = await fetchFn(`/api/files/${id}/dimension-check`);
+	return jsonOrThrow(res, DimensionCheckSchema, 'Failed to check dimensions');
+}
+
+/** POST /api/files/[id]/dimensions — persist corrected/swapped intrinsic dimensions. */
+export async function apiSetFileDimensions(
+	id: ImageId,
+	width: number,
+	height: number,
+	fetchFn: typeof fetch = fetch
+): Promise<{ width: number; height: number }> {
+	const res = await fetchFn(`/api/files/${id}/dimensions`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ width, height })
+	});
+	const data = await jsonOrThrow(
+		res,
+		z.object({ success: z.literal(true), width: z.number(), height: z.number() }),
+		'Failed to set dimensions'
+	);
+	return { width: data.width, height: data.height };
+}
+
 // ---- Classes --------------------------------------------------------------
 
 /** GET /api/classes — list classes with member counts. */

@@ -36,8 +36,8 @@ acceptance: # what "done" looks like — the agent's definition of success
 | [Bulk & schema utilities](#cluster-bulk--schema-utilities) | 3 · 5 | Mostly shipped — small remainders to close |
 | [Integrations](#cluster-integrations) | 37 · 11 | External services, kept opt-in and out of core |
 | [Storage & routing — design](#cluster-storage--routing--design) | 20 · 18 · 19 · 16 | Decisions to make before code |
-| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 12 · 13 · 29 | Small, self-contained quality-of-life |
-| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 | Archive — see `FEATURES.md` |
+| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 12 · 29 | Small, self-contained quality-of-life |
+| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 | Archive — see `FEATURES.md` |
 
 > A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
@@ -601,23 +601,6 @@ acceptance:
 
 > 🔧 **Stale ref repointed + simplified by Item 6.** The old `propagateFilenameRename` fan-out is gone — rename is now O(1) via `renameBlobById` ([`classRepo.ts`](../src/lib/storage/classRepo.ts)/[`manifest.ts`](../src/lib/storage/manifest.ts)). Since identity is decoupled from filename, an extension fix is a pure display-name change. `fileMetadata.ts` already sniffs magic bytes — reuse it for type detection.
 
-### 13 · Swap Width/Height (orientation fix)
-
-```yaml
-status: ready
-size: S
-usefulness: 2
-priority: low
-files: [src/lib/components/FileEditorPanel.svelte, src/lib/storage/classRepo.ts]
-depends_on: []
-open_questions: 0
-acceptance:
-  - A per-record action to swap the stored width and height values
-  - Optionally a heuristic warning when stored dims look inconsistent with the decoded image, offering the swap
-```
-
-Stored `width`/`height` (written on upload) can end up transposed for some EXIF-oriented images. Niche bug-fix. The heuristic-warning half would lean on `sharp` (see Item 35) — but the manual swap action needs no new dep, so this is `ready`.
-
 ### 29 · Records Explorer — Mobile / Narrow Drill-Down
 
 ```yaml
@@ -650,4 +633,5 @@ Archive — kept as tombstones so cross-references and the triage board resolve.
 | 28 | Per-Type / Per-Class Icon Picker | ✅ **Shipped** — curated Lucide set in the unified `EntitySettingsDialog`; rendered on rails, breadcrumb, palette, grid chips. |
 | 9 | Sorting & Ordering | ✅ **Shipped** — shared `SortControl` + `core/sort.ts` comparator (empties-last, stable tie-break); `?sort&dir` on records `list` / `/api/files` / class `members`; persisted per-entity (type `settings.json` · class `config` · `media/settings.json`). Folded in: last-modified shown in the side panels (`core/datetime.ts`). |
 | 10 | Filter for Missing / Empty Fields | ✅ **Shipped** — rail "Show" group (`EmptyFieldFilter`): "Incomplete only" (any empty user field) + per-field "is empty"; on Records + single-class Files catalog. One shared empty predicate (`core/filters.ts` `isEmptyValue`/`recordHasEmptyField`); `?incomplete` on records `list` / class `members`, per-field via `?filters`. Transient (not persisted). Complements Item 2 (missing **file** references). |
+| 13 | Swap Width/Height (orientation fix) | ✅ **Shipped (reframed)** — became a **dimension-consistency check + fix**: surfaces only when stored manifest dims disagree with the real **orientation-corrected** image (warning badge on `MetadataButton` + in-dialog banner). Smart "Correct dimensions" + manual "Swap W↔H"; dependency-free (exiftool). Orientation rule in `core/images.ts`; `compareStoredVsImage`/`dimensionConsistency` in `fileMetadata.ts`; `setBlobDimensions` in `manifest.ts`; `GET .../dimension-check` + `POST .../dimensions`. Pixel re-encode deferred (Item 35/`sharp`). |
 | 27 | npx Package Distribution | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)". |

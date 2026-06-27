@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Item 13 — Dimension Consistency Check &amp; Fix — Plan</title>
+		<style>
+			:root {
+				--bg: #0f1115;
+				--panel: #171a21;
+				--panel2: #1d2129;
+				--ink: #e6e9ef;
+				--muted: #9aa3b2;
+				--line: #2a2f3a;
+				--accent: #6ea8fe;
+				--amber: #f0b429;
+				--amber-bg: #3a2d0a;
+				--green: #4caf50;
+				--code: #c7d0e0;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font:
+					15px/1.6 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					Segoe UI,
+					Roboto,
+					sans-serif;
+				padding: 0 0 80px;
+			}
+			header {
+				padding: 32px 40px 20px;
+				border-bottom: 1px solid var(--line);
+				background: linear-gradient(180deg, #141821, #0f1115);
+			}
+			h1 {
+				margin: 0 0 6px;
+				font-size: 26px;
+			}
+			h2 {
+				margin: 34px 0 12px;
+				font-size: 19px;
+				border-left: 3px solid var(--accent);
+				padding-left: 10px;
+			}
+			h3 {
+				margin: 22px 0 8px;
+				font-size: 15px;
+				color: var(--muted);
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			main {
+				max-width: 940px;
+				margin: 0 auto;
+				padding: 0 40px;
+			}
+			.sub {
+				color: var(--muted);
+			}
+			.card {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 16px 18px;
+				margin: 12px 0;
+			}
+			.pill {
+				display: inline-block;
+				font-size: 12px;
+				padding: 2px 8px;
+				border-radius: 999px;
+				background: var(--panel2);
+				border: 1px solid var(--line);
+				color: var(--muted);
+				margin-right: 6px;
+			}
+			code,
+			pre {
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				color: var(--code);
+			}
+			pre {
+				background: #0b0d12;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 12px 14px;
+				overflow-x: auto;
+				font-size: 13px;
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+				margin: 8px 0;
+				font-size: 14px;
+			}
+			th,
+			td {
+				border: 1px solid var(--line);
+				padding: 7px 10px;
+				text-align: left;
+				vertical-align: top;
+			}
+			th {
+				background: var(--panel2);
+				color: var(--muted);
+			}
+			.mock {
+				background: var(--panel2);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 18px;
+				margin: 12px 0;
+			}
+			.btn {
+				display: inline-block;
+				border: 1px solid var(--line);
+				border-radius: 7px;
+				padding: 5px 11px;
+				font-size: 13px;
+				background: #222732;
+			}
+			.btn.primary {
+				background: #1f3a63;
+				border-color: #2f5690;
+				color: #d7e6ff;
+			}
+			.btn.ghost {
+				background: transparent;
+			}
+			.warnbox {
+				background: var(--amber-bg);
+				border: 1px solid #6b540f;
+				border-radius: 8px;
+				padding: 12px 14px;
+				color: #f3d98a;
+			}
+			.iconbtn {
+				position: relative;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 34px;
+				height: 34px;
+				border: 1px solid var(--line);
+				border-radius: 7px;
+				background: #222732;
+			}
+			.dot {
+				position: absolute;
+				top: -4px;
+				right: -4px;
+				width: 14px;
+				height: 14px;
+				border-radius: 50%;
+				background: var(--amber);
+				border: 2px solid var(--panel2);
+				font-size: 9px;
+				color: #2a2102;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-weight: 700;
+			}
+			ul {
+				margin: 8px 0;
+			}
+			li {
+				margin: 4px 0;
+			}
+			.ok {
+				color: #74d68a;
+			}
+			.no {
+				color: #e07a7a;
+			}
+			.kbd {
+				font-family: ui-monospace, monospace;
+				background: #0b0d12;
+				border: 1px solid var(--line);
+				border-radius: 5px;
+				padding: 1px 6px;
+				font-size: 12px;
+			}
+			.flow {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+				flex-wrap: wrap;
+			}
+			.flow .step {
+				background: #0b0d12;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 8px 12px;
+				font-size: 13px;
+			}
+			.arrow {
+				color: var(--muted);
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>Item 13 — Dimension Consistency Check &amp; Fix</h1>
+			<div class="sub">
+				1.0 feature plan · file-first · <span class="pill">size S</span>
+				<span class="pill">no new dependency</span>
+				<span class="pill">phase 2 — needs approval</span>
+			</div>
+		</header>
+		<main>
+			<h2>1 · What we're building (and what changed from the brief)</h2>
+			<div class="card">
+				<p>
+					The original brief framed Item 13 as a free-floating "swap width/height" button.
+					<strong>Per the interview, that's out.</strong> Swapping should
+					<em>only</em> surface when the stored dimensions actually disagree with the real image —
+					it's a <strong>metadata-vs-photo inconsistency tool</strong>, not a thing you reach for
+					casually.
+				</p>
+				<p>So the feature is now:</p>
+				<ul>
+					<li>
+						<strong>Detect</strong> when a blob's stored manifest dimensions don't match the real
+						image (the orientation-corrected dimensions read from the file).
+					</li>
+					<li>
+						<strong>Surface</strong> it in the <strong>Metadata popup</strong>, with an
+						<strong>external warning badge</strong> on the metadata button so you notice without
+						opening it.
+					</li>
+					<li>
+						<strong>Offer two one-click fixes:</strong> a smart
+						<strong>"Correct dimensions"</strong> (writes the orientation-aware real dims) and a
+						manual <strong>"Swap W↔H"</strong> escape hatch.
+					</li>
+				</ul>
+			</div>
+
+			<h3>Resolved open questions</h3>
+			<table>
+				<tr>
+					<th>Question</th>
+					<th>Decision</th>
+				</tr>
+				<tr>
+					<td>Manual swap only, or smart + manual?</td>
+					<td>
+						<strong>Smart "Correct dimensions" + manual "Swap W↔H" escape hatch.</strong> Both
+						dependency-free.
+					</td>
+				</tr>
+				<tr>
+					<td>Where does it live?</td>
+					<td>
+						<strong>Metadata popup</strong>, with an external warning badge on the metadata button
+						(only when a mismatch is detected).
+					</td>
+				</tr>
+				<tr>
+					<td>Also bake/normalize EXIF orientation?</td>
+					<td>
+						<strong>No</strong> — dims only for 1.0. Physically rotating pixels needs
+						<code>sharp</code> (Item 35) and is deferred.
+					</td>
+				</tr>
+				<tr>
+					<td>Which width/height is corrected?</td>
+					<td>
+						The <strong>intrinsic dims in <code>media/manifest.json</code></strong> (the single
+						source of truth; class catalog rows just project it).
+					</td>
+				</tr>
+			</table>
+
+			<h2>2 · Why dims get transposed (the mechanism)</h2>
+			<div class="card">
+				<p>
+					Almost always <strong>EXIF Orientation</strong>. A phone stores the pixels in one
+					orientation and writes a rotation flag. The browser respects the flag and
+					<em>displays</em> the photo rotated, but our manifest stored the
+					<em>pre-rotation</em> numbers. So the manifest says <code>4000×3000</code> while the photo
+					visibly reads <code>3000×4000</code> — which would also make a masonry tile (Item 34) the
+					wrong shape.
+				</p>
+				<p>
+					ExifTool gives us <code>ImageWidth</code>, <code>ImageHeight</code> and
+					<code>Orientation</code> with zero new dependencies. The display dims are the file's raw
+					dims, swapped when orientation is a quarter-turn:
+				</p>
+				<pre>Orientation 1  normal              → keep  (w, h)
+Orientation 2  flip-horizontal     → keep  (w, h)
+Orientation 3  180°                → keep  (w, h)
+Orientation 4  flip-vertical       → keep  (w, h)
+Orientation 5  transpose           → SWAP  (h, w)
+Orientation 6  rotate 90° CW       → SWAP  (h, w)
+Orientation 7  transverse          → SWAP  (h, w)
+Orientation 8  rotate 90° CCW      → SWAP  (h, w)</pre>
+				<p class="sub">
+					So <code>corrected = orientation ∈ {5,6,7,8} ? (rawH, rawW) : (rawW, rawH)</code>. A
+					<strong>mismatch</strong> = the manifest's stored dims differ from <code>corrected</code>.
+					This also catches plain stale dims (file edited externally), because
+					<code>corrected</code> is re-read live from the file.
+				</p>
+			</div>
+
+			<h2>3 · UI</h2>
+
+			<h3>3a · Metadata button — warning badge (no popup open)</h3>
+			<div class="mock">
+				<div class="flow">
+					<span>File editor panel actions:</span>
+					<span class="iconbtn">ⓘ<span class="dot">!</span></span>
+					<span class="sub">← amber dot when a dimension mismatch is detected</span>
+				</div>
+				<p class="sub" style="margin-top: 10px">
+					Tooltip changes from "View file metadata" to
+					<em>"View file metadata — stored dimensions look wrong"</em> when flagged. The badge is
+					absent for files with no mismatch (the common case) and for non-images.
+				</p>
+			</div>
+
+			<h3>3b · Inside the popup — warning banner + fixes</h3>
+			<div class="mock">
+				<div class="warnbox">
+					<strong>⚠ Stored dimensions don't match the image</strong>
+					<div style="margin: 8px 0; font-size: 14px">
+						Stored: <code>4000 × 3000</code> &nbsp;·&nbsp; Image (orientation-corrected):
+						<code>3000 × 4000</code> &nbsp;·&nbsp; <span class="sub">EXIF Orientation: 6</span>
+					</div>
+					<div class="flow">
+						<span class="btn primary">Correct dimensions → 3000 × 4000</span>
+						<span class="btn ghost">Swap W↔H</span>
+					</div>
+				</div>
+				<p class="sub" style="margin-top: 10px">
+					Mirrors the existing <em>"Fix extension"</em> banner exactly (same placement, same
+					button idiom). Disappears after a successful fix; the "Image Properties" width/height
+					rows below it update in place.
+				</p>
+			</div>
+
+			<h3>3c · No mismatch (the common case)</h3>
+			<div class="mock">
+				<p class="sub">
+					No badge on the button, no banner in the popup — the dialog looks exactly as it does
+					today. The feature is invisible until there's something to fix.
+				</p>
+			</div>
+
+			<h2>4 · Data flow</h2>
+			<div class="card">
+				<div class="flow">
+					<span class="step">panel mounts a file</span><span class="arrow">→</span>
+					<span class="step">GET <code>/api/files/[id]/dimension-check</code></span>
+					<span class="arrow">→</span>
+					<span class="step">badge if <code>mismatch</code></span>
+				</div>
+				<div class="flow" style="margin-top: 10px">
+					<span class="step">open popup</span><span class="arrow">→</span>
+					<span class="step">GET <code>/api/files/[id]/metadata</code> (already carries the check)</span>
+					<span class="arrow">→</span>
+					<span class="step">banner + fix buttons</span>
+				</div>
+				<div class="flow" style="margin-top: 10px">
+					<span class="step">click a fix</span><span class="arrow">→</span>
+					<span class="step"
+						>POST <code>/api/files/[id]/dimensions</code> <code>{ width, height }</code></span
+					>
+					<span class="arrow">→</span>
+					<span class="step">manifest updated</span><span class="arrow">→</span>
+					<span class="step">refetch + <code>onchanged()</code></span>
+				</div>
+			</div>
+
+			<h2>5 · Implementation — files &amp; changes</h2>
+			<table>
+				<tr>
+					<th>Layer</th>
+					<th>File</th>
+					<th>Change</th>
+				</tr>
+				<tr>
+					<td>core (client+server)</td>
+					<td><code>src/lib/core/images.ts</code></td>
+					<td>
+						Pure helpers <code>orientationSwapsDimensions(o)</code> +
+						<code>orientationCorrectedDimensions(w, h, o)</code>. Single source for the rule. New
+						unit tests in <code>images.test.ts</code> (or a small new test file).
+					</td>
+				</tr>
+				<tr>
+					<td>server</td>
+					<td><code>src/lib/server/fileMetadata.ts</code></td>
+					<td>
+						<code>dimensionConsistency(filesDir, filename, stored)</code>: read exiftool
+						w/h/orientation, compute <code>corrected</code>, return
+						<code>{ stored, fileRaw, orientation, corrected, mismatch }</code>. Reused by both
+						endpoints. PDFs / unreadable dims ⇒ <code>mismatch:false</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/manifest.ts</code></td>
+					<td>
+						<code>getEntryDimensions(id)</code> (read stored w/h) +
+						<code>setBlobDimensions(id, {width,height})</code> (locked write of explicit dims).
+						Lazy backfill already skips entries that have dims, so corrected values persist.
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/classRepo.ts</code></td>
+					<td>
+						Thin re-exports / wiring if needed (<code>getFilenameForId</code> already exists). No
+						change to <code>listAllFiles</code> shape — <code>FileItem.width/height</code> already
+						present.
+					</td>
+				</tr>
+				<tr>
+					<td>API</td>
+					<td><code>src/routes/api/files/[id]/dimension-check/+server.ts</code> (new)</td>
+					<td>
+						GET → <code>dimensionConsistency</code> for the badge (one lightweight read). 400 on bad
+						id, 404 if no blob.
+					</td>
+				</tr>
+				<tr>
+					<td>API</td>
+					<td><code>src/routes/api/files/[id]/dimensions/+server.ts</code> (new)</td>
+					<td>
+						POST <code>{ width:number, height:number }</code> →
+						<code>setBlobDimensions</code>. Validates positive integers. Returns
+						<code>{ success, width, height }</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>API</td>
+					<td><code>src/routes/api/files/[id]/metadata/+server.ts</code></td>
+					<td>
+						Attach <code>dimensionCheck</code> to the response (computed from the manifest stored
+						dims + the metadata it already read — <strong>no second exiftool read</strong>).
+					</td>
+				</tr>
+				<tr>
+					<td>client</td>
+					<td><code>src/lib/api/files.ts</code></td>
+					<td>
+						<code>apiCheckFileDimensions(id)</code> + <code>apiSetFileDimensions(id, w, h)</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>component</td>
+					<td><code>src/lib/components/MetadataButton.svelte</code></td>
+					<td>
+						On mount (image only): fetch the check → badge + tooltip. In dialog: warning banner +
+						"Correct dimensions" / "Swap W↔H" handlers (model on the existing
+						<code>handleFixExtension</code>). After a fix: refetch + <code>onchanged()</code> so the
+						grid tile / panel reflect corrected dims.
+					</td>
+				</tr>
+			</table>
+
+			<h3>On-disk / schema impact</h3>
+			<ul>
+				<li>
+					<span class="ok">No schema change.</span> <code>manifest.json</code> entries already have
+					optional <code>width</code>/<code>height</code>; we just write corrected values.
+				</li>
+				<li>
+					<span class="ok">No migration.</span> Existing data is untouched until a user clicks a fix
+					on a specific file.
+				</li>
+				<li>
+					<strong>Fixture:</strong> add one deliberately-transposed image (or set wrong stored dims
+					on an existing fixture blob) to <code>test-fixtures/media/</code> so the warning path is
+					exercisable in <code>test:serve</code>.
+				</li>
+			</ul>
+
+			<h2>6 · Edge cases &amp; decisions</h2>
+			<table>
+				<tr>
+					<th>Case</th>
+					<th>Behavior</th>
+				</tr>
+				<tr>
+					<td>Non-image (PDF, txt)</td>
+					<td>No check, no badge. <code>dimensionConsistency</code> returns mismatch=false.</td>
+				</tr>
+				<tr>
+					<td>Stored dims absent (never backfilled)</td>
+					<td>
+						Not a "mismatch" to fix — the normal lazy backfill already writes correct-on-first-read
+						dims. We only flag when stored dims <em>exist</em> and differ from corrected.
+					</td>
+				</tr>
+				<tr>
+					<td>File unreadable by exiftool</td>
+					<td>mismatch=false (fail safe — never show a bogus warning).</td>
+				</tr>
+				<tr>
+					<td>"Swap" when there is no orientation reason</td>
+					<td>
+						Still allowed (manual escape hatch) — it just transposes whatever is stored. That's the
+						point of the manual option.
+					</td>
+				</tr>
+				<tr>
+					<td>Fix is reversible</td>
+					<td>No confirm dialog — swapping again / re-correcting undoes it. Keep it one click.</td>
+				</tr>
+			</table>
+
+			<h2>7 · Verification stages (Phase 4 gates)</h2>
+			<ul>
+				<li>
+					<span class="pill">gate</span> <code>npm run check</code> + <code>npm run lint</code> clean
+					on touched files.
+				</li>
+				<li>
+					<span class="pill">gate</span> <code>npm run test</code> — unit tests for
+					<code>orientationCorrectedDimensions</code> across orientations 1–8;
+					<code>dimensionConsistency</code> mismatch/no-mismatch/PDF; <code>setBlobDimensions</code>
+					writes only the two numbers and survives a subsequent lazy-backfill pass.
+				</li>
+				<li>
+					<span class="pill">gate</span> <code>npm run test:serve</code> — open the transposed
+					fixture image → badge shows → popup banner → "Correct dimensions" persists across reload;
+					"Swap W↔H" transposes; a consistent image shows neither badge nor banner.
+				</li>
+				<li>
+					<span class="pill">gate</span> UI capture: badge → popup banner → after-fix (dims updated,
+					banner gone).
+				</li>
+				<li>
+					<span class="pill">gate</span> Docs: <code>FEATURES.md</code> (new endpoints +
+					feature row), Item 13 → <strong>Shipped &amp; folded</strong>, triage HTML synced,
+					<code>test-fixtures/</code> seed updated.
+				</li>
+			</ul>
+
+			<h2>8 · Slices (smallest shippable paths)</h2>
+			<ol>
+				<li>
+					<strong>Core + tests:</strong> orientation helpers in <code>core/images.ts</code> +
+					unit tests. (Pure, no UI.)
+				</li>
+				<li>
+					<strong>Storage + check:</strong> <code>setBlobDimensions</code>/<code
+						>getEntryDimensions</code
+					>
+					in manifest; <code>dimensionConsistency</code> in fileMetadata; storage tests.
+				</li>
+				<li>
+					<strong>Endpoints + client:</strong> <code>dimension-check</code> GET,
+					<code>dimensions</code> POST, metadata response field; <code>api/files.ts</code> wrappers.
+				</li>
+				<li>
+					<strong>UI:</strong> badge + tooltip + popup banner + two fix handlers in MetadataButton.
+				</li>
+				<li>
+					<strong>Fixture + docs + verification capture.</strong>
+				</li>
+			</ol>
+		</main>
+	</body>
+</html>
