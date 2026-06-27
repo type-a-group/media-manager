@@ -17,6 +17,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		const sortField = url.searchParams.get('sort') || undefined;
 		const sortDirRaw = url.searchParams.get('dir');
 		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : undefined;
+		// Incomplete filter (Item 10): `?incomplete=1` → only members with ≥1 empty field.
+		const incomplete = url.searchParams.get('incomplete') === '1';
 		const filtersRaw = url.searchParams.get('filters');
 		let filters: z.infer<typeof FiltersParamSchema> | null = null;
 		if (filtersRaw) {
@@ -33,7 +35,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				filters,
 				searchField,
 				sortField,
-				sortDir
+				sortDir,
+				incomplete
 			})
 		);
 	} catch (err) {

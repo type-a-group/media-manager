@@ -13,6 +13,7 @@ import {
 	type UpdateFieldRequest
 } from '$lib/core/types.js';
 import type { ImageId } from '$lib/core/ids.js';
+import type { FilterClause } from '$lib/core/filters.js';
 
 /** Client wrappers for the file-first `/api/files` + `/api/classes` surface. */
 
@@ -261,6 +262,10 @@ export async function apiListClassMembers(
 		searchField?: string;
 		sort?: string;
 		dir?: 'asc' | 'desc';
+		/** Per-field empty quick-filter (Item 10): one-element `[{field, operator:'is_empty'}]`. */
+		filters?: FilterClause[];
+		/** Incomplete filter (Item 10): only members with ≥1 empty field. */
+		incomplete?: boolean;
 	} = {},
 	fetchFn: typeof fetch = fetch
 ): Promise<FileListResponse> {
@@ -270,6 +275,8 @@ export async function apiListClassMembers(
 	if (opts.searchField) q.set('searchField', opts.searchField);
 	if (opts.sort) q.set('sort', opts.sort);
 	if (opts.dir) q.set('dir', opts.dir);
+	if (opts.filters && opts.filters.length > 0) q.set('filters', JSON.stringify(opts.filters));
+	if (opts.incomplete) q.set('incomplete', '1');
 	const res = await fetchFn(`/api/classes/${id}/members?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list members');
 }

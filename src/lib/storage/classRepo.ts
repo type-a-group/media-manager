@@ -46,7 +46,13 @@ import {
 	type SchemaDefinition
 } from '$lib/core/types.js';
 import { hasAllowedImageExtension } from '$lib/core/images.js';
-import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
+import {
+	type FilterClause,
+	OPERATORS,
+	VALUE_LESS_OPERATORS,
+	isEmptyValue,
+	recordHasEmptyField
+} from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
 import {
 	sortItems,
@@ -568,15 +574,8 @@ function evaluateClause(
 	const raw = rec[field];
 	const fieldType = getFieldType(schema, field);
 
-	const isEmpty = (v: unknown) => {
-		if (v === '' || v === undefined || v === null) return true;
-		if (Array.isArray(v) && v.length === 0) return true;
-		if (v != null && typeof v === 'object' && 'url' in (v as object))
-			return !((v as { url?: string }).url ?? '').trim();
-		return false;
-	};
-	if (operator === OPERATORS.is_empty) return isEmpty(raw);
-	if (operator === OPERATORS.is_not_empty) return !isEmpty(raw);
+	if (operator === OPERATORS.is_empty) return isEmptyValue(raw);
+	if (operator === OPERATORS.is_not_empty) return !isEmptyValue(raw);
 	if (!VALUE_LESS_OPERATORS.has(operator) && value === undefined) return false;
 
 	if (fieldType === 'number') {
@@ -980,6 +979,11 @@ export async function listClassMembers(
 		sortField?: string | null;
 		/** Sort direction; falls back to the class's persisted `sortDir`, then `desc`. */
 		sortDir?: SortDir | null;
+		/**
+		 * Incomplete filter (Item 10): when true, keep only members with **at least one empty field**
+		 * among the class's user fields ({@link schemaUserFieldKeys}). ANDs with `filters`/`query`.
+		 */
+		incomplete?: boolean | null;
 	}
 ): Promise<FileListResponse> {
 	const file = await readClassFile(id);
@@ -991,6 +995,8 @@ export async function listClassMembers(
 	const filters = params?.filters ?? null;
 	const q = params?.query ? params.query.toLowerCase() : null;
 	const searchField = params?.searchField || null;
+	const incomplete = params?.incomplete ?? false;
+	const incompleteKeys = incomplete ? schemaUserFieldKeys(file.schema) : [];
 
 	const files: FileItem[] = [];
 	// Keep each kept blob's class record around so the sort can read its `last_modified` + schema fields
@@ -1012,6 +1018,8 @@ export async function listClassMembers(
 		if (filters && filters.length > 0) {
 			if (!filters.every((c) => evaluateClause(recObj, c, file.schema))) continue;
 		}
+		// Incomplete filter (Item 10): drop members where every class field has a value.
+		if (incomplete && !recordHasEmptyField(recObj, incompleteKeys)) continue;
 		const item = fileItemFromEntry(fileId, manifest);
 		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy);
 		const miss = missingFileFields(recObj, file.schema, available);

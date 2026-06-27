@@ -25,7 +25,13 @@ import {
 	normalizeUrlValue
 } from '$lib/core/types.js';
 import { newImageId, type ImageId } from '$lib/core/ids.js';
-import { type FilterClause, OPERATORS, VALUE_LESS_OPERATORS } from '$lib/core/filters.js';
+import {
+	type FilterClause,
+	OPERATORS,
+	VALUE_LESS_OPERATORS,
+	isEmptyValue,
+	recordHasEmptyField
+} from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
 import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
 import { projectRecordRow, stringifyFieldValue } from '$lib/core/recordDisplay.js';
@@ -76,16 +82,8 @@ function evaluateClause(rec: JsonRecord, clause: FilterClause, schema: SchemaDef
 	const raw = (rec as Record<string, unknown>)[field];
 	const fieldType = getFieldType(schema, field);
 
-	const isEmpty = (v: unknown) => {
-		if (v === '' || v === undefined || v === null) return true;
-		if (Array.isArray(v) && v.length === 0) return true;
-		if (v != null && typeof v === 'object' && 'url' in (v as object))
-			return !((v as { url?: string }).url ?? '').trim();
-		return false;
-	};
-
-	if (operator === OPERATORS.is_empty) return isEmpty(raw);
-	if (operator === OPERATORS.is_not_empty) return !isEmpty(raw);
+	if (operator === OPERATORS.is_empty) return isEmptyValue(raw);
+	if (operator === OPERATORS.is_not_empty) return !isEmptyValue(raw);
 	if (!VALUE_LESS_OPERATORS.has(operator) && value === undefined) return false;
 
 	if (fieldType === 'number') {
@@ -280,6 +278,13 @@ export function createJsonRepoForType(typeId: string) {
 		sortField?: string | null;
 		/** Sort direction; falls back to the persisted `sortDir`, then `desc`. */
 		sortDir?: SortDir | null;
+		/**
+		 * Incomplete filter (Item 10): when true, keep only records with **at least one empty user
+		 * field** (per {@link recordHasEmptyField} over {@link schemaUserFieldKeys}). ANDs with the
+		 * filters/search above. The AND-only clause model can't express this OR-of-empties, hence the
+		 * dedicated flag.
+		 */
+		incomplete?: boolean | null;
 	}): Promise<JsonListResponse> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
@@ -321,6 +326,15 @@ export function createJsonRepoForType(typeId: string) {
 						.includes(searchQuery)
 				);
 			});
+		}
+
+		// Incomplete filter (Item 10): keep only records missing a value in at least one user field.
+		// Runs in the same server pass as filters/search so all three AND together.
+		if (params?.incomplete) {
+			const userKeys = schemaUserFieldKeys(settings.schema);
+			records = records.filter((rec) =>
+				recordHasEmptyField(rec as Record<string, unknown>, userKeys)
+			);
 		}
 
 		// Sort (Item 9), server-side so it composes with the filter + search above. `name` sorts by the

@@ -394,6 +394,8 @@ export async function apiListRecordsForType(
 		sort?: string;
 		/** Sort direction. */
 		dir?: 'asc' | 'desc';
+		/** Incomplete filter (Item 10): only records with ≥1 empty user field. */
+		incomplete?: boolean;
 	},
 	fetchFn: typeof fetch = fetch
 ): Promise<ListRecordsResponse> {
@@ -415,6 +417,7 @@ export async function apiListRecordsForType(
 	if (params?.searchField) url.searchParams.set('searchField', params.searchField);
 	if (params?.sort) url.searchParams.set('sort', params.sort);
 	if (params?.dir) url.searchParams.set('dir', params.dir);
+	if (params?.incomplete) url.searchParams.set('incomplete', '1');
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();

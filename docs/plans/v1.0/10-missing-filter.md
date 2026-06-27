@@ -1,6 +1,6 @@
 # Item 10 — Filter for Missing / Empty Fields
 
-> 1.0 brief. Backlog: [Item 10](../../FUTURE_CHANGES.md#10--filter-for-missing--empty-fields). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: ready.**
+> 1.0 brief. Backlog: [Item 10](../../FUTURE_CHANGES.md#shipped--folded). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: ✅ shipped** — design plan: [`10-missing-filter-plan.html`](10-missing-filter-plan.html).
 
 ## Backlog snapshot
 
@@ -40,3 +40,15 @@ acceptance:
 - [ ] `npm run test:serve` — filter to incomplete records, and to a specific empty field; confirm it stacks with another active filter clause + search.
 - [ ] UI capture of the filter in the rail (off → on, result count change).
 - [ ] `FEATURES.md` updated; Item 10 → **Shipped & folded**; triage HTML synced.
+
+## ✅ Shipped — manual smoke test (developer)
+
+Run `npm run test:serve` (throwaway fixture — never a real root) and confirm. The fixture's two
+notes and the Documents class are fully filled, so **create a blank record / use the half-filled
+Images class** to see the filter bite:
+
+1. **Records** (`/media` → Notes): rail shows a **"Show"** group under the search box. Click **+ New** to add a blank note → it appears in the list. Tick **Incomplete only** → the header count drops to just the blank note (the two seeded notes are complete). Untick; set **Field → Title → is empty** → same single blank note; set **Field → Priority** → empty (new notes default `priority: medium`, a value).
+2. **Composition:** with **Incomplete only** on, type a seeded note's title in **search** → 0 results (it's complete); the filters AND together.
+3. **Files — catalog** (`/files`, tick **just Images**): the **"Show"** group appears below the class list. Tick **Incomplete only** → **forest.png** + **ocean.png** remain, **sunset.png** drops (its `source` url is filled). **Field → source → is empty** → the same two; **Field → related_doc → is empty** → just **ocean.png**.
+4. **Hidden where it has no meaning:** untick Images (back to **All Files**, or tick a *second* class) → the **"Show"** group **disappears** (no single schema). Re-solo a class → it's **reset** (unchecked, field `—`), not stale.
+5. **Transient:** the filter is **not** persisted — switch record type / class and it resets; a reload starts clean. (Unlike sort, which sticks.)

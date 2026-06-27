@@ -5,6 +5,8 @@
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
+	import EmptyFieldFilter from '$lib/components/EmptyFieldFilter.svelte';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
 	import { Plus } from 'lucide-svelte';
 	import type { MediaTypeSummary } from '$lib/api/client.js';
@@ -27,6 +29,8 @@
 	 * @param query - Bindable record search text (lives in the rail, mirroring the Files hub).
 	 * @param searchField - Bindable field to scope the search to (`''` = All fields).
 	 * @param searchFields - The active type's user fields offered by the search-field picker.
+	 * @param incomplete - Bindable "Incomplete only" quick-filter (Item 10; any empty user field).
+	 * @param emptyField - Bindable per-field "is empty" key (`''` = off); shares {@link searchFields}.
 	 */
 	let {
 		types,
@@ -39,7 +43,9 @@
 		onDeleteType,
 		query = $bindable(''),
 		searchField = $bindable(''),
-		searchFields = []
+		searchFields = [],
+		incomplete = $bindable(false),
+		emptyField = $bindable('')
 	}: {
 		types: MediaTypeSummary[];
 		activeTypeId: string | null;
@@ -52,6 +58,8 @@
 		query?: string;
 		searchField?: string;
 		searchFields?: { key: string; label: string }[];
+		incomplete?: boolean;
+		emptyField?: string;
 	} = $props();
 </script>
 
@@ -65,6 +73,8 @@
 				allLabel="All fields"
 				disabled={searchFields.length === 0}
 			/>
+			<Separator class="my-1" />
+			<EmptyFieldFilter fields={searchFields} bind:incomplete bind:emptyField />
 		</div>
 	{/snippet}
 

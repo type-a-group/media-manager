@@ -31,6 +31,7 @@
 	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { isUserFieldKey, schemaUserFields } from '$lib/core/fieldKeys.js';
+	import { OPERATORS } from '$lib/core/filters.js';
 	import { projectRecordRow } from '$lib/core/recordDisplay.js';
 	import { apiUpdateTypeSettings } from '$lib/api/client.js';
 	import type { SortDir } from '$lib/core/sort.js';
@@ -63,13 +64,21 @@
 	/** Per-type list sort (Item 9), persisted in the type's settings.json. Default: last_modified desc. */
 	let sortField = $state('last_modified');
 	let sortDir = $state<SortDir>('desc');
+	/**
+	 * Empty/incomplete quick-filter (Item 10) — transient view state (NOT persisted), reset on type
+	 * switch. `incomplete` keeps records with any empty user field; `emptyField` (a field key, `''` =
+	 * off) keeps records whose that one field is empty. Both AND with search server-side.
+	 */
+	let incomplete = $state(false);
+	let emptyField = $state('');
 
 	/** User fields of the active type offered by the rail's search-field picker. */
 	const searchFields = $derived(schema ? schemaUserFields(schema) : []);
 
-	// Drop a stale scoped search field if it's no longer in the active type's schema.
+	// Drop a stale scoped search / empty-filter field if it's no longer in the active type's schema.
 	$effect(() => {
 		if (searchField && !searchFields.some((f) => f.key === searchField)) searchField = '';
+		if (emptyField && !searchFields.some((f) => f.key === emptyField)) emptyField = '';
 	});
 
 	const selectedIds = new SvelteSet<string>();
@@ -191,6 +200,12 @@
 		if (!activeTypeId || isGlobals) return;
 		loading = true;
 		try {
+			// Per-field "is empty" (Item 10) rides the existing filters param as a single clause; the
+			// "Incomplete only" toggle goes via the dedicated incomplete flag (the AND-only clause model
+			// can't express its OR-of-empties).
+			const filters = emptyField
+				? [{ field: emptyField, operator: OPERATORS.is_empty }]
+				: undefined;
 			const data = await apiListRecordsForType(activeTypeId, {
 				groupBy: groupBy || undefined,
 				titleField: titleField || undefined,
@@ -198,7 +213,9 @@
 				searchQuery: query || undefined,
 				searchField: searchField || undefined,
 				sort: sortField || undefined,
-				dir: sortDir
+				dir: sortDir,
+				filters,
+				incomplete: incomplete || undefined
 			});
 			records = 'records' in data ? (data.records as JsonListItem[]) : [];
 		} catch (e) {
@@ -250,6 +267,8 @@
 		subtitleField = '';
 		sortField = 'last_modified';
 		sortDir = 'desc';
+		incomplete = false;
+		emptyField = '';
 	}
 
 	/** Persist the chosen sort durably on the active type (Item 9). The reload runs via the sort $effect. */
@@ -424,6 +443,8 @@
 		searchField;
 		sortField;
 		sortDir;
+		incomplete;
+		emptyField;
 		if (activeTypeId && !isGlobals) loadRecords();
 	});
 
@@ -467,6 +488,8 @@
 		bind:query
 		bind:searchField
 		{searchFields}
+		bind:incomplete
+		bind:emptyField
 	/>
 
 	{#if loadingTypes}

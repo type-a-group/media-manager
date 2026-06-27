@@ -225,4 +225,31 @@ describe('classRepo — opt-in class membership', () => {
 		const names = (await listClassMembers(id)).files.map((f) => f.file_name);
 		expect(names).toEqual(['c.png', 'b.png', 'a.png']);
 	});
+
+	it('filters class members to the incomplete ones, composing with search (Item 10)', async () => {
+		for (const n of ['a.png', 'b.png', 'c.png']) fs.writeFileSync(path.join(filesDir, n), 'x');
+		const files0 = (await listAllFiles()).files;
+		const byName = Object.fromEntries(files0.map((f) => [f.file_name, f.id]));
+		const id = await createClass('Gallery', schema);
+		await addMembers(
+			id,
+			files0.map((f) => f.id)
+		);
+		await updateRecord(id, byName['a.png'], { caption: 'filled' });
+		// b.png and c.png keep the empty default caption → incomplete.
+
+		const incomplete = (await listClassMembers(id, { incomplete: true })).files
+			.map((f) => f.file_name)
+			.sort();
+		expect(incomplete).toEqual(['b.png', 'c.png']);
+
+		// Without the flag, all three come back (no-op guard).
+		expect((await listClassMembers(id)).files).toHaveLength(3);
+
+		// Composes with search: only the incomplete member whose name matches 'b'.
+		const both = (await listClassMembers(id, { incomplete: true, query: 'b.png' })).files.map(
+			(f) => f.file_name
+		);
+		expect(both).toEqual(['b.png']);
+	});
 });

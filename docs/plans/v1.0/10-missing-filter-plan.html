@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Item 10 — Filter for Missing / Empty Fields · 1.0 Plan</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1f2430; --ink: #e6e9ef;
+    --muted: #9aa3b2; --line: #2a3140; --accent: #6ea8fe; --good: #5bd6a6;
+    --warn: #f0b85c; --chip: #243044; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 24px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: var(--accent); }
+  p, li { color: var(--ink); }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 20px; margin: 14px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .chip { display: inline-block; background: var(--chip); border: 1px solid var(--line);
+    border-radius: 999px; padding: 1px 10px; font-size: 12px; margin: 1px 3px 1px 0; }
+  .pill { border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
+  .ready { background: rgba(91,214,166,.15); color: var(--good); border: 1px solid rgba(91,214,166,.35); }
+  .note { background: rgba(240,184,92,.10); border: 1px solid rgba(240,184,92,.30); }
+  .warnbox { background: rgba(240,120,92,.10); border: 1px solid rgba(240,120,92,.35); }
+  .mock { font-family: var(--mono); font-size: 12.5px; white-space: pre; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; color: #cdd6e6; }
+  .ok::before { content: "\2713 "; color: var(--good); }
+  .key { color: var(--warn); }
+  ul.tight { margin: 6px 0; } ul.tight li { margin: 2px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+  .tag { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Item 10 — Filter for Missing / Empty Fields</h1>
+  <p class="sub">media-manager 1.0 · Phase 2 design plan · <span class="pill ready">ready</span> · size M</p>
+  <p class="small">Backlog: Item 10 · Brief: <code>docs/plans/v1.0/10-missing-filter.md</code> · This plan supersedes the brief where they differ (agile rule).</p>
+
+  <div class="panel">
+    <strong>One-line goal.</strong> Add an <em>“Incomplete only”</em> toggle plus a per-field <em>“&lt;field&gt; is empty”</em>
+    quick-filter to the rail of every schema-bearing list view (Records type · single-class Files catalog),
+    composing server-side with the existing search + filters + sort.
+  </div>
+
+  <h2>1 · Decisions resolved (Phase 1 interview)</h2>
+  <table>
+    <tr><th>Decision</th><th>Resolution</th></tr>
+    <tr><td>Filter shapes</td><td><strong>Both</strong> — an <em>“Incomplete only”</em> toggle (matches any record with ≥1 empty <em>user</em> field) <em>and</em> a per-field <em>“&lt;field&gt; is empty”</em> picker.</td></tr>
+    <tr><td>Surfaces</td><td><strong>Records</strong> (per-type schema) + <strong>single-class Files catalog</strong> (class schema). The multi-class / All-Files hub gets <em>nothing</em> — no single schema to define “a field” against.</td></tr>
+    <tr><td>Placement</td><td><strong>Rail filter section</strong> — below the search box (Records), and below the class multi-select (Files catalog).</td></tr>
+    <tr><td>“Empty” definition</td><td>Reuse the existing predicate verbatim: <code>''</code> · <code>null</code> · <code>undefined</code> · empty list · url-object with blank <code>url</code>. <span class="small">(No new semantics — same as today’s <code>is_empty</code> clause.)</span></td></tr>
+    <tr><td>Persistence</td><td><strong>Transient</strong> view state (like search &amp; the class multi-select), <em>not</em> a durable per-entity default like sort. Resets on type/class switch.</td></tr>
+    <tr><td>Cut line (out of 1.0)</td><td>No “is <em>not</em> empty” quick-filter, no per-field operator builder (general multi-clause UI stays retired), no All-Files-hub aggregate, no URL deep-link of the filter state.</td></tr>
+  </table>
+
+  <h2>2 · The stale-premise correction (why this is a new control, not a tweak)</h2>
+  <div class="panel warnbox">
+    <p style="margin-top:0"><strong>The brief &amp; <code>CLAUDE.md</code> assume a “rail filter UI” / <code>RecordFilterPanel</code> to hang this off. It no longer exists</strong> — the rich multi-clause filter builder was removed in the unify redesign; it survives only in <code>docs/archive/</code>. Today the rails expose <em>search + search-field scope</em> (both sides) and <em>class multi-select + Unclassified</em> (Files only). No page builds <code>FilterClause</code>s through any UI.</p>
+    <p style="margin-bottom:0">So Item 10 introduces a <strong>focused, first-class empty-filter control</strong> — it does <em>not</em> revive the general filter builder. The server plumbing it rides on, however, <strong>already exists and is fully tested</strong> (see §3).</p>
+  </div>
+
+  <h2>3 · What already exists (reuse, don’t rebuild)</h2>
+  <ul class="tight">
+    <li class="ok">Both list endpoints accept <code>?filters=&lt;json array of FilterClause&gt;</code> and apply them server-side: <code>/api/media-types/[typeId]/records/list</code> → <code>jsonRepo.listRecords</code>; <code>/api/classes/[id]/members</code> → <code>classRepo.listClassMembers</code>.</li>
+    <li class="ok">Both repos evaluate <code>is_empty</code> / <code>is_not_empty</code> via an identical <code>isEmpty()</code> predicate (<code>jsonRepo.ts:79</code>, <code>classRepo.ts:571</code>).</li>
+    <li class="ok"><code>apiListRecordsForType</code> already forwards a <code>filters</code> param; <code>apiListClassMembers</code> accepts <code>filters</code> too.</li>
+    <li class="ok"><code>schemaUserFieldKeys()</code> / <code>schemaUserFields()</code> (<code>core/fieldKeys.ts</code>) is the single “which fields does this entity expose” enumeration — drives the per-field picker.</li>
+  </ul>
+  <div class="panel note">
+    <strong>The one gap.</strong> The per-field <em>“&lt;field&gt; is empty”</em> shape maps 1:1 onto a single existing <code>{field, operator:'is_empty'}</code> clause — pure reuse. But the clause array is <strong>AND-only</strong>, so it <em>cannot</em> express <em>“any of these fields is empty”</em> (an OR). The <strong>“Incomplete only”</strong> toggle therefore needs a small dedicated server flag — <code>?incomplete=1</code> — rather than being expanded into clauses on the client. This keeps all filtering in the one server location (per the brief’s build note).</div>
+
+  <h2>4 · UI mockups</h2>
+  <h3>Records rail (type with a <code>priority</code> + <code>tags</code> schema)</h3>
+  <div class="mock">┌─ Records ───────────────────┐
+│ &lt;sub-app switcher&gt;          │
+├─────────────────────────────┤
+│ 🔍 Search records…          │
+│ [ All fields ▾ ]            │
+│ ─────────────────────────   │
+│ Show                        │   ← new "Show" filter group
+│  ☐ Incomplete only          │   ← toggle: any empty user field
+│  Field: [ — ▾ ] is empty    │   ← per-field picker (— = off)
+│ ─────────────────────────   │
+│ RECORD TYPES         + New  │
+│  • Notes                    │
+│  • Tasks                    │
+└─────────────────────────────┘</div>
+
+  <h3>Files — single-class catalog (one class soloed)</h3>
+  <div class="mock">┌─ Files ─────────────────────┐
+│ 🔍 Search…   [ filename ▾ ] │
+│ ─────────────────────────   │
+│ CLASSES        match: any▾  │
+│  ☑ documents      ⋮         │   ← one class soloed → catalog view
+│  ☐ images                   │
+│  ☐ Unclassified             │
+│ ─────────────────────────   │
+│ Show                        │   ← appears ONLY when exactly one class is soloed
+│  ☐ Incomplete only          │
+│  Field: [ — ▾ ] is empty    │
+└─────────────────────────────┘
+
+  When 0 or ≥2 classes / Unclassified are active → the "Show"
+  group is hidden (no single schema to define a field against).</div>
+
+  <h3>Active state — both filters compose (ANDed)</h3>
+  <div class="mock">🔍 "report"  ✕   ☑ Incomplete only   Field: [ status ▾ ] is empty
+        └─ search ──┘   └─ any-empty ──┘   └─ status is empty ──┘
+   = records whose name/fields contain "report"
+     AND have ≥1 empty user field
+     AND whose `status` is empty            (all three sent to the server)</div>
+
+  <h2>5 · Data / API / on-disk changes</h2>
+  <table>
+    <tr><th>Layer</th><th>Change</th></tr>
+    <tr><td>On-disk</td><td><strong>None.</strong> Transient view state; nothing persisted. No <code>settings.json</code> / class-config / manifest change. No fixture change.</td></tr>
+    <tr><td>New query param</td><td><code>?incomplete=1</code> on <code>/api/media-types/[typeId]/records/list</code> and <code>/api/classes/[id]/members</code>. (Per-field empty rides the <em>existing</em> <code>?filters=</code> param — no new param.)</td></tr>
+    <tr><td><code>jsonRepo.listRecords</code></td><td>New <code>incomplete?: boolean</code> param. When set, keep a record iff <code>schemaUserFieldKeys(schema)</code> has ≥1 key whose value is empty (same <code>isEmpty</code>). ANDed after search, alongside <code>applyFilters</code>.</td></tr>
+    <tr><td><code>classRepo.listClassMembers</code></td><td>Same <code>incomplete?: boolean</code> param. “User fields” for a class = <strong>all</strong> schema keys (classes have no system <code>name</code> — they use <code>Object.keys(schema)</code>, per the <code>schemaUserFieldKeys</code> JSDoc note).</td></tr>
+    <tr><td>Shared predicate</td><td>Extract the duplicated <code>isEmpty()</code> into <code>core/filters.ts</code> as <code>isEmptyValue(v)</code> + <code>recordHasEmptyField(rec, keys)</code>; both repos import it (kills the two divergent copies). <span class="small">Pure refactor, unit-tested.</span></td></tr>
+    <tr><td>API clients</td><td><code>apiListRecordsForType(... { incomplete? })</code> → <code>?incomplete=1</code>; <code>apiListClassMembers(... { incomplete? })</code> likewise. <code>filters</code> already supported.</td></tr>
+  </table>
+
+  <h2>6 · Component changes</h2>
+  <table>
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>core/filters.ts</code></td><td>Add <code>isEmptyValue</code> + <code>recordHasEmptyField</code> (the single empty predicate).</td></tr>
+    <tr><td><code>storage/jsonRepo.ts</code>, <code>storage/classRepo.ts</code></td><td>Consume the shared predicate; add the <code>incomplete</code> branch.</td></tr>
+    <tr><td>3 endpoints + 2 API clients</td><td>Parse / forward <code>incomplete</code>.</td></tr>
+    <tr><td><strong>new</strong> <code>components/EmptyFieldFilter.svelte</code></td><td>The shared rail control: shadcn <code>Checkbox</code>+<code>Label</code> (<em>Incomplete only</em>) + shadcn <code>Select</code> (per-field, with a <code>—</code> “off” option). Props: <code>fields:{key,label}[]</code>, <code>incomplete=$bindable</code>, <code>emptyField=$bindable</code>, <code>onchange?</code>. Used by both rails.</td></tr>
+    <tr><td><code>records/RecordsRail.svelte</code></td><td>Render <code>EmptyFieldFilter</code> in <code>belowHeader</code>; bind to host state; field list = <code>schemaUserFields(schema)</code>.</td></tr>
+    <tr><td><code>routes/media/+page.svelte</code></td><td>Add <code>incomplete</code> + <code>emptyField</code> state; build the one-element <code>filters</code> array from <code>emptyField</code>; pass both to <code>apiListRecordsForType</code>; reset on <code>selectType</code>; add to the reload <code>$effect</code>.</td></tr>
+    <tr><td><code>routes/files/+page.svelte</code></td><td>Add the same state; render <code>EmptyFieldFilter</code> <strong>only in the soloed-class branch</strong>; field list = the class schema keys; pass <code>incomplete</code> + <code>filters</code> to <code>apiListClassMembers</code>; reset when the soloed class changes / clears.</td></tr>
+    <tr><td>Rail (Files)</td><td>The control mounts inside the existing single-class rail region — no <code>EntityRail</code> shell change; it’s injected via the page’s rail snippet next to the class list.</td></tr>
+  </table>
+  <p class="small">shadcn note: use <strong>sibling</strong> <code>Checkbox id</code> + <code>Label for</code> (never nest — the CLAUDE.md uncheck bug). Compose <code>Select</code> from <code>$lib/components/ui/select</code>.</p>
+
+  <h2>7 · Composition &amp; edge cases</h2>
+  <ul class="tight">
+    <li>All three (search · incomplete · per-field-empty) are <strong>ANDed</strong> — turning on more narrows results.</li>
+    <li>“Incomplete only” + “status is empty” together is allowed (redundant-ish but valid: status-empty ⟹ incomplete, so the per-field wins).</li>
+    <li>A schema with <strong>zero user fields</strong> → “Incomplete only” matches nothing useful and the per-field picker is empty; show the group but the Select reads “No fields”. <span class="small">(Rare; acceptable.)</span></li>
+    <li>Switching record type / soloed class <strong>resets</strong> both controls (transient).</li>
+    <li>Result-count feedback: the grid already reflects the filtered set; no separate counter added for 1.0.</li>
+    <li>Files: when the user un-solos (back to 0/≥2 classes) the control unmounts <em>and</em> its state resets so a stale <code>incomplete</code> can’t leak into the hub query.</li>
+  </ul>
+
+  <h2>8 · Build slices (Phase 3)</h2>
+  <ol>
+    <li><strong>Slice 1 — shared predicate.</strong> Extract <code>isEmptyValue</code>/<code>recordHasEmptyField</code> into <code>filters.ts</code>; repoint both repos. Gate: <code>npm run test</code> green (no behaviour change) + new unit tests for the predicate across all field types.</li>
+    <li><strong>Slice 2 — server <code>incomplete</code>.</strong> Add the param to both repos + the two endpoints. Gate: unit tests (incomplete true/false, composes-with-search, composes-with a clause) + <code>npm run check</code>.</li>
+    <li><strong>Slice 3 — Records UI.</strong> <code>EmptyFieldFilter</code> + wire <code>/media</code>. Gate: <code>test:serve</code> — toggle &amp; per-field on Notes, stacks with search.</li>
+    <li><strong>Slice 4 — Files-catalog UI.</strong> Mount in the soloed-class branch + wire <code>apiListClassMembers</code>. Gate: <code>test:serve</code> on a class; verify hidden in hub mode + reset-on-unsolo.</li>
+    <li><strong>Slice 5 — docs + UI capture.</strong> <code>FEATURES.md</code> rows, Item 10 → Shipped &amp; folded, triage HTML sync, screenshots, manual smoke checklist.</li>
+  </ol>
+
+  <h2>9 · Verification gates (Phase 4)</h2>
+  <ul class="tight">
+    <li>☐ <code>npm run check</code> + <code>npm run lint</code> clean for touched files.</li>
+    <li>☐ <code>npm run test</code> — predicate across <code>string · number · boolean · list · url · file · dropdown</code>; <code>incomplete</code> in <code>jsonRepo</code> &amp; <code>classRepo</code> (true filters, false no-op, composes-with-search, composes-with-clause, empty-schema no-crash).</li>
+    <li>☐ <code>npm run test:serve</code> — Records: incomplete + per-field, stacked with a search; Files single-class: same; confirm control absent in multi-class/hub mode.</li>
+    <li>☐ UI capture: rail control off → on, and the result set shrinking.</li>
+    <li>☐ <code>FEATURES.md</code> updated (<code>&amp;incomplete</code> param on 2 endpoints; new feature row); Item 10 → <strong>Shipped &amp; folded</strong>; <code>FUTURE_CHANGES_TRIAGE.html</code> synced; manual smoke checklist appended to <code>10-missing-filter.md</code>.</li>
+  </ul>
+
+  <h2>10 · Open questions</h2>
+  <p><strong>None.</strong> All Phase-1 decisions resolved above; <code>status: ready</code> holds.</p>
+
+</div>
+</body>
+</html>

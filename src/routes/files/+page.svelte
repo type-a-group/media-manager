@@ -20,12 +20,14 @@
 		type MissingFilesResponse
 	} from '$lib/api/files.js';
 	import { fieldLabel } from '$lib/core/fieldKeys.js';
+	import { OPERATORS } from '$lib/core/filters.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
+	import EmptyFieldFilter from '$lib/components/EmptyFieldFilter.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
@@ -65,6 +67,14 @@
 	let sortDir = $state<SortDir>('desc');
 	let hubSortField = $state('created_at');
 	let hubSortDir = $state<SortDir>('desc');
+	/**
+	 * Empty/incomplete quick-filter (Item 10) — only meaningful in a single-class catalog (it needs a
+	 * schema). Transient (NOT persisted), reset when the solo class changes/clears. `incomplete` keeps
+	 * members with any empty class field; `emptyField` (`''` = off) keeps members whose that one field
+	 * is empty. Both AND with search server-side.
+	 */
+	let incomplete = $state(false);
+	let emptyField = $state('');
 	/**
 	 * Grid size for every view here — a single global app setting (`media/settings.json`), shared
 	 * with the catalog, multi-class, and `json` record grids. Synced from the store; changing it
@@ -177,6 +187,17 @@
 	$effect(() => {
 		if (searchField && !searchFields.some((f) => f.key === searchField)) searchField = '';
 	});
+
+	// Reset the empty/incomplete filter (Item 10) outside a single-class catalog, and drop a stale
+	// per-field key when the catalog's schema no longer has it — so a stale `incomplete` can't leak.
+	$effect(() => {
+		if (!soloClass) {
+			if (incomplete) incomplete = false;
+			if (emptyField) emptyField = '';
+		} else if (emptyField && !catalogSchemaKeys.includes(emptyField)) {
+			emptyField = '';
+		}
+	});
 	const bulkLabel = $derived(
 		classes.find((c) => c.id === bulkClassId)?.displayName ?? 'Add to class…'
 	);
@@ -236,12 +257,19 @@
 					await loadCatalogConfig(soloClass);
 					catalogLoadedFor = soloClass;
 				}
+				// Per-field "is empty" (Item 10) rides the existing filters param as a single clause; the
+				// "Incomplete only" toggle goes via the dedicated incomplete flag.
+				const filters = emptyField
+					? [{ field: emptyField, operator: OPERATORS.is_empty }]
+					: undefined;
 				const data = await apiListClassMembers(soloClass, {
 					groupBy: catalogGroupBy || undefined,
 					query: query || undefined,
 					searchField: searchField || undefined,
 					sort: sortField || undefined,
-					dir: sortDir
+					dir: sortDir,
+					filters,
+					incomplete: incomplete || undefined
 				});
 				files = data.files;
 			} else {
@@ -489,6 +517,8 @@
 		[...selectedClasses].join(',');
 		unclassified;
 		matchAll;
+		incomplete;
+		emptyField;
 		loadFiles();
 	});
 
@@ -748,6 +778,17 @@
 					Unclassified
 				</Label>
 			</div>
+
+			{#if soloClass}
+				<!-- Empty/incomplete quick-filter (Item 10): only in a single-class catalog (needs a schema). -->
+				<div class="mt-3 border-t pt-3">
+					<EmptyFieldFilter
+						fields={catalogSchemaKeys.map((k) => ({ key: k, label: fieldLabel(k) }))}
+						bind:incomplete
+						bind:emptyField
+					/>
+				</div>
+			{/if}
 
 			{#if showMissing && missing.count > 0}
 				<div class="mt-3 max-h-64 overflow-y-auto border-t pt-2 text-xs">
