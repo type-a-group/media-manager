@@ -5,7 +5,9 @@
 		apiUpdateClassRecord,
 		apiRenameFile,
 		apiAddMembers,
-		apiRemoveMembers
+		apiRemoveMembers,
+		apiCheckFileExtension,
+		type ExtensionCheck
 	} from '$lib/api/files.js';
 	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
 	import { formatTimestamp } from '$lib/core/datetime.js';
@@ -72,7 +74,15 @@
 
 	let sections = $state<Section[]>([]);
 	let loading = $state(true);
-	let renaming = $state(file.file_name);
+	// Split rename (Item 12): the filename is edited as a base name + a separate extension so an
+	// extension fix is one interaction. Both are seeded from `file.file_name` on every file change.
+	let baseName = $state('');
+	let ext = $state('');
+	let renameError = $state<string | null>(null);
+	let renaming = $state(false);
+	/** Name-extension-vs-sniffed-type check for the open file (drives the one-tap "Fix" hint). */
+	let extCheck = $state<ExtensionCheck | null>(null);
+	const extMismatch = $derived(extCheck?.mismatch === true && extCheck.detectedExtension != null);
 	let addClassId = $state('');
 	/** When true, the image preview is shown full-screen over the whole app (click/Esc to close). */
 	let lightboxOpen = $state(false);
@@ -176,10 +186,29 @@
 		onclose();
 	}
 
+	/**
+	 * Split a filename into its base and extension (incl. the dot). A name with no dot, or a dotfile
+	 * like `.gitignore`, has an empty extension and keeps the whole name as the base.
+	 */
+	function splitFilename(name: string): { base: string; ext: string } {
+		const dot = name.lastIndexOf('.');
+		if (dot <= 0) return { base: name, ext: '' };
+		return { base: name.slice(0, dot), ext: name.slice(dot) };
+	}
+
 	$effect(() => {
 		// reload whenever the selected file changes; flush the outgoing blob's edits first
 		const fid = file.id;
-		renaming = file.file_name;
+		const parts = splitFilename(file.file_name);
+		baseName = parts.base;
+		ext = parts.ext;
+		renameError = null;
+		extCheck = null;
+		void apiCheckFileExtension(file.id)
+			.then((c) => {
+				if (file.id === fid) extCheck = c;
+			})
+			.catch(() => {});
 		lightboxOpen = false;
 		load();
 		return () => flushLeavingSync(fid);
@@ -213,11 +242,52 @@
 		return !!mf && key in mf;
 	}
 
-	async function rename() {
-		const next = renaming.trim();
-		if (!next || next === file.file_name) return;
-		await apiRenameFile(file.id, next);
-		onStructureChanged();
+	/** Recombine the base + extension fields into a safe filename (normalises a leading dot). */
+	function composeName(): string {
+		const b = baseName.trim();
+		const e = ext.trim();
+		const normExt = e ? (e.startsWith('.') ? e : `.${e}`) : '';
+		return b + normExt;
+	}
+
+	/**
+	 * Commit the split rename (Item 12). Fires on blur/Enter — not per keystroke — since a filename is
+	 * all-or-nothing. No-ops when unchanged or the base is empty; surfaces a duplicate-name (409)
+	 * inline and reverts the fields.
+	 */
+	async function commitRename() {
+		renameError = null;
+		const next = composeName();
+		if (!baseName.trim() || next === file.file_name) {
+			// Re-seed from the canonical name so a blank/abandoned edit snaps back.
+			const parts = splitFilename(file.file_name);
+			baseName = parts.base;
+			ext = parts.ext;
+			return;
+		}
+		renaming = true;
+		try {
+			await apiRenameFile(file.id, next);
+			onStructureChanged();
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : 'Rename failed';
+			renameError =
+				msg.includes('409') || msg.includes('already exists')
+					? 'A file with that name already exists'
+					: msg;
+			const parts = splitFilename(file.file_name);
+			baseName = parts.base;
+			ext = parts.ext;
+		} finally {
+			renaming = false;
+		}
+	}
+
+	/** One-tap fix: set the extension field to the sniffed type and commit immediately. */
+	async function fixExtension() {
+		if (!extCheck?.detectedExtension) return;
+		ext = extCheck.detectedExtension;
+		await commitRename();
 	}
 
 	async function addToClass() {
@@ -246,8 +316,19 @@
 	{#snippet titleArea()}
 		<Input
 			class="min-w-0 flex-1 text-sm font-medium"
-			bind:value={renaming}
-			onblur={rename}
+			aria-label="File name"
+			bind:value={baseName}
+			disabled={renaming}
+			onblur={commitRename}
+			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+		/>
+		<Input
+			class="w-16 shrink-0 text-center text-sm"
+			aria-label="File extension"
+			placeholder=".ext"
+			bind:value={ext}
+			disabled={renaming}
+			onblur={commitRename}
 			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 		/>
 		<span class="shrink-0 text-xs text-muted-foreground">
@@ -263,6 +344,29 @@
 	{#snippet actions()}
 		<MetadataButton id={file.id} filename={file.file_name} onchanged={onStructureChanged} />
 	{/snippet}
+
+	{#if renameError}
+		<p class="mb-2 text-xs text-destructive">{renameError}</p>
+	{/if}
+	{#if extMismatch}
+		<div
+			class="mb-3 flex items-center gap-2 rounded border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-300"
+		>
+			<span class="min-w-0 flex-1 truncate">
+				Detected <code class="rounded bg-amber-500/20 px-1">{extCheck?.detectedExtension}</code> — extension
+				doesn't match content.
+			</span>
+			<Button
+				variant="outline"
+				size="sm"
+				class="h-6 shrink-0 px-2 text-xs"
+				disabled={renaming}
+				onclick={fixExtension}
+			>
+				Fix to {extCheck?.detectedExtension}
+			</Button>
+		</div>
+	{/if}
 
 	{#if isImage}
 		<button

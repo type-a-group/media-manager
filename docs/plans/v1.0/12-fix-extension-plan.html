@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Item 12 — Fix / Normalize File Extension (+ better rename UX) — Plan</title>
+		<style>
+			:root {
+				--bg: #0f1115;
+				--panel: #171a21;
+				--panel2: #1e222b;
+				--ink: #e6e8ec;
+				--muted: #9aa3b2;
+				--line: #2a2f3a;
+				--amber: #f59e0b;
+				--amber-ink: #fde68a;
+				--green: #4caf50;
+				--blue: #6aa3ff;
+				--code: #11151c;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font:
+					15px/1.6 -apple-system,
+					BlinkMacSystemFont,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+			}
+			.wrap {
+				max-width: 960px;
+				margin: 0 auto;
+				padding: 32px 24px 80px;
+			}
+			h1 {
+				font-size: 26px;
+				margin: 0 0 4px;
+			}
+			h2 {
+				font-size: 19px;
+				margin: 34px 0 10px;
+				padding-bottom: 6px;
+				border-bottom: 1px solid var(--line);
+			}
+			h3 {
+				font-size: 15px;
+				margin: 20px 0 8px;
+				color: var(--amber-ink);
+			}
+			.sub {
+				color: var(--muted);
+				margin: 0 0 8px;
+			}
+			.pill {
+				display: inline-block;
+				font-size: 12px;
+				padding: 2px 9px;
+				border-radius: 999px;
+				border: 1px solid var(--line);
+				color: var(--muted);
+				margin-right: 6px;
+			}
+			.pill.ok {
+				color: var(--green);
+				border-color: #2f5132;
+			}
+			.pill.new {
+				color: var(--blue);
+				border-color: #2a3d5e;
+			}
+			.card {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 18px 20px;
+				margin: 14px 0;
+			}
+			code,
+			pre {
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+			}
+			code {
+				background: var(--code);
+				padding: 1px 6px;
+				border-radius: 5px;
+				font-size: 13px;
+				color: #d6deea;
+			}
+			pre {
+				background: var(--code);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 14px 16px;
+				overflow: auto;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+			.mock {
+				background: var(--panel2);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 16px;
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				font-size: 13px;
+				white-space: pre;
+				overflow: auto;
+				color: #cdd5e0;
+			}
+			.amberbox {
+				border: 1px solid #6b5012;
+				background: rgba(245, 158, 11, 0.1);
+				border-radius: 10px;
+				padding: 12px 14px;
+				color: var(--amber-ink);
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+				margin: 10px 0;
+				font-size: 13.5px;
+			}
+			th,
+			td {
+				text-align: left;
+				padding: 8px 10px;
+				border-bottom: 1px solid var(--line);
+				vertical-align: top;
+			}
+			th {
+				color: var(--muted);
+				font-weight: 600;
+			}
+			td code {
+				font-size: 12px;
+			}
+			ul {
+				margin: 8px 0;
+				padding-left: 22px;
+			}
+			li {
+				margin: 5px 0;
+			}
+			.tag {
+				color: var(--amber);
+			}
+			.muted {
+				color: var(--muted);
+			}
+			.check {
+				color: var(--green);
+			}
+			.slice {
+				border-left: 3px solid var(--amber);
+				padding-left: 14px;
+				margin: 14px 0;
+			}
+			.slice h3 {
+				margin-top: 0;
+			}
+			.gate {
+				font-size: 13px;
+				color: var(--muted);
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<h1>Item 12 — Fix / Normalize File Extension <span class="muted">(+ better rename UX)</span></h1>
+			<p class="sub">
+				v1.0 brief · file-first model · Phase 2 plan (approve before build). Backlog:
+				<code>FUTURE_CHANGES.md</code> Item 12 · Brief: <code>12-fix-extension.md</code>.
+			</p>
+			<p>
+				<span class="pill ok">interview done</span><span class="pill">size S</span
+				><span class="pill">no new dep</span>
+			</p>
+
+			<h2>1 · What this solves</h2>
+			<div class="card">
+				<p style="margin-top: 0">
+					A file's <em>identity is its manifest id</em>, not its name — so renaming (full name
+					<strong>or</strong> just the extension) is an O(1) display-name change via
+					<code>renameBlobById</code>, with zero fan-out to class memberships. Two jobs:
+				</p>
+				<ul>
+					<li>
+						<strong>Fix a wrong extension.</strong> A file whose bytes are a PNG but whose name ends
+						<code>.jpg</code> should be easy to correct to the sniffed type, in one tap.
+					</li>
+					<li>
+						<strong>Make renaming first-class.</strong> Split the editor's filename into a
+						<em>base-name</em> field and a small <em>extension</em> field so an extension fix is one
+						interaction, and consolidate today's two competing rename paths into one.
+					</li>
+				</ul>
+			</div>
+
+			<h2>2 · What already exists (don't rebuild)</h2>
+			<div class="card">
+				<table>
+					<tr>
+						<th>Piece</th>
+						<th>Where</th>
+						<th>Status</th>
+					</tr>
+					<tr>
+						<td>Magic-byte sniff (PNG/JPG/WEBP/PDF/HEIC)</td>
+						<td><code>fileMetadata.ts: detectExtensionFromMagic</code></td>
+						<td><span class="check">✔ exists</span></td>
+					</tr>
+					<tr>
+						<td><code>extensionMismatch</code> / <code>detectedFormatExtension</code> on metadata</td>
+						<td><code>fileMetadata.ts</code> + <code>/api/files/[id]/metadata</code></td>
+						<td><span class="check">✔ exists</span></td>
+					</tr>
+					<tr>
+						<td>In-popup amber banner + “Fix extension to .png” button</td>
+						<td><code>MetadataButton.svelte: handleFixExtension</code></td>
+						<td><span class="check">✔ exists (on-demand only)</span></td>
+					</tr>
+					<tr>
+						<td>Base-name rename (header <code>Input</code>; dialog <code>renameMode</code>)</td>
+						<td><code>FileEditorPanel.svelte</code> + <code>MetadataButton.svelte</code></td>
+						<td><span class="tag">⚠ duplicated, plain</span></td>
+					</tr>
+				</table>
+				<p class="muted" style="margin-bottom: 0">
+					So this item is <strong>finishing</strong>, not greenfield: add the proactive surface, the
+					split-field rename, the sniff unit tests, and a mis-extensioned fixture.
+				</p>
+			</div>
+
+			<h2>3 · Decisions (locked in interview)</h2>
+			<div class="card">
+				<ul>
+					<li>
+						<strong>Surfacing → proactive badge.</strong> Mirror Item 13: an amber “!” badge on the
+						Metadata button whenever the extension disagrees with sniffed content (cheap — 12 magic
+						bytes, no exiftool). The detailed fix stays in the popup banner.
+					</li>
+					<li>
+						<strong>Rename UX → split base-name + extension fields</strong> in the editor header,
+						with an inline <code>detected: .png · Fix</code> hint when the sniff disagrees.
+						Consolidate the duplicate rename paths into this one.
+					</li>
+					<li>
+						<strong>Cut line:</strong> no auto-fix on upload (always user-confirmed); no bulk
+						extension-fix (per-file only).
+					</li>
+					<li>
+						<strong>Bonus (in scope):</strong> add cheap GIF / TIFF / BMP magic bytes to the sniff
+						table (left un-cut in the interview).
+					</li>
+				</ul>
+			</div>
+
+			<h2>4 · UI mockups</h2>
+
+			<h3>Editor header — split rename (the new primary surface)</h3>
+			<div class="mock">┌─ File editor ──────────────────────────────── ⟨ ⟩ ✕ ─┐
+│                                                       │
+│  ┌ base name ───────────────┐ ┌ ext ─┐   ✓ Saved     │
+│  │ mountain-sunset          │ │ .jpg │                │
+│  └──────────────────────────┘ └──────┘                │
+│      detected .png · <span class="tag">Fix</span>          ← only when sniff ≠ ext  │
+│                                                       │
+│  [ image preview ]                          [ ⓘ! ]    │
+│                                              ↑ badge   │
+└───────────────────────────────────────────────────────┘</div>
+			<ul>
+				<li>
+					Base + extension are derived by splitting <code>file_name</code> at the last dot.
+					Blur/Enter on either recombines (<code>base + normExt</code>) and calls
+					<code>apiRenameFile</code>; same dup-name (409) inline error as today.
+				</li>
+				<li>
+					<code>detected .png · Fix</code> appears only on mismatch; the <span class="tag">Fix</span>
+					link sets the extension field to the sniffed value and commits — one tap.
+				</li>
+				<li>Extensionless names (e.g. <code>README</code>) → base = whole name, ext field empty.</li>
+			</ul>
+
+			<h3>Metadata button — proactive badge (mismatch)</h3>
+			<div class="mock">  ┌─────┐        badge fires if EITHER:
+  │  ⓘ  │!  ←     • stored dims ≠ image  (Item 13)
+  └─────┘        • extension ≠ sniffed content  (Item 12)
+
+  tooltip: “Metadata — needs attention”</div>
+			<p class="muted">
+				Badge logic becomes <code>dimMismatch || extMismatch</code>. Tooltip text generalises from
+				“stored dimensions look wrong” to a needs-attention phrasing covering both.
+			</p>
+
+			<h3>Metadata popup — existing banner (kept, unchanged)</h3>
+			<div class="amberbox">
+				⚠ <strong>Extension doesn't match image data</strong><br />
+				This file has a <code>.jpg</code> extension but the content appears to be PNG. &nbsp;
+				<strong>[ Fix extension to .png ]</strong>
+			</div>
+
+			<h2>5 · Data / API / on-disk changes</h2>
+			<div class="card">
+				<table>
+					<tr>
+						<th>Change</th>
+						<th>Detail</th>
+					</tr>
+					<tr>
+						<td><span class="pill new">new</span> Pure <code>detectExtensionMismatch()</code></td>
+						<td>
+							Extracted from <code>readImageFileMetadata</code> (mirrors Item 13's
+							<code>compareStoredVsImage</code>): <code>(filename, detectedExt) → { mismatch,
+							fileExtension, detectedExtension }</code>, with <code>.jpeg≡.jpg</code> normalisation.
+							Unit-tested in isolation; the metadata endpoint reuses it.
+						</td>
+					</tr>
+					<tr>
+						<td><span class="pill new">new</span> <code>GET /api/files/[id]/extension-check</code></td>
+						<td>
+							Lightweight (sniff only, no exiftool). Returns
+							<code>{ mismatch, fileExtension, detectedExtension }</code>. 400 invalid id · 404 no
+							file. Drives the badge + header hint without opening the popup — exact sibling of
+							<code>/dimension-check</code>.
+						</td>
+					</tr>
+					<tr>
+						<td><span class="pill new">export</span> <code>detectExtensionFromMagic</code></td>
+						<td>Promote from private → exported so the new endpoint/helper can reuse it.</td>
+					</tr>
+					<tr>
+						<td><span class="pill new">new</span> <code>apiCheckFileExtension(id)</code></td>
+						<td>Client wrapper + Zod <code>ExtensionCheckSchema</code> in <code>src/lib/api/files.ts</code>.</td>
+					</tr>
+					<tr>
+						<td>Rename</td>
+						<td>
+							Reuses existing <code>apiRenameFile</code> → <code>POST /api/files/[id]/rename</code> →
+							<code>renameBlobById</code>. <strong>No new write path.</strong> Server still enforces
+							<code>assertSafeBasename</code>; mismatch is warned, never blocked.
+						</td>
+					</tr>
+					<tr>
+						<td>Sniff table</td>
+						<td>Add GIF (<code>47 49 46 38</code>), TIFF (<code>49 49 2A 00</code>/<code>4D 4D 00 2A</code>), BMP (<code>42 4D</code>).</td>
+					</tr>
+					<tr>
+						<td>Fixture</td>
+						<td>
+							Add <code>media/files/mislabeled.jpg</code> = PNG bytes named <code>.jpg</code> (content
+							→ detected <code>.png</code>); register in <code>manifest.json</code>; note in
+							<code>test-fixtures/README.md</code>.
+						</td>
+					</tr>
+				</table>
+				<p class="muted" style="margin-bottom: 0">
+					On-disk manifest schema is unchanged — a rename is an existing O(1) operation. The popup
+					dialog's duplicate base-name rename (<code>renameMode</code>/<code>handleRename</code>) is
+					<strong>removed</strong>; the header owns rename.
+				</p>
+			</div>
+
+			<h2>6 · Vertical slices</h2>
+
+			<div class="slice">
+				<h3>Slice 1 — server: sniff → check endpoint + tests</h3>
+				<ul>
+					<li>Extend <code>MAGIC</code> (GIF/TIFF/BMP); export <code>detectExtensionFromMagic</code>.</li>
+					<li>Extract pure <code>detectExtensionMismatch()</code>; metadata endpoint reuses it.</li>
+					<li>Add <code>extensionConsistency(filePath, filename)</code> + <code>GET /api/files/[id]/extension-check</code>.</li>
+					<li>Client wrapper <code>apiCheckFileExtension</code> + Zod schema.</li>
+					<li><strong>Unit tests:</strong> pure mapping (match / .jpeg≡.jpg / png-as-jpg / null detect / no-ext) + buffer-based detect for the new formats.</li>
+				</ul>
+				<p class="gate">Gate: <code>npm run check</code> · <code>npm run lint</code> · <code>npm run test</code> green.</p>
+			</div>
+
+			<div class="slice">
+				<h3>Slice 2 — proactive badge</h3>
+				<ul>
+					<li><code>MetadataButton</code> fetches <code>extension-check</code> on mount (beside dimension-check).</li>
+					<li>Badge shows on <code>dimMismatch || extMismatch</code>; generalise tooltip/aria text.</li>
+				</ul>
+				<p class="gate">Gate: <code>npm run check</code> · <code>npm run lint</code>.</p>
+			</div>
+
+			<div class="slice">
+				<h3>Slice 3 — split-field rename + consolidation</h3>
+				<ul>
+					<li><code>FileEditorPanel</code> header: base-name <code>Input</code> + small extension <code>Input</code>; recombine + <code>apiRenameFile</code> on blur/Enter; inline 409 error.</li>
+					<li>Fetch <code>extension-check</code> for the open file → <code>detected .png · Fix</code> hint (one-tap sets ext + commits).</li>
+					<li>Remove the duplicate base-name rename from <code>MetadataButton</code> dialog (keep the extension-fix banner).</li>
+				</ul>
+				<p class="gate">Gate: <code>npm run check</code> · <code>npm run lint</code>.</p>
+			</div>
+
+			<div class="slice">
+				<h3>Slice 4 — fixture + e2e + docs</h3>
+				<ul>
+					<li>Add <code>mislabeled.jpg</code> fixture + manifest entry + README note.</li>
+					<li><code>npm run test:serve</code>: badge on <code>mislabeled.jpg</code>; one-tap Fix → <code>.png</code>; general base+ext rename; references survive; dup-name guarded.</li>
+					<li>UI capture: badge → header fix → renamed (before/after).</li>
+					<li>Docs: <code>FEATURES.md</code> (endpoint + behaviour), Item 12 → <em>Shipped &amp; folded</em>, triage HTML synced, brief checkboxes ticked + smoke test.</li>
+				</ul>
+				<p class="gate">Gate: all of the above green; docs in the same change.</p>
+			</div>
+
+			<h2>7 · Verification gates (Phase 4)</h2>
+			<div class="card">
+				<ul>
+					<li><code>npm run check</code> + <code>npm run lint</code> clean (touched files).</li>
+					<li>
+						<code>npm run test</code> — sniff→extension mapping (incl. new formats), pure mismatch
+						compare, and a rename no-op/regression guard that class memberships + manifest id survive
+						an extension change.
+					</li>
+					<li>
+						<code>npm run test:serve</code> against the fixture — badge fires on
+						<code>mislabeled.jpg</code>; one-tap Fix renames to <code>.png</code> and clears the
+						badge; full base+ext rename persists; the blob still serves; dup-name → inline 409.
+					</li>
+					<li>UI capture of the new rename interaction (before → editing → fixed).</li>
+					<li>
+						Docs in the same change: <code>FEATURES.md</code>, Item 12 →
+						<em>Shipped &amp; folded</em>, <code>FUTURE_CHANGES_TRIAGE.html</code> synced,
+						fixture/README updated, brief smoke test.
+					</li>
+				</ul>
+			</div>
+		</div>
+	</body>
+</html>

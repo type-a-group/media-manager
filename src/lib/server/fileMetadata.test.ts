@@ -3,7 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { exiftool } from 'exiftool-vendored';
-import { readImageFileMetadata, readImageDimensions } from './fileMetadata.js';
+import {
+	readImageFileMetadata,
+	readImageDimensions,
+	detectExtensionMismatch,
+	detectExtensionFromMagic
+} from './fileMetadata.js';
 import { supportsFileMetadata, hasAllowedImageExtension, isPdfFilename } from '../core/images.js';
 
 /**
@@ -51,6 +56,76 @@ describe('core image/pdf extension helpers', () => {
 		expect(supportsFileMetadata('doc.pdf')).toBe(true);
 		expect(isPdfFilename('doc.PDF')).toBe(true);
 		expect(isPdfFilename('photo.jpg')).toBe(false);
+	});
+});
+
+describe('detectExtensionMismatch (Item 12, pure)', () => {
+	it('flags a sniffed type that disagrees with the name extension', () => {
+		const r = detectExtensionMismatch('photo.jpg', '.png');
+		expect(r.mismatch).toBe(true);
+		expect(r.fileExtension).toBe('.jpg');
+		expect(r.detectedExtension).toBe('.png');
+	});
+
+	it('does not flag a matching extension', () => {
+		expect(detectExtensionMismatch('photo.png', '.png').mismatch).toBe(false);
+	});
+
+	it('treats .jpeg/.jpg and .tiff/.tif as equivalent (no mismatch)', () => {
+		expect(detectExtensionMismatch('photo.jpeg', '.jpg').mismatch).toBe(false);
+		expect(detectExtensionMismatch('scan.tiff', '.tif').mismatch).toBe(false);
+	});
+
+	it('is case-insensitive on the name extension', () => {
+		expect(detectExtensionMismatch('PHOTO.JPG', '.jpg').mismatch).toBe(false);
+		expect(detectExtensionMismatch('PHOTO.JPG', '.png').mismatch).toBe(true);
+	});
+
+	it('never flags when the sniffed type is unknown (null/undefined)', () => {
+		expect(detectExtensionMismatch('mystery.jpg', null).mismatch).toBe(false);
+		expect(detectExtensionMismatch('mystery.jpg', undefined).mismatch).toBe(false);
+	});
+
+	it('handles an extensionless name (no false positive)', () => {
+		const r = detectExtensionMismatch('README', '.png');
+		expect(r.fileExtension).toBeUndefined();
+		// An extensionless name does not equal `.png`, so it is technically a mismatch we can offer to fix.
+		expect(r.mismatch).toBe(true);
+	});
+});
+
+describe('detectExtensionFromMagic (Item 12, sniff table)', () => {
+	const dir = path.join(tmpdir(), `media-manager-sniff-test-${Date.now()}`);
+
+	const SAMPLES: { name: string; bytes: number[]; ext: string }[] = [
+		{ name: 'png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], ext: '.png' },
+		{ name: 'jpg', bytes: [0xff, 0xd8, 0xff, 0xe0], ext: '.jpg' },
+		{ name: 'gif', bytes: [0x47, 0x49, 0x46, 0x38, 0x39, 0x61], ext: '.gif' },
+		{ name: 'tiff-le', bytes: [0x49, 0x49, 0x2a, 0x00, 0x08], ext: '.tif' },
+		{ name: 'tiff-be', bytes: [0x4d, 0x4d, 0x00, 0x2a, 0x00], ext: '.tif' },
+		{ name: 'bmp', bytes: [0x42, 0x4d, 0x10, 0x00], ext: '.bmp' }
+	];
+
+	beforeAll(async () => {
+		await fs.mkdir(dir, { recursive: true });
+		for (const s of SAMPLES) {
+			await fs.writeFile(path.join(dir, s.name), Buffer.from([...s.bytes, 0, 0, 0, 0, 0, 0, 0, 0]));
+		}
+		await fs.writeFile(path.join(dir, 'plain'), Buffer.from('just some text content', 'ascii'));
+	});
+
+	afterAll(async () => {
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+
+	for (const s of SAMPLES) {
+		it(`detects ${s.name} as ${s.ext}`, async () => {
+			expect(await detectExtensionFromMagic(path.join(dir, s.name))).toBe(s.ext);
+		});
+	}
+
+	it('returns null for an unrecognised type', async () => {
+		expect(await detectExtensionFromMagic(path.join(dir, 'plain'))).toBeNull();
 	});
 });
 

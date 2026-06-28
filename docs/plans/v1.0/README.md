@@ -21,7 +21,7 @@ The committed scope for the **1.0** release, with one self-contained brief per f
 | 10 | Filter for missing / empty field | [`10-missing-filter.md`](10-missing-filter.md) | ✅ shipped | M |
 | 3 | Bulk operations (export remainder) | [`03-bulk-operations.md`](03-bulk-operations.md) | ready | S |
 | 5 | Data validation & repair | [`05-validation-repair.md`](05-validation-repair.md) | ready | S |
-| 12 | Fix / normalize file extension (+ rename UX) | [`12-fix-extension.md`](12-fix-extension.md) | ready | S |
+| 12 | Fix / normalize file extension (+ rename UX) | [`12-fix-extension.md`](12-fix-extension.md) | ✅ shipped | S |
 | 13 | Swap width / height (→ dimension-consistency check + fix) | [`13-swap-dimensions.md`](13-swap-dimensions.md) | ✅ shipped | S |
 | 34 | Reimplement masonry grid layout | [`34-masonry.md`](34-masonry.md) | ready | M |
 | 15 | Image compression management | [`15-image-compression.md`](15-image-compression.md) | blocked (1 OQ) | M |
@@ -43,7 +43,7 @@ Everything else in `FUTURE_CHANGES.md` is **post-1.0** unless promoted here.
 
 Dependency-aware order. Waves can overlap across agents; within the npx sub-project, follow its own README.
 
-1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), ~~10~~ (shipped), ~~13~~ (shipped), 12, 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
+1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), ~~10~~ (shipped), ~~13~~ (shipped), ~~12~~ (shipped), 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
 2. **Wave 2 — display & assets:** 8 (resolve its 3 open questions in the interview first), 34, 15. 8/34 both touch `DataGrid` — coordinate so they don't collide; 15 (compression) shares the **one resize/variant pipeline** with 34 and adopts `sharp` (closing the Item 35 decision) — design that pipeline once, before building either.
 3. **Wave 3 — design-then-build:** 18, 19. Both are `discussion` — the interview + HTML-plan stage is where they become `ready`. Do not start code until their open questions are closed.
 4. **Wave 4 — npx sub-project:** 32 → 31 → 30 → 33. Quiet-heal (32) makes browsing committed data safe; ephemeral port (31) unblocks running alongside a host dev server; root discovery + publishing (30) ties it together; the reader (33) shares the root-threading refactor and lands last. See [`npx/README.md`](npx/README.md).

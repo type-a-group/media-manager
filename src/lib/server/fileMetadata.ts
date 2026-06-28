@@ -10,7 +10,11 @@ const OVERWRITE_ORIGINAL = '-overwrite_original';
 const MAGIC: { bytes: number[]; ext: string; offset?: number }[] = [
 	{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], ext: '.png' },
 	{ bytes: [0xff, 0xd8, 0xff], ext: '.jpg' },
+	{ bytes: [0x47, 0x49, 0x46, 0x38], ext: '.gif' }, // GIF8
+	{ bytes: [0x49, 0x49, 0x2a, 0x00], ext: '.tif' }, // TIFF little-endian
+	{ bytes: [0x4d, 0x4d, 0x00, 0x2a], ext: '.tif' }, // TIFF big-endian
 	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' }, // RIFF
+	{ bytes: [0x42, 0x4d], ext: '.bmp' }, // BM
 	{ bytes: [0x25, 0x50, 0x44, 0x46], ext: '.pdf' } // %PDF
 ];
 
@@ -35,7 +39,7 @@ function isHeicBuffer(buf: Buffer, bytesRead: number): boolean {
  * @param filePath - Absolute path to the file
  * @returns Extension including dot (e.g. '.jpg', '.png') or null if unknown; caller should fall back to path.extname()
  */
-async function detectExtensionFromMagic(filePath: string): Promise<string | null> {
+export async function detectExtensionFromMagic(filePath: string): Promise<string | null> {
 	const fd = await fs.open(filePath, 'r');
 	try {
 		const buf = Buffer.alloc(12);
@@ -189,9 +193,8 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 	const stats = await fs.stat(filePath);
 	const fileExt = path.extname(filename).toLowerCase();
 	const detectedExt = await detectExtensionFromMagic(filePath);
-	const norm = (e: string) => (e === '.jpeg' ? '.jpg' : e);
-	const extensionMismatch =
-		detectedExt != null && norm(fileExt) !== norm(detectedExt.toLowerCase());
+	const extCheck = detectExtensionMismatch(filename, detectedExt);
+	const extensionMismatch = extCheck.mismatch;
 
 	const tags = await exiftool.read(filePath);
 
@@ -432,6 +435,80 @@ export async function dimensionConsistency(
 	const rawH = typeof tags.ImageHeight === 'number' ? tags.ImageHeight : undefined;
 	const orientation = typeof tags.Orientation === 'number' ? tags.Orientation : undefined;
 	return compareStoredVsImage(stored, { width: rawW, height: rawH }, orientation);
+}
+
+/** Result of comparing a file's name-extension against its sniffed (magic-byte) type (Item 12). */
+export interface ExtensionConsistency {
+	/** Current name extension incl. dot, lowercased (e.g. `.jpg`), or undefined when the name has none. */
+	fileExtension: string | undefined;
+	/** Extension sniffed from magic bytes incl. dot (e.g. `.png`), or undefined when the type is unknown. */
+	detectedExtension: string | undefined;
+	/** True iff the sniffed type is known and disagrees with the name extension (the actionable case). */
+	mismatch: boolean;
+}
+
+/** Extensions treated as equivalent so a benign spelling never registers as a mismatch. */
+const EXTENSION_ALIASES: Record<string, string> = { '.jpeg': '.jpg', '.tiff': '.tif' };
+
+/** Canonicalise an extension for comparison (lowercase + collapse known aliases). */
+function normalizeExtension(ext: string): string {
+	const lower = ext.toLowerCase();
+	return EXTENSION_ALIASES[lower] ?? lower;
+}
+
+/**
+ * Pure comparison of a filename's extension against a sniffed (magic-byte) extension. No IO — the
+ * single source of the "is the extension wrong?" rule, shared by the standalone check (which reads
+ * the file) and the metadata endpoint (which already sniffed the bytes).
+ *
+ * A mismatch is only flagged when the sniffed type is known; an unrecognised type ⇒ no mismatch
+ * (we never claim a name is wrong on a hunch). `.jpeg`/`.jpg` and `.tiff`/`.tif` are equivalent.
+ *
+ * @param filename - The blob's current filename (basename).
+ * @param detectedExt - Extension sniffed from magic bytes incl. dot, or null/undefined if unknown.
+ * @returns An {@link ExtensionConsistency} describing the comparison.
+ */
+export function detectExtensionMismatch(
+	filename: string,
+	detectedExt: string | null | undefined
+): ExtensionConsistency {
+	const fileExt = path.extname(filename).toLowerCase();
+	if (detectedExt == null) {
+		return { fileExtension: fileExt || undefined, detectedExtension: undefined, mismatch: false };
+	}
+	const detected = detectedExt.toLowerCase();
+	return {
+		fileExtension: fileExt || undefined,
+		detectedExtension: detected,
+		mismatch: normalizeExtension(fileExt) !== normalizeExtension(detected)
+	};
+}
+
+/**
+ * Sniff a blob's true type from magic bytes and compare it to its name extension (Item 12).
+ *
+ * Reads only the first bytes (no exiftool), then defers to {@link detectExtensionMismatch}. Fails
+ * safe: any read error yields `mismatch: false`.
+ *
+ * @param filePath - Absolute path to the blob.
+ * @param filename - The blob's current filename (basename) — the source of the name extension.
+ * @returns An {@link ExtensionConsistency} describing the comparison.
+ *
+ * Use case:
+ * - Drives the Item 12 "extension doesn't match content" warning badge + one-tap fix (the
+ *   lightweight `/extension-check` endpoint), without a full metadata read.
+ */
+export async function extensionConsistency(
+	filePath: string,
+	filename: string
+): Promise<ExtensionConsistency> {
+	let detected: string | null = null;
+	try {
+		detected = await detectExtensionFromMagic(filePath);
+	} catch {
+		detected = null;
+	}
+	return detectExtensionMismatch(filename, detected);
 }
 
 /**

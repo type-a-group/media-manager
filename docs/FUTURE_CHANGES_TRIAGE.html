@@ -156,7 +156,7 @@
 <body>
 <header class="top">
   <h1><span class="pink">Future Changes</span> — Triage Board</h1>
-  <p class="sub">Live read of <code>docs/FUTURE_CHANGES.md</code> · 38 items classified by status, size, cluster, and open-question load · generated 2026-06-26</p>
+  <p class="sub">Live read of <code>docs/FUTURE_CHANGES.md</code> · 38 items classified by status, size, cluster, and open-question load · generated 2026-06-27</p>
   <div class="stats" id="stats"></div>
 </header>
 
@@ -228,7 +228,7 @@ const ITEMS = [
   {n:7, name:"Static Site Export (read-only)", status:"active", size:"L", prio:"med", use:1, group:"npx", oq:3, deps:[6], note:"Read-only export target. Sequences with the npx cluster; needs the same root-threading refactor as Item 33."},
   {n:8, name:"Configurable & Verbose Grid Display", status:"active", size:"L", prio:"high", use:5, group:"grid", oq:3, stale:true, note:"High / user-requested. Display-field (title-by) <b>partly shipped</b>; verbose multi-field mode not. Pointers name removed JsonRecordGrid/ImageViewGrid/selection.svelte — repoint to DataGrid."},
   {n:10, name:"Filter for Missing / Empty Fields", status:"done", size:"M", use:3, group:"grid", note:"Shipped — rail 'Show' group (EmptyFieldFilter): 'Incomplete only' + per-field 'is empty'; Records + single-class Files catalog. Shared empty predicate in core/filters.ts; ?incomplete on records list / class members, per-field via ?filters. Transient (not persisted)."},
-  {n:12, name:"Fix / Normalize File Extension", status:"active", size:"S", prio:"low", use:2, group:"misc", stale:true, note:"Pointer to removed propagateFilenameRename — post Item 6 this is a pure rename. Add magic-byte type detection."},
+  {n:12, name:"Fix / Normalize File Extension (+ rename UX)", status:"done", size:"S", use:2, group:"misc", note:"Shipped — magic-byte sniff (PNG/JPG/GIF/TIFF/WEBP/BMP/PDF/HEIC) flags a name-extension that disagrees with content; shares the MetadataButton warning badge (needsAttention = dim‖ext) + one-tap 'Fix to .png' hint. Header rename made first-class: split base-name + extension fields, retiring the duplicate dialog rename. GET .../extension-check; reuses O(1) renameBlobById. No auto-fix-on-upload, no bulk fix."},
   {n:13, name:"Swap Width/Height (orientation fix)", status:"done", size:"S", use:2, group:"misc", note:"Shipped (reframed) — dimension-consistency check + fix: surfaces only on stored-vs-image mismatch (warning badge on MetadataButton + in-dialog banner). Smart 'Correct dimensions' + manual 'Swap W↔H'; dependency-free (exiftool). GET .../dimension-check + POST .../dimensions. Pixel re-encode deferred (Item 35/sharp)."},
   {n:14, name:"Markdown Blog Media Kind", status:"active", size:"L", prio:"med", use:3, group:"kinds", oq:2, stale:true, note:"<b>Predates the file-first model</b> — references MediaTypeKind / blob_store kinds that no longer exist. Needs a redesign against classes, not just a re-link. High value if blogging is a real use."},
   {n:15, name:"Image Compression Management", status:"active", size:"M", prio:"low", use:2, group:"assets", note:"Compressed variants via sharp. Non-urgent. Strong overlap with Item 7 (thumbnails) — design the resize pipeline once."},

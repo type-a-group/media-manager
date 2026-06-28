@@ -1,13 +1,12 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button, buttonVariants } from '$lib/components/ui/button';
-	import { InfoIcon, PencilIcon } from 'lucide-svelte';
+	import { InfoIcon } from 'lucide-svelte';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { ChevronsUpDownIcon } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		apiGetFileMetadata,
@@ -15,7 +14,9 @@
 		apiRenameFile,
 		apiCheckFileDimensions,
 		apiSetFileDimensions,
-		type DimensionCheck
+		apiCheckFileExtension,
+		type DimensionCheck,
+		type ExtensionCheck
 	} from '$lib/api/files.js';
 	import { supportsFileMetadata, fileExtension, isPdfFilename } from '$lib/core/images.js';
 	import type { ImageId } from '$lib/core/ids.js';
@@ -60,11 +61,12 @@
 	/** True when the stored dimensions disagree with the real (orientation-corrected) image. */
 	const dimMismatch = $derived(dimCheck?.mismatch === true && dimCheck.corrected != null);
 
-	// Rename state
-	let renameMode = $state(false);
-	let renameValue = $state('');
-	let renameLoading = $state(false);
-	let renameError = $state<string | null>(null);
+	// Extension-consistency state (Item 12)
+	let extCheck = $state<ExtensionCheck | null>(null);
+	/** True when the name extension disagrees with the file's sniffed (magic-byte) type. */
+	const extMismatch = $derived(extCheck?.mismatch === true && extCheck.detectedExtension != null);
+	/** Any actionable inconsistency drives the single warning badge on the Metadata button. */
+	const needsAttention = $derived(dimMismatch || extMismatch);
 
 	/**
 	 * Fetch a blob's EXIF/file metadata from the file-first surface.
@@ -228,6 +230,7 @@
 			await apiRenameFile(id, newFilename);
 			toast.success(`Renamed to ${newFilename}`);
 			onchanged?.();
+			await fetchExtensionCheck(id);
 			await fetchMetadata(id);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Failed to fix extension';
@@ -252,6 +255,20 @@
 			dimCheck = await apiCheckFileDimensions(imageId);
 		} catch {
 			dimCheck = null;
+		}
+	}
+
+	/**
+	 * Fetch the name-extension-vs-sniffed-type check (Item 12). Drives the warning badge before the
+	 * dialog is opened. Best-effort: failures leave `extCheck` null (no badge), never an error.
+	 *
+	 * @param imageId - Blob id (manifest UUID).
+	 */
+	async function fetchExtensionCheck(imageId: ImageId) {
+		try {
+			extCheck = await apiCheckFileExtension(imageId);
+		} catch {
+			extCheck = null;
 		}
 	}
 
@@ -292,45 +309,10 @@
 		applyDimensions(h, w);
 	}
 
-	/**
-	 * Rename the file (base name only, extension locked).
-	 */
-	async function handleRename() {
-		if (!id || !renameValue.trim() || !metadata?.filename) return;
-		const currentExt = (metadata.filename as string).substring(
-			(metadata.filename as string).lastIndexOf('.')
-		);
-		const newFilename = renameValue.trim() + currentExt;
-
-		renameLoading = true;
-		renameError = null;
-		try {
-			const name = await apiRenameFile(id, newFilename);
-			toast.success(`Renamed to ${name}`);
-			onchanged?.();
-			renameMode = false;
-			// The blob id is unchanged by a rename (O(1) manifest rename), so refetch by the same id.
-			await fetchMetadata(id);
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : 'Rename failed';
-			if (msg.includes('409') || msg.includes('already exists')) {
-				renameError = 'A file with that name already exists';
-			} else {
-				renameError = msg;
-			}
-		} finally {
-			renameLoading = false;
-		}
-	}
-
 	// Fetch metadata when dialog opens and we have an id
 	$effect(() => {
 		if (isOpen && id) {
 			fetchMetadata(id);
-		}
-		if (!isOpen) {
-			renameMode = false;
-			renameError = null;
 		}
 	});
 
@@ -338,8 +320,12 @@
 	// without opening the dialog. PDFs/vectors have no meaningful pixel dimensions.
 	$effect(() => {
 		dimCheck = null;
-		if (id && metadataSupported && !isPdfFilename(filename ?? '')) {
-			fetchDimensionCheck(id);
+		extCheck = null;
+		if (id && metadataSupported) {
+			// Dimension check is image-only (PDFs/vectors have no meaningful pixel dimensions)...
+			if (!isPdfFilename(filename ?? '')) fetchDimensionCheck(id);
+			// ...but an extension can be wrong on any metadata-capable type (incl. a PDF named .jpg).
+			fetchExtensionCheck(id);
 		}
 	});
 </script>
@@ -350,11 +336,11 @@
 			{#if metadataSupported}
 				<Dialog.Trigger
 					class={buttonVariants({ variant: 'outline', size: 'icon' }) + ' relative'}
-					title={dimMismatch ? 'Metadata — stored dimensions look wrong' : 'Metadata'}
-					aria-label={dimMismatch ? 'Metadata, stored dimensions look wrong' : 'Metadata'}
+					title={needsAttention ? 'Metadata — needs attention' : 'Metadata'}
+					aria-label={needsAttention ? 'Metadata, needs attention' : 'Metadata'}
 				>
 					<InfoIcon />
-					{#if dimMismatch}
+					{#if needsAttention}
 						<span
 							class="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-amber-500 text-[8px] font-bold leading-none text-amber-950"
 							aria-hidden="true">!</span
@@ -375,6 +361,10 @@
 		<Tooltip.Content side="top" sideOffset={6}>
 			{#if !metadataSupported}
 				{unsupportedMessage}
+			{:else if extMismatch && dimMismatch}
+				Extension &amp; dimensions look wrong
+			{:else if extMismatch}
+				Extension doesn't match content
 			{:else if dimMismatch}
 				Stored dimensions look wrong
 			{:else}
@@ -594,76 +584,7 @@
 											<dt class="text-sm font-medium text-muted-foreground">
 												{getDisplayLabel(key)}
 											</dt>
-											{#if key === 'filename'}
-												{#if renameMode}
-													<div class="flex flex-col gap-1 mt-1">
-														<div class="flex gap-1 items-center">
-															<Input
-																type="text"
-																bind:value={renameValue}
-																class="text-sm h-7 flex-1"
-																placeholder="New name"
-																onkeydown={(e: KeyboardEvent) => {
-																	if (e.key === 'Enter') handleRename();
-																	if (e.key === 'Escape') {
-																		renameMode = false;
-																		renameError = null;
-																	}
-																}}
-															/>
-															<span class="text-sm text-muted-foreground shrink-0"
-																>{(metadata.filename as string).substring(
-																	(metadata.filename as string).lastIndexOf('.')
-																)}</span
-															>
-														</div>
-														<div class="flex gap-1 justify-end">
-															<Button
-																variant="outline"
-																size="sm"
-																onclick={handleRename}
-																disabled={renameLoading || !renameValue.trim()}
-															>
-																{renameLoading ? '...' : 'Save'}
-															</Button>
-															<Button
-																variant="ghost"
-																size="sm"
-																onclick={() => {
-																	renameMode = false;
-																	renameError = null;
-																}}
-															>
-																Cancel
-															</Button>
-														</div>
-													</div>
-													{#if renameError}
-														<p class="text-xs text-destructive mt-1">{renameError}</p>
-													{/if}
-												{:else}
-													<dd class="text-sm text-foreground mt-1 flex items-center gap-2">
-														{formatValue(metadata[key])}
-														{#if id}
-															<button
-																class="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-accent"
-																title="Rename file"
-																onclick={() => {
-																	renameValue = (metadata?.filename as string).replace(
-																		/\.[^.]+$/,
-																		''
-																	);
-																	renameMode = true;
-																}}
-															>
-																<PencilIcon class="h-3 w-3" />
-															</button>
-														{/if}
-													</dd>
-												{/if}
-											{:else}
-												<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
-											{/if}
+											<dd class="text-sm text-foreground mt-1">{formatValue(metadata[key])}</dd>
 										</div>
 									{/if}
 								{/each}

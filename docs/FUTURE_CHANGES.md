@@ -36,8 +36,8 @@ acceptance: # what "done" looks like — the agent's definition of success
 | [Bulk & schema utilities](#cluster-bulk--schema-utilities) | 3 · 5 | Mostly shipped — small remainders to close |
 | [Integrations](#cluster-integrations) | 37 · 11 | External services, kept opt-in and out of core |
 | [Storage & routing — design](#cluster-storage--routing--design) | 20 · 18 · 19 · 16 | Decisions to make before code |
-| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 12 · 29 | Small, self-contained quality-of-life |
-| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 | Archive — see `FEATURES.md` |
+| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 29 | Small, self-contained quality-of-life |
+| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 · 12 | Archive — see `FEATURES.md` |
 
 > A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
@@ -584,23 +584,6 @@ acceptance:
 
 User-requested; **decisions locked:** capture the relative path within the dropped folder; user picks an existing schema field per upload; relative-path-only (browser limitation). **Open questions (block):** filename collisions in the flat global store (Item 6 shipped, which helps — relative path can disambiguate); populate-only-when-empty vs. always-overwrite; remember last-used field per type; ship `webkitdirectory` input first vs. drag-drop directory support too.
 
-### 12 · Fix / Normalize File Extension
-
-```yaml
-status: ready
-size: S
-usefulness: 2
-priority: low
-files: [src/lib/storage/classRepo.ts, src/lib/server/fileMetadata.ts]
-depends_on: []
-open_questions: 0
-acceptance:
-  - A per-file action to rename the extension (via the O(1) renameBlobById path — references stay intact)
-  - Optionally detect the true type (magic bytes) and suggest the correct extension
-```
-
-> 🔧 **Stale ref repointed + simplified by Item 6.** The old `propagateFilenameRename` fan-out is gone — rename is now O(1) via `renameBlobById` ([`classRepo.ts`](../src/lib/storage/classRepo.ts)/[`manifest.ts`](../src/lib/storage/manifest.ts)). Since identity is decoupled from filename, an extension fix is a pure display-name change. `fileMetadata.ts` already sniffs magic bytes — reuse it for type detection.
-
 ### 29 · Records Explorer — Mobile / Narrow Drill-Down
 
 ```yaml
@@ -634,4 +617,5 @@ Archive — kept as tombstones so cross-references and the triage board resolve.
 | 9 | Sorting & Ordering | ✅ **Shipped** — shared `SortControl` + `core/sort.ts` comparator (empties-last, stable tie-break); `?sort&dir` on records `list` / `/api/files` / class `members`; persisted per-entity (type `settings.json` · class `config` · `media/settings.json`). Folded in: last-modified shown in the side panels (`core/datetime.ts`). |
 | 10 | Filter for Missing / Empty Fields | ✅ **Shipped** — rail "Show" group (`EmptyFieldFilter`): "Incomplete only" (any empty user field) + per-field "is empty"; on Records + single-class Files catalog. One shared empty predicate (`core/filters.ts` `isEmptyValue`/`recordHasEmptyField`); `?incomplete` on records `list` / class `members`, per-field via `?filters`. Transient (not persisted). Complements Item 2 (missing **file** references). |
 | 13 | Swap Width/Height (orientation fix) | ✅ **Shipped (reframed)** — became a **dimension-consistency check + fix**: surfaces only when stored manifest dims disagree with the real **orientation-corrected** image (warning badge on `MetadataButton` + in-dialog banner). Smart "Correct dimensions" + manual "Swap W↔H"; dependency-free (exiftool). Orientation rule in `core/images.ts`; `compareStoredVsImage`/`dimensionConsistency` in `fileMetadata.ts`; `setBlobDimensions` in `manifest.ts`; `GET .../dimension-check` + `POST .../dimensions`. Pixel re-encode deferred (Item 35/`sharp`). |
+| 12 | Fix / Normalize File Extension (+ rename UX) | ✅ **Shipped** — magic-byte sniff (PNG/JPG/GIF/TIFF/WEBP/BMP/PDF/HEIC) flags a name extension that disagrees with content; shares the `MetadataButton` warning **badge** (`needsAttention = dim‖ext`) + a one-tap **"Fix to .png"** hint in the editor header. The header rename was made first-class — **split base-name + extension fields** (commit on blur/Enter), retiring the duplicate dialog rename. Pure `detectExtensionMismatch`/`extensionConsistency` in `fileMetadata.ts`; `GET .../extension-check`; reuses O(1) `renameBlobById`. No auto-fix-on-upload, no bulk fix. |
 | 27 | npx Package Distribution | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)". |

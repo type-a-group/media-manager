@@ -236,6 +236,23 @@ export async function apiSetFileDimensions(
 	return { width: data.width, height: data.height };
 }
 
+/** Name-extension vs sniffed-type comparison (Item 12); mirrors `ExtensionConsistency` server-side. */
+export const ExtensionCheckSchema = z.object({
+	fileExtension: z.string().optional(),
+	detectedExtension: z.string().optional(),
+	mismatch: z.boolean()
+});
+export type ExtensionCheck = z.infer<typeof ExtensionCheckSchema>;
+
+/** GET /api/files/[id]/extension-check — compare the name extension to the sniffed (magic-byte) type. */
+export async function apiCheckFileExtension(
+	id: ImageId,
+	fetchFn: typeof fetch = fetch
+): Promise<ExtensionCheck> {
+	const res = await fetchFn(`/api/files/${id}/extension-check`);
+	return jsonOrThrow(res, ExtensionCheckSchema, 'Failed to check extension');
+}
+
 // ---- Classes --------------------------------------------------------------
 
 /** GET /api/classes — list classes with member counts. */
