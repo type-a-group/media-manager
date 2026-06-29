@@ -27,7 +27,7 @@ The committed scope for the **1.0** release, with one self-contained brief per f
 | 39 | Consume `@nicbat/svelte-masonry` GitHub dep (extraction ✅ shipped) | [`34-masonry.md`](34-masonry.md) | ready · **deferred, not 1.0** | S |
 | 18 | Records storage reorganization | [`18-records-storage-reorg.md`](18-records-storage-reorg.md) · [plan](18-records-storage-reorg-plan.html) | ✅ shipped | M |
 | 19 | Per-class should / shouldn't be here | [`19-should-be-here.md`](19-should-be-here.md) | discussion · **deferred, not 1.0** | M |
-| 30–33 | npx package + reader (sub-project) | [`npx/README.md`](npx/README.md) | blocked / discussion | L |
+| 30–33 | npx package + reader (sub-project) | [`npx/README.md`](npx/README.md) · [run plan](npx/run-experience-plan.html) | **30·31·32 ✅ shipped** (2026-06-28) · 33 + follow-ups 42/43 remain | L |
 
 **Candidates (may join 1.0).** Adjacent items that naturally sequence with the core. Not committed — promote into the table above if we decide to pull them in.
 
@@ -48,7 +48,7 @@ Dependency-aware order. Waves can overlap across agents; within the npx sub-proj
 1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), ~~10~~ (shipped), ~~13~~ (shipped), ~~12~~ (shipped), 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
 2. **Wave 2 — display & assets:** ~~8~~ (shipped 2026-06-28 — verbose grid: shared `VerboseFieldsMenu`, `field_values` inline on the list endpoints, both Files + Records; virtualization carved out to Item 40), ~~34~~ (shipped — in-house `Masonry`; follow-up 39 = consume the extracted `@nicbat/svelte-masonry` package, **deferred out of 1.0**). (Item 15 compression was de-scoped from 1.0.)
 3. **Wave 3 — design-then-build:** ~~18~~ (shipped 2026-06-28 — records reorg + settings split: `json` types → `records/<typeId>/`, app-wide prefs hoisted to `<root>/settings.json`, dormant `typeOrder`, `dataFileName` dropped, explicit `upgrade-data` step 6 + old-layout guard; reorder UX split to Item 41). 19 was **deferred out of 1.0** on 2026-06-28 — its Phase-1 discussion concluded the value needs a heuristic candidate source that doesn't exist yet; it stays in the backlog at `usefulness: 3 · priority: medium`.
-4. **Wave 4 — npx sub-project:** 32 → 31 → 30 → 33. Quiet-heal (32) makes browsing committed data safe; ephemeral port (31) unblocks running alongside a host dev server; root discovery + publishing (30) ties it together; the reader (33) shares the root-threading refactor and lands last. See [`npx/README.md`](npx/README.md).
+4. **Wave 4 — npx sub-project:** ~~32~~ → ~~31~~ → ~~30~~ (all **shipped 2026-06-28** — the editor "easier to run" experience: quiet-heal git-clean browse, ephemeral port + readiness auto-open, `media-manager.config.json` discovery + `serve`/`init`/`doctor` verbs + build-on-demand; plan `npx/run-experience-plan.html`) → 33 (reader) lands last, sharing the root-threading refactor. Carved-out follow-ups: 42 (quiet-heal content-hash perf) · 43 (registry publishing) — both post-1.0. See [`npx/README.md`](npx/README.md).
 
 ---
 

@@ -23,7 +23,7 @@ npm run test:watch   # vitest watch
 
 Run a single test file: `npx vitest run src/lib/storage/classRepo.test.ts`. Tests use `environment: 'node'` and match `src/**/*.{test,spec}.{ts,js}`.
 
-**Nothing works without a data root.** Dev: `MEDIA_MANAGER_ROOT=./my-data npm run dev` (create the folder first). Built app: `node bin/media-manager.js /abs/path/to/my-data` (the CLI sets `MEDIA_MANAGER_ROOT`, defaults `BODY_SIZE_LIMIT` to ~100 MiB, and opens the browser unless `--no-open`). Server listens on `PORT` (default 3000).
+**Nothing works without a data root.** Dev: `MEDIA_MANAGER_ROOT=./my-data npm run dev` (create the folder first). Built app: `node bin/media-manager.js /abs/path/to/my-data` (the CLI sets `MEDIA_MANAGER_ROOT`, defaults `BODY_SIZE_LIMIT` to ~100 MiB, and opens the browser unless `--no-open`). **The CLI grew an "easier to run" surface (Items 30/31/32):** the root is resolved `arg → MEDIA_MANAGER_ROOT → media-manager.config.json` (walked up from cwd; `root` relative to the config file) → friendly error; verbs `serve` (default) · `init` (scaffold a new empty workspace) · `config` (write a config for a workspace you already have, `--force` to overwrite) · `build` (rebuild `build/` and exit, no server) · `doctor` (diagnose root/config/build) · `--help`/`-h`; `build/` is **built on demand** when absent (`--rebuild` forces). The server binds an **ephemeral OS-assigned port** (no fixed 3000 — pin with `--port N`/`PORT`) and auto-opens the actually-bound URL on the readiness signal.
 
 `npm run upgrade-data -- <root>` (add `--apply` to write) migrates an existing data root to current conventions — see `scripts/upgrade-data.mjs`.
 
@@ -34,7 +34,8 @@ Run a single test file: `npx vitest run src/lib/storage/classRepo.test.ts`. Test
 ```bash
 npm run build                         # produces build/ (the shipped Node server)
 node bin/media-manager.js <root-dir>  # CLI sets MEDIA_MANAGER_ROOT, defaults BODY_SIZE_LIMIT (~100 MiB),
-                                      # opens the browser unless --no-open; server on PORT (default 3000)
+                                      # builds build/ on demand if absent, binds an ephemeral port,
+                                      # opens the browser unless --no-open (pin port with --port N)
 # equivalently: MEDIA_MANAGER_ROOT=<root-dir> node build
 ```
 

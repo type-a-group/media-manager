@@ -2,7 +2,7 @@
 
 Non-committal backlog of deferred improvements identified during codebase audits. **This is not the shipped feature set** — that's [`FEATURES.md`](FEATURES.md). Items here are candidates, not commitments.
 
-> **🚀 1.0 release plan:** a committed subset of these items is scheduled for **1.0** — see [`plans/v1.0/README.md`](plans/v1.0/README.md) (per-feature briefs + the agile interview → HTML-plan → verification process). Committed: Items **8 · 9 · 10 · 3 · 5 · 12 · 13 · 34 · 18 · 19** and the npx sub-project (**30 · 31 · 32 · 33**). When one of those ships, retire it here as usual. (Item **39**'s standalone-package extraction shipped early, out-of-band — the remaining media-manager-consumes-it swap is intentionally **not** 1.0-blocking. Item **15** (image compression) was de-scoped from 1.0 — it remains a `blocked` backlog item, not release-blocking.)
+> **🚀 1.0 release plan:** a committed subset of these items is scheduled for **1.0** — see [`plans/v1.0/README.md`](plans/v1.0/README.md) (per-feature briefs + the agile interview → HTML-plan → verification process). Committed: Items **8 · 9 · 10 · 3 · 5 · 12 · 13 · 34 · 18 · 19** and the npx sub-project (**30 · 31 · 32 · 33**). When one of those ships, retire it here as usual. (Items **30 · 31 · 32** shipped 2026-06-28 — the editor run experience; carved-out follow-ups **42** (quiet-heal perf) / **43** (registry publishing) remain. Item **19** was deferred out of 1.0.) (Item **39**'s standalone-package extraction shipped early, out-of-band — the remaining media-manager-consumes-it swap is intentionally **not** 1.0-blocking. Item **15** (image compression) was de-scoped from 1.0 — it remains a `blocked` backlog item, not release-blocking.)
 
 > **How to read & maintain this file:** see the **"Managing FUTURE_CHANGES.md"** section in [`../CLAUDE.md`](../CLAUDE.md). The short version: items are grouped by **cluster** (not by number), every active item carries a machine-readable **frontmatter block**, item **numbers are immutable IDs** (never renumber — they're cross-referenced from `FEATURES.md` and the plan docs), and `status: ready` is a promise that an agent can pick it up with **zero open questions**.
 
@@ -26,18 +26,18 @@ acceptance: # what "done" looks like — the agent's definition of success
 
 ## Cluster index
 
-| Cluster                                                         | Items                                                     | Theme                                                  |
-| --------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------ |
-| [npx-package vision](#cluster-npx-package-vision)               | 30 · 31 · 32 · 33 · 7                                     | Run media-manager as an npx package inside a host repo |
-| [Data model & fields](#cluster-data-model--fields)              | 36 · 38 · 26 · 25 · 4 · 0                                 | Field types, value editors, globals parity             |
-| [Media kinds & preview](#cluster-media-kinds--preview)          | 23 · 21 · 24 · 14                                         | Expand beyond images — video/gif, pdf, docx, markdown  |
-| [Grid & display](#cluster-grid--display)                        | 40                                                        | Large-catalog perf (verbose grid #8 shipped)           |
-| [Asset pipeline & deps](#cluster-asset-pipeline--deps)          | 15 · 39 · 35                                              | Thumbnails, masonry, the `sharp` decision              |
-| [Bulk & schema utilities](#cluster-bulk--schema-utilities)      | 3 · 5                                                     | Mostly shipped — small remainders to close             |
-| [Integrations](#cluster-integrations)                           | 37 · 11                                                   | External services, kept opt-in and out of core         |
-| [Storage & routing — design](#cluster-storage--routing--design) | 20 · 19 · 16                                              | Decisions to make before code                          |
-| [Misc fixes & polish](#cluster-misc-fixes--polish)              | 17 · 41 · 29                                              | Small, self-contained quality-of-life                  |
-| [Shipped & folded](#shipped--folded)                            | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 · 12 · 34 · 8 · 18 | Archive — see `FEATURES.md`                            |
+| Cluster                                                         | Items                                                                    | Theme                                                  |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
+| [npx-package vision](#cluster-npx-package-vision)               | 33 · 42 · 43 · 7                                                         | Run media-manager as an npx package inside a host repo |
+| [Data model & fields](#cluster-data-model--fields)              | 36 · 38 · 26 · 25 · 4 · 0                                                | Field types, value editors, globals parity             |
+| [Media kinds & preview](#cluster-media-kinds--preview)          | 23 · 21 · 24 · 14                                                        | Expand beyond images — video/gif, pdf, docx, markdown  |
+| [Grid & display](#cluster-grid--display)                        | 40                                                                       | Large-catalog perf (verbose grid #8 shipped)           |
+| [Asset pipeline & deps](#cluster-asset-pipeline--deps)          | 15 · 39 · 35                                                             | Thumbnails, masonry, the `sharp` decision              |
+| [Bulk & schema utilities](#cluster-bulk--schema-utilities)      | 3 · 5                                                                    | Mostly shipped — small remainders to close             |
+| [Integrations](#cluster-integrations)                           | 37 · 11                                                                  | External services, kept opt-in and out of core         |
+| [Storage & routing — design](#cluster-storage--routing--design) | 20 · 19 · 16                                                             | Decisions to make before code                          |
+| [Misc fixes & polish](#cluster-misc-fixes--polish)              | 17 · 41 · 29                                                             | Small, self-contained quality-of-life                  |
+| [Shipped & folded](#shipped--folded)                            | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 · 12 · 34 · 8 · 18 · 30 · 31 · 32 | Archive — see `FEATURES.md`                            |
 
 > A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
@@ -45,69 +45,44 @@ acceptance: # what "done" looks like — the agent's definition of success
 
 ## Cluster: npx-package vision
 
-Running media-manager as an **npx package inside a host repo** (e.g. `nicb.at`, workspace at `src/assets/media_manager`). Full design: [`plans/npx-package-vision.md`](plans/npx-package-vision.md) (+ diagram [`npx-package-vision.html`](npx-package-vision.html)). Decisions locked 2026-06-20: **editor-first**, distribute as a **local dep** for now (publish later). Items 30/31/32 are the "safe to open committed data" trio.
+Running media-manager as an **npx package inside a host repo** (e.g. `nicb.at`, workspace at `src/assets/media_manager`). Full design: [`plans/npx-package-vision.md`](plans/npx-package-vision.md) (+ diagram [`npx-package-vision.html`](npx-package-vision.html)). Decisions locked 2026-06-20: **editor-first**, distribute as a **local dep** for now (publish later). Items 30/31/32 (the "safe to open committed data" trio) **shipped 2026-06-28**; Item 33 (reader) plus follow-ups 42 (perf) / 43 (publishing) remain.
 
-### 30 · Editor npx Setup — Zero-Config Root Discovery (Mode A)
+> **Items 30 · 31 · 32 shipped 2026-06-28** (the editor "easier to run" experience — see [Shipped & folded](#shipped--folded) + plan `plans/v1.0/npx/run-experience-plan.html`). What remains in this cluster: Item 33 (reader) plus two carved-out follow-ups below — **42** (the quiet-heal content-hash perf nicety) and **43** (registry publishing, deferred out of 1.0).
+
+### 42 · Quiet-Heal Content-Hash Resync Trigger (perf)
 
 ```yaml
-status: blocked
-size: L
-usefulness: 4
-priority: medium
-files: [bin/media-manager.js, src/lib/storage/paths.ts]
+status: ready
+size: S
+usefulness: 2
+priority: low
+files: [src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts, src/lib/storage/manifest.test.ts]
 depends_on: []
-open_questions: 3
+open_questions: 0
 acceptance:
-  - Bare `npx media-manager` from inside a host repo finds the workspace with zero config
-  - Root-resolution precedence chain implemented (arg → env → config file → convention auto-detect → friendly error)
-  - `media-manager.config.json` loader (parse/validate; resolve `root` relative to the config file, not cwd)
-  - CLI grows verbs (`serve` default, `init`, `doctor`) while keeping the bare/positional form
+  - Replace the mtime-gated resync trigger (`reconcileAndResync`) with a content-derived signal so a `git checkout` (which resets mtimes) doesn't re-parse every class file on each browse
+  - No behavior change to the membership index or the `healed` report — purely avoids redundant work
 ```
 
-Today [`bin/media-manager.js`](../bin/media-manager.js) **requires** an explicit `<root-dir>` and errors without it. Goal: bare `npx media-manager` discovers the right folder. This is the "editor" half (Mode A — the server that _mutates_ the root), distinct from Item 33 (read-only reader). Distribute as a **local dep** (host `package.json` `file:../media-manager` or git URL) for now; publishing is a later phase (folds in former Item 27 — the npm `bin`/`files`/`engines` fields, prepublish build, scoped name `@nicbat/media-manager`, cross-platform native-dep audit of `exiftool-vendored`/`heic-convert`).
+Carved out of shipped [Item 32](#shipped--folded). The git-clean goal is **already met** (the `if (changed)` write guards make a browse a no-op, and **git tracks content, not mtime**, so the mtime-resync re-firing causes zero `git status` churn). This is the leftover **performance** nicety: after a `git checkout` resets mtimes, `reconcileAndResync` ([`classRepo.ts`](../src/lib/storage/classRepo.ts)) re-reads + re-parses every class file on each list even though nothing changed. A content-hash (or size+hash) signal stored in the manifest would skip that. Low priority — invisible to correctness; only bites on large class counts.
 
-**Open questions:** (1) precedence when both config file and env/arg present — arg/env should win, confirm + document; (2) auto-detect walks **up** the tree (monorepo-friendly) vs. probes `cwd` only; (3) `init` scaffolding — reuse the app's own first-launch healing for the empty workspace rather than hand-rolling.
-
-### 31 · Ephemeral Server Port + Auto-Open (drop the fixed PORT)
+### 43 · npx Package Publishing (registry — later phase)
 
 ```yaml
-status: blocked
+status: discussion
 size: M
 usefulness: 3
-priority: medium
-files: [bin/media-manager.js]
-depends_on: []
+priority: low
+files: [package.json, bin/media-manager.js]
+depends_on: [30]
 open_questions: 2
 acceptance:
-  - Server binds an ephemeral port (port 0 → OS-assigned) and auto-opens the actually-bound URL
-  - `port`/`PORT` removed from the config surface + docs (keep an optional `--port`/`PORT` override)
-  - Auto-open fires on a readiness signal, not a fixed setTimeout guess
+  - npm `bin`/`files`/`engines` fields + a `prepublishOnly` build so `build/` ships in the tarball (consumers never build)
+  - Scoped name `@nicbat/media-manager`; cross-platform native-dep audit of `exiftool-vendored` / `heic-convert`
+  - `npx media-manager` from the published registry works on macOS / Linux / Windows
 ```
 
-A fixed `PORT=3000` collides with the host's dev server. The server itself is **mandatory** (real FS IO, `exiftool-vendored`, `heic-convert`, manifest locking — can't be a static page) but the fixed port isn't.
-
-**Open questions / main spike:** does `@sveltejs/adapter-node` accept `PORT=0` and let us read back the bound port? If not, the CLI may need to pre-bind a probe socket (race-y) or parse the "listening on" stdout line. **Research this before building.** Second: auto-open timing once the bound port is known.
-
-### 32 · Quiet Heal — Persist Manifest Reconcile Only on Real Change
-
-```yaml
-status: blocked
-size: M
-usefulness: 4
-priority: medium
-files: [src/lib/storage/manifest.ts, src/lib/storage/manifest.test.ts]
-depends_on: []
-open_questions: 3
-acceptance:
-  - `reconcile` (and the membership-index resync) diff against on-disk state and skip the write when equivalent
-  - Browsing a clean, git-committed workspace produces zero `git status` churn
-  - `healed: { added, missing }` + the toast still fire for real changes
-  - Unit coverage asserts "no change ⇒ no write" and "real change ⇒ write + report"
-```
-
-Every list call lazy-heals the manifest ([`manifest.ts`](../src/lib/storage/manifest.ts) `reconcile`), so _just browsing_ a git-committed workspace can rewrite `media/manifest.json` (mtime/no-op churn) and dirty the tree. Chosen **over** a hard `--read-only` mode (which would block editing). Load-bearing path (manifest lock taken before any class lock) — needs the unit coverage above.
-
-**Open questions / research:** (1) is the churn from `reconcile`, the mtime-gated membership resync, or `settings.json` healing — audit which write paths fire on a pure browse; (2) does any caller depend on the manifest mtime advancing every list (the mtime-gated resync)?; (3) equivalence granularity — structural deep-equality is safer than byte-equal JSON against formatting drift.
+Folded out of shipped [Item 30](#shipped--folded) (originally former Item 27). The editor run experience (discovery + verbs + ephemeral port + build-on-demand) shipped as a **local-dep / clone** flow; this is the deferred **publish-to-registry** phase. Consumers won't build — `prepublishOnly` builds once and `build/` ships in the tarball; the real risk is **install-time** native binaries (`exiftool-vendored`/`heic-convert`) resolving cross-platform. **Open questions:** (1) scoped vs. unscoped name + npm org; (2) the native-dep cross-platform matrix — do the vendored binaries resolve on every target, or do we need `optionalDependencies` / a postinstall check?
 
 ### 33 · Reader Package — Read-Only Host Integration (Mode B)
 
@@ -682,4 +657,7 @@ Archive — kept as tombstones so cross-references and the triage board resolve.
 | 34  | Reimplement masonry grid layout                  | ✅ **Shipped** — replaced `@masonry-grid/svelte` with an in-house, dependency-free, order-preserving balanced packer (`src/lib/components/masonry/Masonry.svelte`), wired into `DataGrid`'s thumbnail variant behind the existing `GridSize` (`minColumnWidth`); images render at native aspect ratio (no fixed-height frames — height is estimated for column-balancing only, so it can't clip/misalign). Old library removed. Publishable-extraction follow-up = [Item 39](#cluster-asset-pipeline--deps).                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 8   | Configurable & Verbose Grid Display              | ✅ **Shipped 2026-06-28** — opt-in **"Show"** mode: shared `VerboseFieldsMenu` (`Show ▾` popover: **Show on tiles** toggle + **grouped** scrollable 6-item-capped checkboxes w/ divider headers) renders chosen items as key/value rows under each tile/row, on **both** Files (`DataGrid` masonry card) and Records (`RecordListColumn`). Two groups: **File info** (intrinsic size/dimensions/type/date-added, namespaced `file:*`, client-side, in **every** Files view incl. catalog) + **Fields** (class/type schema, server-resolved inline as `field_values` via `?fields=`, shared `buildFieldValues` — no per-tile fetch). Catalog can mix both; All Files = File info only; Records = its fields. Persisted durable per-entity (class `config` · type `settings.json` · `media/settings.json`). Plan: `plans/v1.0/08-verbose-grid-plan.html`. Virtualization carved out → [Item 40](#cluster-grid--display). |
 | 18  | Records Storage Reorganization                   | ✅ **Shipped 2026-06-28** — `json` record types moved under `<root>/records/<typeId>/`; app-wide prefs hoisted to `<root>/settings.json` (`media/settings.json` keeps only `classOrder`); new `records/settings.json` holds a **dormant** `typeOrder`; reserved `globals` stays top-level; dead `dataFileName` dropped (`data.json` hardcoded). Resolution via `getMediaTypeBaseDir`/`listMediaTypeIds` (scans `records/` + folds in `globals`). Explicit `upgrade-data` step 6 (idempotent); no dual-read — `hooks.server.ts` + `layoutGuard.ts` fail loudly on the old flat layout. Plan: `plans/v1.0/18-records-storage-reorg-plan.html`. Reorder UX split to [Item 41](#cluster-misc-fixes--polish).                                                                                                                                                                                                               |
-| 27  | npx Package Distribution                         | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 27  | npx Package Distribution                         | ➡️ **Folded into [Item 30](#shipped--folded), now carved out to [Item 43](#43--npx-package-publishing-registry--later-phase)** — registry publish mechanics (deferred out of 1.0).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 30  | Editor npx Setup — Zero-Config Root Discovery    | ✅ **Shipped 2026-06-28** — bare `media-manager` discovers the root via `media-manager.config.json` (walked up from cwd; `root` resolved relative to the config file); precedence `arg → MEDIA_MANAGER_ROOT → config → friendly error`; verbs `serve` (default) · `init` (scaffold new) · `config` (config for existing data, `--force`) · `build` (rebuild + exit) · `doctor` (diagnose) · `--help`/`-h`; **build-on-demand** when `build/` is absent (`--rebuild` forces). All in `bin/media-manager.js`. Registry **publishing carved out → [Item 43](#43--npx-package-publishing-registry--later-phase)**. Plan: `plans/v1.0/npx/run-experience-plan.html`.                                                                                                                                                                                                                                                        |
+| 31  | Ephemeral Server Port + Auto-Open                | ✅ **Shipped 2026-06-28** — binds an OS-assigned ephemeral port (no fixed 3000; probe `:0` → pass to child), auto-opens the actually-bound URL on the adapter's "Listening on" readiness signal (not a `setTimeout` guess); optional `--port`/`PORT` pin. `bin/media-manager.js`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 32  | Quiet Heal — Reconcile Only on Real Change       | ✅ **Shipped 2026-06-28** — the `if (changed)` write guards already make a browse a no-op, and **git tracks content not mtime**, so a committed app-native workspace browses with **zero `git status` churn** (verified). Locked by `manifest.test.ts` "quiet heal" coverage (no-change ⇒ no-write · real-change ⇒ write+report · stays-missing ⇒ no further write). Fixture made representative (`.prettierignore` app-owned data + app-native manifest). Content-hash resync trigger carved out → [Item 42](#42--quiet-heal-content-hash-resync-trigger-perf).                                                                                                                                                                                                                                                                                                                                                       |

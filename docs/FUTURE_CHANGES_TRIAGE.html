@@ -156,7 +156,7 @@
 <body>
 <header class="top">
   <h1><span class="pink">Future Changes</span> — Triage Board</h1>
-  <p class="sub">Live read of <code>docs/FUTURE_CHANGES.md</code> · 41 items classified by status, size, cluster, and open-question load · generated 2026-06-28</p>
+  <p class="sub">Live read of <code>docs/FUTURE_CHANGES.md</code> · 43 items classified by status, size, cluster, and open-question load · generated 2026-06-28</p>
   <div class="stats" id="stats"></div>
 </header>
 
@@ -245,9 +245,11 @@ const ITEMS = [
   {n:11, name:"AI / External Field Enrichment", status:"active", size:"L", prio:"low", use:2, group:"integrations", note:"Downstream-app ideas (vision API, local vector search). Explicitly non-core — park / spin out."},
   {n:37, name:"Import from Google Photos (Picker API)", status:"active", size:"L", prio:"med", use:3, group:"integrations", oq:4, note:"User-requested but explicitly a rare-use feature. Full design doc + mockup exist. Collapses onto the upload path. Loopback port overlaps Item 31."},
 
-  {n:30, name:"Editor npx Setup — zero-config root discovery", status:"active", size:"L", prio:"med", use:4, group:"npx", oq:3, note:"Cluster umbrella (Mode A) — makes the tool actually usable inside a host repo. Decisions locked 2026-06-20. Publishing folded in from 27."},
-  {n:31, name:"Ephemeral Server Port + auto-open", status:"active", size:"M", prio:"med", use:3, group:"npx", oq:2, note:"Pairs with 30; unblocks running alongside a host dev server. <b>Main spike:</b> does adapter-node support PORT=0 and report the bound port?"},
-  {n:32, name:"Quiet Heal — persist reconcile only on real change", status:"active", size:"M", prio:"med", use:4, group:"npx", oq:3, note:"Unblocks editing a git-committed workspace (zero spurious diffs). Load-bearing path — needs unit coverage. Research which write paths churn first."},
+  {n:30, name:"Editor npx Setup — zero-config root discovery", status:"done", size:null, use:4, group:"npx", note:"Shipped 2026-06-28 — media-manager.config.json discovery (walk-up) + serve/init/config/build/doctor verbs (+--help) + build-on-demand. Publishing carved out → 43."},
+  {n:31, name:"Ephemeral Server Port + auto-open", status:"done", size:null, use:3, group:"npx", note:"Shipped 2026-06-28 — probe :0 ephemeral port, readiness auto-open (not setTimeout); --port pin."},
+  {n:32, name:"Quiet Heal — persist reconcile only on real change", status:"done", size:null, use:4, group:"npx", note:"Shipped 2026-06-28 — git-clean browse (guards already no-op; git tracks content not mtime); locked by manifest.test.ts. Content-hash trigger carved out → 42."},
+  {n:42, name:"Quiet-Heal content-hash resync trigger (perf)", status:"ready", size:"S", prio:"low", use:2, group:"npx", oq:0, note:"Carved from 32. Perf only — git-clean already met. Swap the mtime resync trigger for a content hash so git-checkout doesn't re-parse class files each browse."},
+  {n:43, name:"npx Package Publishing (registry)", status:"discussion", size:"M", prio:"low", use:3, group:"npx", oq:2, note:"Carved from 30 (former 27). Deferred out of 1.0. prepublishOnly build ships build/ (consumers don't build); the risk is install-time native deps (exiftool/heic) cross-platform."},
   {n:33, name:"Reader Package (Mode B, read-only)", status:"active", size:"L", prio:"low", use:2, group:"npx", oq:3, note:"Deferred + speculative — library-vs-export undecided. Gated by the root-threading refactor (shared with Item 7). Don't pre-build."},
   {n:39, name:"Consume @nicbat/svelte-masonry as a GitHub dependency", status:"ready", size:"S", prio:"low", use:3, group:"assets", oq:0, note:"Extraction SHIPPED early 2026-06-28: the in-house packer now lives in its own standalone repo github.com/nicbat/svelte-masonry (@nicbat/svelte-masonry v0.1.0, svelte-package build, publint-clean, README+MIT). Open Q resolved → separate standalone repo + @nicbat scope (not a monorepo workspace). Remaining (deliberately NOT 1.0-blocking, per user): media-manager still uses its local copy at src/lib/components/masonry/ — swap it for github:nicbat/svelte-masonry#<tag>, delete the copy, update CLAUDE.md. npm-registry publish is a later separate step."},
   {n:35, name:"Remove (or use) the `sharp` dependency", status:"active", size:"S", prio:"low", use:2, group:"assets", note:"Hygiene — low direct user value but cuts install/native-build cost. Either drop it, or adopt for thumbnails (pairs with 15/34)."},

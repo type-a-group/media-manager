@@ -10,33 +10,39 @@ Local-first data manager built with SvelteKit + Svelte 5. Manages metadata for m
 - **Pure JSON**: Store records with no file attachment (e.g. a list of projects with title, description, links, tags). Same schema-driven fields and filters.
 - **Schema = settings**: Each media type has one `settings.json` containing display name, kind, schema (field definitions), and app preferences (grid size, etc.). On first launch, the app may create default **`files`** (generic) and **`globals`** (json) groups under your root—see [`docs/FEATURES.md`](docs/FEATURES.md) for behavior details.
 
-## Running the production build (typical use)
+## Running it
 
-The shipped app is a **Node server** produced by SvelteKit’s adapter. You build once, then run Node with a data root:
+The shipped app is a **Node server** (SvelteKit’s adapter-node). The easiest way to run it is the **`media-manager`** CLI, which discovers your data root, **builds on demand**, binds a **free ephemeral port** (so it never collides with another dev server), and opens the browser when ready.
+
+### Point it at a data folder
 
 ```bash
 npm install
-npm run build
-MEDIA_MANAGER_ROOT=/absolute/path/to/my-data node build
-```
-
-Equivalent shortcuts:
-
-```bash
-npm start
-# same as: MEDIA_MANAGER_ROOT must still be set in the environment unless you use the CLI below
-```
-
-**Recommended:** use the **`media-manager`** CLI from the package root (after `npm run build`). It sets `MEDIA_MANAGER_ROOT` for you and opens the browser by default:
-
-```bash
-npm run build
 node bin/media-manager.js /absolute/path/to/my-data
-# or, if the package is linked/globally installed:
-# media-manager /absolute/path/to/my-data
 ```
 
-The server listens on **`PORT`** (default **3000**). Override with `PORT=8080` (or your platform’s env mechanism).
+First run builds `build/` automatically (`--rebuild` forces a fresh build). Pass `--no-open` to skip the browser, or `--port N` to pin a port instead of the ephemeral default.
+
+### Zero-config: a `media-manager.config.json`
+
+Drop a config file at (or above) your working directory and run `media-manager` with **no arguments** — ideal for running inside another project’s repo:
+
+```jsonc
+// media-manager.config.json
+{ "root": "./src/assets/media_manager" }
+```
+
+`root` is resolved **relative to the config file**. Root resolution precedence:
+
+**explicit arg → `MEDIA_MANAGER_ROOT` env → `media-manager.config.json` (walked up from cwd) → friendly error.**
+
+### Verbs
+
+- `media-manager [serve]` — run the server (default).
+- `media-manager init [dir]` — scaffold a **new empty** workspace + a starter `media-manager.config.json`.
+- `media-manager config [dir]` — write a `media-manager.config.json` for a workspace you **already have** (no scaffolding; `--force` to overwrite an existing one).
+- `media-manager build` — (re)build `build/` and exit, **without** serving (e.g. after a `git pull`).
+- `media-manager doctor` — diagnose the resolved root / config / build **without** starting the server.
 
 ## Development server
 
@@ -107,23 +113,49 @@ The folder name (e.g. `images`) is the **media type id**; the display name is in
 
 ## CLI (`media-manager`)
 
-After **`npm run build`**, the CLI expects the **`build/`** directory to exist next to `bin/media-manager.js`. It runs `node build` with `MEDIA_MANAGER_ROOT` set to your first argument.
-
 ```bash
-npm run build
-node bin/media-manager.js /path/to/my-data
+media-manager [serve] [root] [--port N] [--no-open] [--rebuild] [--body-size-limit N]
+media-manager init [dir]            # scaffold a new empty workspace + config
+media-manager config [dir]          # write a config for a workspace you already have (--force to overwrite)
+media-manager build                 # (re)build build/ and exit, without serving
+media-manager doctor                # diagnose root / config / build, without starting
+media-manager --help
 ```
 
 Flags:
 
-- `--body-size-limit N` — request body size limit in bytes (uploads)
+- `--port N` — pin a fixed port (default: an ephemeral OS-assigned port)
 - `--no-open` — do not open a browser when the server starts
+- `--rebuild` — force a fresh `build/` even if one already exists
+- `--force` — (`init` / `config`) overwrite an existing `media-manager.config.json`
+- `--body-size-limit N` — request body size limit in bytes (uploads)
+- `-h`, `--help` — show usage
 
-Published install (if using `npx` from npm):
+### Running via `npx`
+
+Publishing to the npm registry is a later phase — until then `npx media-manager` from the registry isn’t available, but you can run it through `npx` from a local checkout or as a dependency of another project:
 
 ```bash
-npx media-manager ./my-data
+# A) from a clone of this repo (build is created on first run):
+git clone git@github.com:type-a-group/media-manager.git
+cd media-manager && npm install
+npx media-manager /path/to/my-data        # runs the package's own bin
+
+# B) as a local dependency of another project — in that project's package.json:
+#   "devDependencies": { "media-manager": "file:/path/to/media-manager" }
+# then, from the project (with a media-manager.config.json present):
+npm install
+npx media-manager
+
+# C) straight from GitHub, no clone — npx fetches the repo and builds on first run:
+npx github:type-a-group/media-manager          # if the repo is public
+npx git+ssh://git@github.com/type-a-group/media-manager.git   # private repo: uses your SSH key
+npx github:type-a-group/media-manager#v1.0.0   # pin a tag/branch/commit for reproducibility
 ```
+
+Route **C** clones into npx’s cache, installs deps (incl. dev deps, so `prepare` runs), then the CLI **builds on demand** since `build/` isn’t committed — so the first run is slow, later runs reuse the cache (bump the `#ref` or `npx --ignore-existing` to refresh).
+
+Once published, `npx media-manager` will fetch the **prebuilt** package from npm — consumers won’t build at all (the build ships in the tarball via `prepublishOnly` + `files`).
 
 **Warning:** default upload limits are for **local use only**. If you expose the server on a network, set a smaller limit or run behind a reverse proxy.
 

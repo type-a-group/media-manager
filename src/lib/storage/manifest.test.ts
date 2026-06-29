@@ -217,7 +217,10 @@ describe('quiet heal — write only on real change (Item 32)', () => {
 	let manifestPath: string;
 
 	beforeEach(() => {
-		root = path.join(tmpdir(), `mm-quiet-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+		root = path.join(
+			tmpdir(),
+			`mm-quiet-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
 		filesDir = path.join(root, 'media', 'files');
 		manifestPath = path.join(root, 'media', 'manifest.json');
 		fs.mkdirSync(filesDir, { recursive: true });

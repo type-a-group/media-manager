@@ -2,6 +2,8 @@
 
 > Part of [media-manager 1.0](../README.md). The biggest piece of the release: make media-manager runnable as an **npx package inside a host repo**, plus the read-only **reader** face. Items **30 · 31 · 32 · 33**.
 
+> **✅ Mode A shipped 2026-06-28 — Items 30 · 31 · 32** (the editor "easier to run" experience). See the combined [run-experience plan](run-experience-plan.html). Remaining: **33** (reader / Mode B) + carved-out follow-ups **42** (quiet-heal content-hash perf) and **43** (registry publishing) — all post-1.0.
+
 - **Full design (existing):** [`../../npx-package-vision.md`](../../npx-package-vision.md) + diagram [`../../npx-package-vision.html`](../../npx-package-vision.html).
 - **Decisions locked (2026-06-20):** **editor-first**; distribute as a **local dep** for now (`file:../media-manager` / git URL), publish in a later phase.
 - **Two modes:** **Mode A** = the editor server that *mutates* the root (Items 30/31/32). **Mode B** = the read-only reader a host build consumes (Item 33).
