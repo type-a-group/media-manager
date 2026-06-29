@@ -1,6 +1,8 @@
 # Item 8 — Configurable & Verbose Grid Display
 
-> 1.0 brief. Backlog: [Item 8](../../FUTURE_CHANGES.md#8--configurable--verbose-grid-display). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: blocked (3 open questions)** — the interview + HTML plan is where this becomes `ready`. High priority, user-requested (Lightroom-style scanning).
+> ✅ **Shipped 2026-06-28.** The **"Show"** control lives in the shared `VerboseFieldsMenu` (`Show ▾` popover: **Show on tiles** master toggle + **grouped** scrollable 6-item-capped checkboxes with divider headers) rendering chosen items as key/value rows under each tile/row on **both** Files (`DataGrid` masonry card) and Records (`RecordListColumn`). Items come in two groups: **File info** (blob-intrinsic — size/dimensions/type/date-added — namespaced `file:*`, resolved client-side, available in **every** Files view incl. a single-class catalog) and **Fields** (class/type schema, server-resolved inline as `field_values` via `?fields=`, shared `buildFieldValues` in `core/recordDisplay.ts` — no per-tile fetch). A catalog can mix both on one tile; All Files shows File info only; Records shows its type's fields. Persisted durable per-entity (class `config` · type `settings.json` · `media/settings.json`). Approved plan: [`08-verbose-grid-plan.html`](08-verbose-grid-plan.html) — note the shipped UI refined the plan's single-list "Fields" popover into the grouped **"Show"** control (renamed for clarity + File info surfaced in the catalog). Virtualization for large catalogs was carved out → [Item 40](../../FUTURE_CHANGES.md#40--grid-virtualization-for-large-catalogs). The original brief follows for history.
+>
+> 1.0 brief. Backlog: [Item 8](../../FUTURE_CHANGES.md#shipped--folded). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). High priority, user-requested (Lightroom-style scanning).
 
 ## Backlog snapshot
 

@@ -65,7 +65,6 @@
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
-		"@masonry-grid/svelte": "^1.1.1",
 		"exiftool-vendored": "^25.0.0",
 		"heic-convert": "^2.1.0",
 		"lucide-svelte": "^0.525.0",

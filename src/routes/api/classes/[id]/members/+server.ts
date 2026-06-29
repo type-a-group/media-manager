@@ -19,6 +19,14 @@ export const GET: RequestHandler = async ({ params, url }) => {
 		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : undefined;
 		// Incomplete filter (Item 10): `?incomplete=1` → only members with ≥1 empty field.
 		const incomplete = url.searchParams.get('incomplete') === '1';
+		// Verbose grid (Item 8): `?fields=a,b,c` → inline those field values on each member.
+		const fieldsRaw = url.searchParams.get('fields');
+		const fields = fieldsRaw
+			? fieldsRaw
+					.split(',')
+					.map((f) => f.trim())
+					.filter(Boolean)
+			: undefined;
 		const filtersRaw = url.searchParams.get('filters');
 		let filters: z.infer<typeof FiltersParamSchema> | null = null;
 		if (filtersRaw) {
@@ -36,7 +44,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 				searchField,
 				sortField,
 				sortDir,
-				incomplete
+				incomplete,
+				fields
 			})
 		);
 	} catch (err) {

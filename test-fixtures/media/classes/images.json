@@ -20,7 +20,9 @@
 	"config": {
 		"displayName": "Images",
 		"displayField": "caption",
-		"icon": "image"
+		"icon": "image",
+		"verbose": true,
+		"verboseFields": ["caption", "rating", "category"]
 	},
 	"records": {
 		"bad5de29-3471-4072-8229-af28c4ae446b": {

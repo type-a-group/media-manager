@@ -104,6 +104,43 @@ export function stringifyFieldValue(
 }
 
 /**
+ * Maximum number of fields a verbose grid card may show (Item 8). The toolbar picker enforces this in
+ * the UI; the list endpoints enforce it again defensively so a hand-crafted `?fields=` query can't
+ * bloat every row. Kept here next to {@link buildFieldValues} so the cap has a single definition.
+ */
+export const MAX_VERBOSE_FIELDS = 6;
+
+/**
+ * Build the inline `field_values` map a verbose grid row carries (Item 8): the requested field keys →
+ * their {@link stringifyFieldValue} rendering. This is the **load-bearing** shape that lets the grid
+ * show several metadata fields per tile without a per-tile fetch — `jsonRepo.listRecords` and
+ * `classRepo.listClassMembers` both call it so Files and Records render identical verbose cards.
+ *
+ * Order follows the requested `fields` (the user's picker order). Each requested key is kept even when
+ * the value is empty (mapped to `''`) so the key/value rows line up tile-to-tile in the masonry — a
+ * stable grid is the whole point of the Lightroom-style scan. Keys absent from the schema are dropped
+ * (defensive against stale persisted field sets), and the list is clamped to {@link MAX_VERBOSE_FIELDS}.
+ *
+ * @param schema - The type/class schema (for each field's `type`).
+ * @param rec - The raw record object.
+ * @param fields - The requested field keys, in display order. Empty/nullish ⇒ returns `undefined` (no
+ *   verbose payload at all, so the row stays compact).
+ * @returns A `{ key: renderedValue }` map, or `undefined` when no fields were requested.
+ */
+export function buildFieldValues(
+	schema: SchemaDefinition,
+	rec: Record<string, unknown>,
+	fields?: string[] | null
+): Record<string, string> | undefined {
+	if (!fields || fields.length === 0) return undefined;
+	const keys = fields.filter((k) => schema[k]).slice(0, MAX_VERBOSE_FIELDS);
+	if (keys.length === 0) return undefined;
+	const out: Record<string, string> = {};
+	for (const k of keys) out[k] = stringifyFieldValue(schema, k, rec[k]) ?? '';
+	return out;
+}
+
+/**
  * Resolve a row's `group_by_value` for `field`. Scalars/arrays pass through unchanged (the grid groups
  * over the raw value); `url`/`list`/multiselect-`dropdown` are rendered to a string. Mirrors the server
  * group-by projection so an optimistic patch regroups a row exactly as a reload would. Returns

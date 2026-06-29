@@ -65,6 +65,12 @@
 	let sortField = $state('last_modified');
 	let sortDir = $state<SortDir>('desc');
 	/**
+	 * Verbose grid (Item 8), persisted per-type in settings.json. `verbose` shows the chosen
+	 * `verboseFields` (schema keys, ≤ MAX_VERBOSE_FIELDS) as key/value rows under each record row.
+	 */
+	let verbose = $state(false);
+	let verboseFields = $state<string[]>([]);
+	/**
 	 * Empty/incomplete quick-filter (Item 10) — transient view state (NOT persisted), reset on type
 	 * switch. `incomplete` keeps records with any empty user field; `emptyField` (a field key, `''` =
 	 * off) keeps records whose that one field is empty. Both AND with search server-side.
@@ -171,7 +177,9 @@
 					displayField: '',
 					subtitleField: '',
 					sortField: '',
-					sortDir: ''
+					sortDir: '',
+					verbose: false,
+					verboseFields: [] as string[]
 				}))
 			]);
 			schema = s;
@@ -180,6 +188,9 @@
 			// Persisted per-type sort (Item 9). Absent ⇒ default (last_modified desc).
 			sortField = settings.sortField || 'last_modified';
 			sortDir = settings.sortDir === 'asc' ? 'asc' : 'desc';
+			// Persisted per-type verbose grid (Item 8). Fields are validated against the schema at render.
+			verbose = 'verbose' in settings ? Boolean(settings.verbose) : false;
+			verboseFields = 'verboseFields' in settings ? (settings.verboseFields ?? []) : [];
 			// The persisted "title by" (settings.displayField, set in the ⋮ → Settings dialog) wins and
 			// makes the choice sticky across type switches. Otherwise fix the id-instead-of-title bug out
 			// of the box: when a type has no `name` field, auto-pick a sensible field (first string, else
@@ -215,7 +226,9 @@
 				sort: sortField || undefined,
 				dir: sortDir,
 				filters,
-				incomplete: incomplete || undefined
+				incomplete: incomplete || undefined,
+				// Verbose grid (Item 8): only request inline field values when the mode is on with a selection.
+				fields: verbose && verboseFields.length ? verboseFields : undefined
 			});
 			records = 'records' in data ? (data.records as JsonListItem[]) : [];
 		} catch (e) {
@@ -267,8 +280,25 @@
 		subtitleField = '';
 		sortField = 'last_modified';
 		sortDir = 'desc';
+		verbose = false;
+		verboseFields = [];
 		incomplete = false;
 		emptyField = '';
+	}
+
+	/**
+	 * Persist the verbose grid choice (Item 8) durably on the active type, then reload so the rows pick
+	 * up `field_values`. Called by the RecordListColumn Fields popover on toggle / field selection.
+	 */
+	async function persistVerbose() {
+		if (!activeTypeId || isGlobals) return;
+		try {
+			await apiUpdateTypeSettings(activeTypeId, { verbose, verboseFields });
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to save fields');
+		}
+		await loadRecords();
 	}
 
 	/** Persist the chosen sort durably on the active type (Item 9). The reload runs via the sort $effect. */
@@ -514,6 +544,9 @@
 			bind:sortField
 			bind:sortDir
 			onSortChange={persistSort}
+			bind:verbose
+			bind:verboseFields
+			onVerboseChange={persistVerbose}
 			{selectionMode}
 			{selectedIds}
 			{selectedRecordId}

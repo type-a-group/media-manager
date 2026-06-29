@@ -12,21 +12,21 @@ The committed scope for the **1.0** release, with one self-contained brief per f
 
 ## Scope
 
-**Committed core (13).** These define 1.0.
+**Committed core (12).** These define 1.0.
 
 | # | Feature | Brief | Backlog status | Size |
 | --- | --- | --- | --- | --- |
-| 8 | Configurable & verbose grid display | [`08-verbose-grid.md`](08-verbose-grid.md) | blocked (3 OQ) | L |
+| 8 | Configurable & verbose grid display | [`08-verbose-grid.md`](08-verbose-grid.md) · [plan](08-verbose-grid-plan.html) | ✅ shipped | L |
 | 9 | Sorting & ordering | [`09-sorting.md`](09-sorting.md) | ✅ shipped | M |
 | 10 | Filter for missing / empty field | [`10-missing-filter.md`](10-missing-filter.md) | ✅ shipped | M |
 | 3 | Bulk operations (export remainder) | [`03-bulk-operations.md`](03-bulk-operations.md) | ready | S |
 | 5 | Data validation & repair | [`05-validation-repair.md`](05-validation-repair.md) | ready | S |
 | 12 | Fix / normalize file extension (+ rename UX) | [`12-fix-extension.md`](12-fix-extension.md) | ✅ shipped | S |
 | 13 | Swap width / height (→ dimension-consistency check + fix) | [`13-swap-dimensions.md`](13-swap-dimensions.md) | ✅ shipped | S |
-| 34 | Reimplement masonry grid layout | [`34-masonry.md`](34-masonry.md) | ready | M |
-| 15 | Image compression management | [`15-image-compression.md`](15-image-compression.md) | blocked (1 OQ) | M |
-| 18 | Records storage reorganization | [`18-records-storage-reorg.md`](18-records-storage-reorg.md) | discussion (3 OQ) | M |
-| 19 | Per-class should / shouldn't be here | [`19-should-be-here.md`](19-should-be-here.md) | discussion | M |
+| 34 | Reimplement masonry grid layout | [`34-masonry.md`](34-masonry.md) | ✅ shipped | M |
+| 39 | Consume `@nicbat/svelte-masonry` GitHub dep (extraction ✅ shipped) | [`34-masonry.md`](34-masonry.md) | ready · **deferred, not 1.0** | S |
+| 18 | Records storage reorganization | [`18-records-storage-reorg.md`](18-records-storage-reorg.md) · [plan](18-records-storage-reorg-plan.html) | ✅ shipped | M |
+| 19 | Per-class should / shouldn't be here | [`19-should-be-here.md`](19-should-be-here.md) | discussion · **deferred, not 1.0** | M |
 | 30–33 | npx package + reader (sub-project) | [`npx/README.md`](npx/README.md) | blocked / discussion | L |
 
 **Candidates (may join 1.0).** Adjacent items that naturally sequence with the core. Not committed — promote into the table above if we decide to pull them in.
@@ -34,6 +34,8 @@ The committed scope for the **1.0** release, with one self-contained brief per f
 - **20 · File-based routing** — per-file/per-class routes + shareable filter URLs. Unblocks the clean "go to file" jump and mobile drill-down. Likely needed by the reader (33) anyway.
 - **26 · File-field UI overhaul** — richer preview + "go to file". Pairs with 20 and with the grid work (8).
 - **9-adjacent polish** — none committed beyond the table.
+
+**De-scoped from 1.0.** **15 · Image compression management** was pulled out of the committed set — it stays a `blocked` backlog item (low usefulness, overlaps the deferred `sharp`/asset-pipeline decision) and is no longer release-blocking.
 
 Everything else in `FUTURE_CHANGES.md` is **post-1.0** unless promoted here.
 
@@ -44,8 +46,8 @@ Everything else in `FUTURE_CHANGES.md` is **post-1.0** unless promoted here.
 Dependency-aware order. Waves can overlap across agents; within the npx sub-project, follow its own README.
 
 1. **Wave 1 — ready quick wins (parallelizable):** ~~9~~ (shipped), ~~10~~ (shipped), ~~13~~ (shipped), ~~12~~ (shipped), 3, 5. All `ready`, no deps, small/medium. Good warm-up slices that also exercise the verification loop.
-2. **Wave 2 — display & assets:** 8 (resolve its 3 open questions in the interview first), 34, 15. 8/34 both touch `DataGrid` — coordinate so they don't collide; 15 (compression) shares the **one resize/variant pipeline** with 34 and adopts `sharp` (closing the Item 35 decision) — design that pipeline once, before building either.
-3. **Wave 3 — design-then-build:** 18, 19. Both are `discussion` — the interview + HTML-plan stage is where they become `ready`. Do not start code until their open questions are closed.
+2. **Wave 2 — display & assets:** ~~8~~ (shipped 2026-06-28 — verbose grid: shared `VerboseFieldsMenu`, `field_values` inline on the list endpoints, both Files + Records; virtualization carved out to Item 40), ~~34~~ (shipped — in-house `Masonry`; follow-up 39 = consume the extracted `@nicbat/svelte-masonry` package, **deferred out of 1.0**). (Item 15 compression was de-scoped from 1.0.)
+3. **Wave 3 — design-then-build:** ~~18~~ (shipped 2026-06-28 — records reorg + settings split: `json` types → `records/<typeId>/`, app-wide prefs hoisted to `<root>/settings.json`, dormant `typeOrder`, `dataFileName` dropped, explicit `upgrade-data` step 6 + old-layout guard; reorder UX split to Item 41). 19 was **deferred out of 1.0** on 2026-06-28 — its Phase-1 discussion concluded the value needs a heuristic candidate source that doesn't exist yet; it stays in the backlog at `usefulness: 3 · priority: medium`.
 4. **Wave 4 — npx sub-project:** 32 → 31 → 30 → 33. Quiet-heal (32) makes browsing committed data safe; ephemeral port (31) unblocks running alongside a host dev server; root discovery + publishing (30) ties it together; the reader (33) shares the root-threading refactor and lands last. See [`npx/README.md`](npx/README.md).
 
 ---
@@ -107,7 +109,6 @@ Each feature brief restates these as a concrete, feature-specific checklist — 
 - [`12-fix-extension.md`](12-fix-extension.md)
 - [`13-swap-dimensions.md`](13-swap-dimensions.md)
 - [`34-masonry.md`](34-masonry.md)
-- [`15-image-compression.md`](15-image-compression.md)
 - [`18-records-storage-reorg.md`](18-records-storage-reorg.md)
 - [`19-should-be-here.md`](19-should-be-here.md)
 - [`npx/README.md`](npx/README.md) — the npx package + reader sub-project (Items 30 · 31 · 32 · 33)

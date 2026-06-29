@@ -139,6 +139,62 @@ describe('classRepo — opt-in class membership', () => {
 		).toHaveLength(0);
 	});
 
+	it('resolves the class "Title by" (config.displayField) into per-member title_value', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');
+		const files0 = (await listAllFiles()).files;
+		const aId = files0.find((f) => f.file_name === 'a.png')!.id;
+		const bId = files0.find((f) => f.file_name === 'b.png')!.id;
+		const id = await createClass('Gallery', schema);
+		await addMembers(id, [aId, bId]);
+		await updateRecord(id, aId, { caption: 'Sunset over hills' });
+		await updateRecord(id, bId, { caption: '' }); // empty ⇒ no title_value (tile falls back to filename)
+
+		// No title-by set yet ⇒ no title_value at all.
+		const before = (await listClassMembers(id)).files;
+		expect(before.every((f) => f.title_value === undefined)).toBe(true);
+
+		await updateClassConfig(id, { displayField: 'caption' });
+		const after = (await listClassMembers(id)).files;
+		expect(after.find((f) => f.id === aId)!.title_value).toBe('Sunset over hills');
+		// Empty field value is not surfaced as a title — the client falls back to the filename.
+		expect(after.find((f) => f.id === bId)!.title_value).toBeUndefined();
+	});
+
+	it('inlines requested field values per member (verbose grid, Item 8) — empty ⇒ "", capped at 6', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+		// A class with more than the 6-field cap so we can prove the clamp.
+		const wide = await createClass('Wide', {
+			f1: { type: 'string', removable: true, defaultValue: '' },
+			f2: { type: 'string', removable: true, defaultValue: '' },
+			f3: { type: 'string', removable: true, defaultValue: '' },
+			f4: { type: 'string', removable: true, defaultValue: '' },
+			f5: { type: 'string', removable: true, defaultValue: '' },
+			f6: { type: 'string', removable: true, defaultValue: '' },
+			f7: { type: 'string', removable: true, defaultValue: '' }
+		} as unknown as SchemaDefinition);
+		await addMembers(wide, [fileId]);
+		await updateRecord(wide, fileId, { f1: 'one', f3: 'three' }); // f2 left empty
+
+		// No fields requested ⇒ no verbose payload at all (compact rows).
+		expect((await listClassMembers(wide)).files[0].field_values).toBeUndefined();
+
+		// Requested fields are inlined in request order; an empty field is surfaced as '' (rows align).
+		const subset = (await listClassMembers(wide, { fields: ['f1', 'f2', 'f3'] })).files[0];
+		expect(subset.field_values).toEqual({ f1: 'one', f2: '', f3: 'three' });
+
+		// More than the cap of 6 ⇒ clamped to the first 6 requested keys.
+		const capped = (
+			await listClassMembers(wide, { fields: ['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7'] })
+		).files[0];
+		expect(Object.keys(capped.field_values ?? {})).toEqual(['f1', 'f2', 'f3', 'f4', 'f5', 'f6']);
+
+		// Keys not in the schema are dropped defensively.
+		const stale = (await listClassMembers(wide, { fields: ['f1', 'nope'] })).files[0];
+		expect(stale.field_values).toEqual({ f1: 'one' });
+	});
+
 	it('searches an intersection by classId::field and by All-fields', async () => {
 		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
 		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');

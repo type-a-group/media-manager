@@ -15,6 +15,7 @@ import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
 import { isProtectedSchemaKey, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
+import { buildFieldValues, stringifyFieldValue } from '$lib/core/recordDisplay.js';
 import { readImageDimensions } from '$lib/server/fileMetadata.js';
 import {
 	readManifest,
@@ -984,6 +985,11 @@ export async function listClassMembers(
 		 * among the class's user fields ({@link schemaUserFieldKeys}). ANDs with `filters`/`query`.
 		 */
 		incomplete?: boolean | null;
+		/**
+		 * Verbose-grid field set (Item 8): class schema field keys whose values to inline on each member
+		 * as `field_values`. Empty/nullish ⇒ compact rows. Capped at `MAX_VERBOSE_FIELDS`.
+		 */
+		fields?: string[] | null;
 	}
 ): Promise<FileListResponse> {
 	const file = await readClassFile(id);
@@ -997,6 +1003,10 @@ export async function listClassMembers(
 	const searchField = params?.searchField || null;
 	const incomplete = params?.incomplete ?? false;
 	const incompleteKeys = incomplete ? schemaUserFieldKeys(file.schema) : [];
+	// "Title by" (Item: class title-by parity with records): the persisted `config.displayField` names a
+	// schema field whose value labels each tile in place of the filename. Resolved server-side into
+	// `title_value` so the grid renders it the same way the records list trusts `title_value` first.
+	const titleField = file.config.displayField || null;
 
 	const files: FileItem[] = [];
 	// Keep each kept blob's class record around so the sort can read its `last_modified` + schema fields
@@ -1022,6 +1032,12 @@ export async function listClassMembers(
 		if (incomplete && !recordHasEmptyField(recObj, incompleteKeys)) continue;
 		const item = fileItemFromEntry(fileId, manifest);
 		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy);
+		if (titleField) {
+			const tv = stringifyFieldValue(file.schema, titleField, recObj[titleField]);
+			if (tv !== undefined && tv !== '') item.title_value = tv;
+		}
+		const fv = buildFieldValues(file.schema, recObj, params?.fields);
+		if (fv) item.field_values = fv;
 		const miss = missingFileFields(recObj, file.schema, available);
 		if (miss.length) item.missing_file_fields = miss;
 		recById.set(fileId, recObj);

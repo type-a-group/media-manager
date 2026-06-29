@@ -2,6 +2,8 @@
 
 > 1.0 brief. Backlog: [Item 19](../../FUTURE_CHANGES.md#19--per-class-should--shouldnt-be-here-review-excludedfiles-successor). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: discussion** — the *mechanics* are clear but the *value/shape isn't confirmed*, so the interview must lock the product shape before building.
 
+> **🛑 DEFERRED OUT OF 1.0 — decided 2026-06-28.** Phase-1 discussion concluded the value is contingent on a candidate-*suggestion* source that doesn't exist yet. Today the only candidate stream is the existing **"Unclassified"** filter (a manual scan), so the cheap "Unclassified-only" triage is just a "reviewed, don't show again" checkmark that doesn't earn its UI surface. The genuinely useful version needs a **heuristic candidate source** (extension / EXIF / name match) — a bigger, separate suggestion-engine feature, not the `excludedFiles` successor it's framed as. **Decision: don't build for 1.0; leave in the backlog at `usefulness: 3 · priority: medium` and revisit once/if a heuristic candidate source lands.** Also noted: this item is **independent of Item 18** — 18 reorganizes the records/`json` side and explicitly leaves `media/` internals (where 19 would live) untouched, so 18 being done neither unblocks nor reshapes 19. Everything below is the original brief, retained for whenever it's picked back up.
+
 ## Backlog snapshot
 
 ```yaml

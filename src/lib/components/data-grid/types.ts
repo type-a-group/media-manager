@@ -31,9 +31,24 @@ export interface GridItem {
 	secondaryLabel?: string;
 	/** Blob bytes URL for an image thumbnail; omit to render the file-icon fallback. */
 	thumbnailUrl?: string;
+	/**
+	 * Intrinsic aspect ratio (width / height) of the thumbnail, when known. Used only by the masonry
+	 * layout to estimate a tile's height for column-balancing — it is never turned into a fixed pixel
+	 * height, so a wrong/absent value only makes columns slightly less balanced, never clips a tile.
+	 * Omit (or non-positive) for non-image rows / unmeasured blobs: the tile falls back to a square.
+	 */
+	aspectRatio?: number;
 	chips: GridChip[];
 	/** Count of chips beyond those in `chips` (renders a trailing "+N"). */
 	extraChips?: number;
+	/**
+	 * Verbose-mode metadata rows (Item 8): a small, ordered set of `{ label, value }` pairs the host has
+	 * already resolved (label-cased key + stringified value, `''` when empty). When present and non-empty
+	 * the tile renders these as key/value rows under the primary label, in both grid variants; absent ⇒
+	 * the compact tile is unchanged. The host caps the count (≤ `MAX_VERBOSE_FIELDS`); the grid just
+	 * renders what it's given.
+	 */
+	fields?: { label: string; value: string }[];
 	/** A warning to surface on the tile, e.g. "Missing file reference: cover". */
 	warning?: string;
 }

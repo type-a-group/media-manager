@@ -3,18 +3,23 @@ import * as fssync from 'node:fs';
 import { readMediaTypeSettingsFileSync, type MediaTypeKind } from './settingsFile.js';
 
 /**
- * On-disk layout (file-first classes redesign):
+ * On-disk layout (file-first classes + Item 18 records reorg):
  *
  *   <root>/
+ *   ├─ settings.json        # app-wide UI prefs (grid size, nav, sort, verbose)
  *   ├─ media/
  *   │  ├─ manifest.json     # blob registry + derived membership index
  *   │  ├─ files/            # pure blob dir, any type
  *   │  ├─ classes/<id>.json # { schema, config, records } — source of truth per class
- *   │  └─ settings.json     # media-wide prefs (views, class ordering, defaults)
- *   └─ <jsonType>/...       # `json`-kind media types stay top-level (incl. `globals`)
+ *   │  └─ settings.json     # media-scoped: classOrder (dormant)
+ *   ├─ globals/...          # the reserved `json` singleton — stays top-level
+ *   └─ records/
+ *      ├─ settings.json     # records-scoped: typeOrder (dormant)
+ *      └─ <typeId>/...      # each `json`-kind record type (folder name = id)
  *
  * `media/` is the hub for **all blobs**; a *class* is an opt-in metadata table keyed by `file_id`.
- * `json`-kind types remain top-level folders (deferred records reorg). The folder name **is** the id.
+ * `json`-kind record types live under `records/<typeId>/`; the reserved `globals` singleton stays at
+ * `<root>/globals/`. The folder name **is** the id.
  */
 
 /** Folder name under {@link getRootDir} that holds the whole media (blob + classes) subsystem. */
@@ -23,6 +28,10 @@ export const MEDIA_DIR_NAME = 'media' as const;
 export const GLOBAL_FILES_DIR_NAME = 'files' as const;
 /** Folder name under {@link getMediaDir} where per-class metadata files live. */
 export const CLASSES_DIR_NAME = 'classes' as const;
+/** Folder name under {@link getRootDir} that holds the `json`-kind record types (Item 18 reorg). */
+export const RECORDS_DIR_NAME = 'records' as const;
+/** The reserved `json` singleton's typeId. It stays top-level at `<root>/globals/`, not under `records/`. */
+export const GLOBALS_TYPE_ID = 'globals' as const;
 
 /**
  * Resolve the root directory for the workspace (env `MEDIA_MANAGER_ROOT`).
@@ -63,9 +72,30 @@ export function getClassFilePath(classId: string): string {
 	return path.join(getClassesDir(), `${classId}.json`);
 }
 
-/** Absolute path to the media-wide settings file (`<root>/media/settings.json`). */
+/**
+ * Absolute path to the **app-wide** settings file (`<root>/settings.json`).
+ *
+ * Holds UI preferences shared by every view (grid size, navigation, sort, verbose grid). Hoisted
+ * out of the misnamed `media/settings.json` (Item 18) — that file now holds only the media-scoped
+ * `classOrder`.
+ */
+export function getAppSettingsPath(): string {
+	return path.join(getRootDir(), 'settings.json');
+}
+
+/**
+ * Absolute path to the media-scoped settings file (`<root>/media/settings.json`).
+ *
+ * After the Item 18 reorg this holds **only** `classOrder` (the dormant cross-class ordering). App-wide
+ * prefs live in {@link getAppSettingsPath}. Used by the migration + old-layout guard.
+ */
 export function getMediaSettingsPath(): string {
 	return path.join(getMediaDir(), 'settings.json');
+}
+
+/** Absolute path to the records-scoped settings file (`<root>/records/settings.json`). */
+export function getRecordsSettingsPath(): string {
+	return path.join(getRootDir(), RECORDS_DIR_NAME, 'settings.json');
 }
 
 /**
@@ -99,46 +129,64 @@ export interface MediaTypePaths {
 }
 
 /**
+ * Resolve the base directory for a `json`-kind media type (Item 18 reorg).
+ *
+ * Record types live under `<root>/records/<typeId>/`; the reserved {@link GLOBALS_TYPE_ID} singleton
+ * stays top-level at `<root>/globals/`. This is the single place that encodes that asymmetry — every
+ * other helper resolves through it.
+ *
+ * @param typeId - The media type id (folder name).
+ */
+export function getMediaTypeBaseDir(typeId: string): string {
+	if (typeId === GLOBALS_TYPE_ID) return path.join(getRootDir(), GLOBALS_TYPE_ID);
+	return path.join(getRootDir(), RECORDS_DIR_NAME, typeId);
+}
+
+/**
  * Get filesystem paths for a `json`-kind media type (by folder name / typeId).
  *
- * @param typeId - Folder name under root (e.g. 'notes', 'globals')
+ * @param typeId - Media type id (e.g. 'notes', 'globals')
  * @returns Paths object; throws if folder is not a valid media-type folder
  */
 export function getMediaTypePaths(typeId: string): MediaTypePaths {
 	const rootDir = getRootDir();
-	const baseDir = path.resolve(rootDir, typeId);
+	const baseDir = getMediaTypeBaseDir(typeId);
 	const settingsPath = path.join(baseDir, 'settings.json');
 	const settings = readMediaTypeSettingsFileSync(baseDir);
 	if (!settings) {
 		throw new Error(`Not a valid media-type folder: ${typeId}`);
 	}
-	const dataFileName = settings.dataFileName ?? 'data.json';
-	const dataPath = path.join(baseDir, dataFileName);
+	// Data file is always `data.json` (the configurable `dataFileName` was dropped in Item 18).
+	const dataPath = path.join(baseDir, 'data.json');
 	return { rootDir, baseDir, settingsPath, dataPath, kind: settings.kind };
 }
 
 /**
- * List typeIds of all valid top-level `json`-kind media-type folders under the root. The reserved
- * `media/` subsystem folder is skipped (it has no media-type `settings.json`).
+ * List typeIds of all valid `json`-kind media types (Item 18 reorg).
+ *
+ * Scans `<root>/records/` for type subfolders, then folds in the reserved top-level
+ * {@link GLOBALS_TYPE_ID} singleton if present. A folder is a type iff it carries a valid
+ * media-type `settings.json`.
  *
  * @returns Array of typeIds (folder names), in no guaranteed order
  */
 export function listMediaTypeIds(): string[] {
-	const rootDir = getRootDir();
-	let entries: fssync.Dirent[];
+	const typeIds: string[] = [];
+	const recordsDir = path.join(getRootDir(), RECORDS_DIR_NAME);
+	let entries: fssync.Dirent[] = [];
 	try {
-		entries = fssync.readdirSync(rootDir, { withFileTypes: true });
+		entries = fssync.readdirSync(recordsDir, { withFileTypes: true });
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException;
-		if (e.code === 'ENOENT') return [];
-		throw e;
+		if (e.code !== 'ENOENT') throw e;
 	}
-	const typeIds: string[] = [];
 	for (const ent of entries) {
 		if (!ent.isDirectory()) continue;
-		if (ent.name === MEDIA_DIR_NAME) continue;
-		const settings = readMediaTypeSettingsFileSync(path.join(rootDir, ent.name));
-		if (settings) typeIds.push(ent.name);
+		if (readMediaTypeSettingsFileSync(path.join(recordsDir, ent.name))) typeIds.push(ent.name);
+	}
+	// Fold in the reserved top-level globals singleton (it never lives under records/).
+	if (readMediaTypeSettingsFileSync(getMediaTypeBaseDir(GLOBALS_TYPE_ID))) {
+		typeIds.push(GLOBALS_TYPE_ID);
 	}
 	return typeIds;
 }

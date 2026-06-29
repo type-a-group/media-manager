@@ -16,6 +16,15 @@ export default [
 	},
 	js.configs.recommended,
 	{
+		// Plain Node scripts (build/data tooling) run in Node, not the browser — they use `process`,
+		// `console`, etc. ESLint's recommended config has no Node globals, so relax `no-undef` here
+		// (same stance as the .ts/.svelte blocks below).
+		files: ['scripts/**/*.{js,mjs,cjs}', '*.{js,mjs,cjs}'],
+		rules: {
+			'no-undef': 'off'
+		}
+	},
+	{
 		files: ['**/*.ts'],
 		languageOptions: {
 			parser: tsParser,

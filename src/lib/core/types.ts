@@ -222,6 +222,12 @@ export const JsonListItemSchema = z.object({
 	 * Absent unless a subtitle field is configured (or sent) and the record's value is non-empty.
 	 */
 	subtitle_value: z.string().optional(),
+	/**
+	 * Verbose-grid field payload (Item 8): the fields the caller requested via `?fields=`, each mapped
+	 * to its stringified value (`''` when empty, so rows align tile-to-tile). Derived, not persisted;
+	 * absent unless `fields` was sent. Built by `buildFieldValues`; capped at `MAX_VERBOSE_FIELDS`.
+	 */
+	field_values: z.record(z.string()).optional(),
 	missing_file_fields: z.array(z.string()).optional()
 });
 export type JsonListItem = z.infer<typeof JsonListItemSchema>;
@@ -258,7 +264,11 @@ export const ClassConfigSchema = z.object({
 	/** List sort direction. */
 	sortDir: z.enum(['asc', 'desc']).optional(),
 	/** Optional per-class icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
-	icon: z.string().optional()
+	icon: z.string().optional(),
+	/** Verbose grid (Item 8): when true the catalog tiles show `verboseFields` as key/value rows. */
+	verbose: z.boolean().optional(),
+	/** Verbose grid (Item 8): the class schema field keys (≤ `MAX_VERBOSE_FIELDS`) shown per tile. */
+	verboseFields: z.array(z.string()).optional()
 });
 export type ClassConfig = z.infer<typeof ClassConfigSchema>;
 
@@ -304,6 +314,18 @@ export const FileItemSchema = z.object({
 	group_by_value: z
 		.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()])
 		.optional(),
+	/**
+	 * Set only in the one-class catalog view when that class has a "Title by" field (`config.displayField`)
+	 * and this member has a non-empty value for it: the stringified field value the tile shows instead of
+	 * the filename. Mirrors the records side's `title_value`; absent ⇒ the tile falls back to `file_name`.
+	 */
+	title_value: z.string().optional(),
+	/**
+	 * Verbose-grid field payload (Item 8): requested class-schema fields → stringified value (`''` when
+	 * empty). Set only in the single-class catalog view when `?fields=` was sent (mirrors `title_value`'s
+	 * scope). Derived, not persisted; built by `buildFieldValues`, capped at `MAX_VERBOSE_FIELDS`.
+	 */
+	field_values: z.record(z.string()).optional(),
 	/** Broken `file`-type field references on this blob's record in the selected class. */
 	missing_file_fields: z.array(z.string()).optional()
 });

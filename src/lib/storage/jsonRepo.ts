@@ -34,7 +34,11 @@ import {
 } from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
 import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
-import { projectRecordRow, stringifyFieldValue } from '$lib/core/recordDisplay.js';
+import {
+	buildFieldValues,
+	projectRecordRow,
+	stringifyFieldValue
+} from '$lib/core/recordDisplay.js';
 import { sortItems, fieldSortValue, resolveSort, type SortDir } from '$lib/core/sort.js';
 
 /**
@@ -285,6 +289,12 @@ export function createJsonRepoForType(typeId: string) {
 		 * dedicated flag.
 		 */
 		incomplete?: boolean | null;
+		/**
+		 * Verbose-grid field set (Item 8): schema field keys whose values to inline on each row as
+		 * `field_values`. Empty/nullish ⇒ no verbose payload (compact rows). Capped server-side at
+		 * `MAX_VERBOSE_FIELDS` by {@link buildFieldValues}.
+		 */
+		fields?: string[] | null;
 	}): Promise<JsonListResponse> {
 		const settings = getSettings();
 		if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
@@ -377,6 +387,8 @@ export function createJsonRepoForType(typeId: string) {
 				const miss = missingFileFields(recAny, settings.schema, available);
 				if (miss.length) item.missing_file_fields = miss;
 			}
+			const fv = buildFieldValues(settings.schema, recAny, params?.fields);
+			if (fv) item.field_values = fv;
 			return item;
 		});
 		return { records: items };

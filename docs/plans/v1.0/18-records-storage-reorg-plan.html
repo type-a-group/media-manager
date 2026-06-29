@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Item 18 — Records Storage Reorganization — Plan</title>
+		<style>
+			:root {
+				--bg: #0f1115;
+				--panel: #171a21;
+				--panel2: #1d2129;
+				--ink: #e6e9ef;
+				--muted: #9aa3b2;
+				--line: #2a2f3a;
+				--accent: #6ea8fe;
+				--amber: #f0b429;
+				--amber-bg: #3a2d0a;
+				--green: #4caf50;
+				--code: #c7d0e0;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font:
+					15px/1.6 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					Segoe UI,
+					Roboto,
+					sans-serif;
+				padding: 0 0 80px;
+			}
+			header {
+				padding: 32px 40px 20px;
+				border-bottom: 1px solid var(--line);
+				background: linear-gradient(180deg, #141821, #0f1115);
+			}
+			h1 {
+				margin: 0 0 6px;
+				font-size: 26px;
+			}
+			h2 {
+				margin: 34px 0 12px;
+				font-size: 19px;
+				border-left: 3px solid var(--accent);
+				padding-left: 10px;
+			}
+			h3 {
+				margin: 22px 0 8px;
+				font-size: 15px;
+				color: var(--muted);
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+			}
+			main {
+				max-width: 940px;
+				margin: 0 auto;
+				padding: 0 40px;
+			}
+			.sub {
+				color: var(--muted);
+			}
+			.card {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 16px 18px;
+				margin: 12px 0;
+			}
+			.pill {
+				display: inline-block;
+				font-size: 12px;
+				padding: 2px 8px;
+				border-radius: 999px;
+				background: var(--panel2);
+				border: 1px solid var(--line);
+				color: var(--muted);
+				margin-right: 6px;
+			}
+			code,
+			pre {
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				color: var(--code);
+			}
+			pre {
+				background: #0b0d12;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 12px 14px;
+				overflow-x: auto;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+			.cols {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 14px;
+			}
+			@media (max-width: 760px) {
+				.cols {
+					grid-template-columns: 1fr;
+				}
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+				margin: 8px 0;
+				font-size: 14px;
+			}
+			th,
+			td {
+				border: 1px solid var(--line);
+				padding: 7px 10px;
+				text-align: left;
+				vertical-align: top;
+			}
+			th {
+				background: var(--panel2);
+				color: var(--muted);
+			}
+			.warnbox {
+				background: var(--amber-bg);
+				border: 1px solid #6b540f;
+				border-radius: 8px;
+				padding: 12px 14px;
+				color: #f3d98a;
+			}
+			ul {
+				margin: 8px 0;
+			}
+			li {
+				margin: 4px 0;
+			}
+			.ok {
+				color: #74d68a;
+			}
+			.no {
+				color: #e07a7a;
+			}
+			.add {
+				color: #74d68a;
+			}
+			.del {
+				color: #e07a7a;
+			}
+			.flow {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+				flex-wrap: wrap;
+			}
+			.flow .step {
+				background: #0b0d12;
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 8px 12px;
+				font-size: 13px;
+			}
+			.arrow {
+				color: var(--muted);
+			}
+			.tag {
+				font-size: 11px;
+				padding: 1px 6px;
+				border-radius: 5px;
+				border: 1px solid var(--line);
+				color: var(--muted);
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<h1>Item 18 — Records Storage Reorganization</h1>
+			<div class="sub">
+				1.0 storage plan · file-first <span class="pill">size M</span>
+				<span class="pill">no new dependency</span>
+				<span class="pill">migration (explicit, no dual-read)</span>
+				<span class="pill">phase 2 — needs approval</span>
+			</div>
+		</header>
+		<main>
+			<h2>1 · What we're building (and what changed from the brief)</h2>
+			<div class="card">
+				<p>
+					The <code>json</code>-kind record side still lives in <strong>scattered top-level
+					per-type folders</strong> (<code>&lt;root&gt;/notes/</code>, …) — a leftover from before
+					the file-first <code>media/</code> reorg settled. This item gathers them under a single
+					top-level <strong><code>records/</code></strong> folder, and folds in two adjacent storage
+					warts found in the interview sweep. It is a <strong>pure refactor / migration</strong> —
+					<em>nothing user-facing changes</em>. All risk is in migration correctness.
+				</p>
+				<p>
+					The brief asked for "records reorg + any other storage organization." The interview
+					resolved its three open questions and swept for adjacent warts; the
+					<strong>actual reorder UX</strong> that was briefly considered (drag/move classes &amp;
+					types) was split out as a feature — see the cut line.
+				</p>
+			</div>
+
+			<h3>Resolved decisions</h3>
+			<table>
+				<tr>
+					<th>Question</th>
+					<th>Decision</th>
+				</tr>
+				<tr>
+					<td>Where does <code>globals</code> fit?</td>
+					<td>
+						<strong>Stays top-level</strong> (<code>&lt;root&gt;/globals/</code>). It's the reserved
+						<code>json</code> singleton, already resolved via a hardcoded
+						<code>path.join(rootDir, 'globals')</code> in <code>mediaTypes.ts</code> +
+						<code>RESERVED_TYPE_IDS</code>. Keeping it top-level matches that special-casing.
+					</td>
+				</tr>
+				<tr>
+					<td>Per-type subfolders &amp; settings split?</td>
+					<td>
+						Each type is its own subfolder
+						<code>records/&lt;typeId&gt;/{settings.json, data.json}</code>. A new
+						<strong><code>records/settings.json</code></strong> is created now for cross-type prefs,
+						carrying a <strong>dormant <code>typeOrder</code></strong> (latent parity with media's
+						dormant <code>classOrder</code>). Per-type <code>settings.json</code> keeps its own keys.
+					</td>
+				</tr>
+				<tr>
+					<td>Migration &amp; backward read?</td>
+					<td>
+						<strong>Explicit <code>upgrade-data</code> only</strong> (dry-run default,
+						<code>--apply</code>), like the file-first migration. <strong>No dual-read</strong> — the
+						app reads only the new layout and <strong>fails loudly</strong> ("run upgrade-data") on
+						the old one. One layout to reason about at runtime.
+					</td>
+				</tr>
+				<tr>
+					<td>Sweep: <code>media/settings.json</code> is mislabeled</td>
+					<td>
+						It's actually <em>app-wide</em> settings (gridSize, autosave, rail, sort, verbose) plus
+						the one media key <code>classOrder</code>. <strong>Hoist</strong> app-wide keys to a new
+						<strong><code>&lt;root&gt;/settings.json</code></strong>;
+						<code>media/settings.json</code> keeps <em>only</em> <code>classOrder</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>Sweep: dead <code>dataFileName</code> field</td>
+					<td>
+						Every type's <code>settings.json</code> carries <code>dataFileName</code>, always
+						<code>'data.json'</code>, never set otherwise. <strong>Drop it</strong>; hardcode
+						<code>data.json</code> in <code>paths.ts</code>.
+					</td>
+				</tr>
+			</table>
+
+			<div class="warnbox" style="margin-top: 14px">
+				<strong>Cut line (explicitly NOT in this item)</strong>
+				<ul style="margin-bottom: 0">
+					<li>File-first <code>media/</code> internals — <strong>untouched.</strong></li>
+					<li>
+						No reorder <em>feature</em> — only the dormant <code>typeOrder</code> field. Activating
+						<code>classOrder</code>/<code>typeOrder</code> (reorder UI + sort-on-read) is
+						<strong>Item 41</strong>, not 1.0.
+					</li>
+					<li>No dual-read / backward-compat reading of the old layout.</li>
+				</ul>
+			</div>
+
+			<h2>2 · Before / after data root</h2>
+			<div class="cols">
+				<div>
+					<h3>Before (flat)</h3>
+					<pre>&lt;root&gt;/
+├─ media/
+│  ├─ files/
+│  ├─ classes/&lt;id&gt;.json
+│  ├─ manifest.json
+│  └─ settings.json   <span class="del">← app-wide + classOrder
+│                       (mislabeled)</span>
+├─ globals/
+│  ├─ settings.json
+│  └─ data.json
+└─ notes/             <span class="del">← type at root</span>
+   ├─ settings.json   <span class="del">← has dead dataFileName</span>
+   └─ data.json</pre>
+				</div>
+				<div>
+					<h3>After (records/ hub + symmetry)</h3>
+					<pre>&lt;root&gt;/
+├─ settings.json      <span class="add">← NEW app-wide prefs</span>
+├─ media/
+│  ├─ files/
+│  ├─ classes/&lt;id&gt;.json
+│  ├─ manifest.json
+│  └─ settings.json   <span class="add">← now ONLY classOrder</span>
+├─ globals/           <span class="ok">← stays top-level</span>
+│  ├─ settings.json
+│  └─ data.json
+└─ records/
+   ├─ settings.json   <span class="add">← NEW (dormant typeOrder)</span>
+   └─ notes/
+      ├─ settings.json <span class="ok">← dataFileName gone</span>
+      └─ data.json</pre>
+				</div>
+			</div>
+
+			<h2>3 · The three settings files (post-hoist)</h2>
+			<p class="sub">
+				The single biggest behavioural detail: settings split across three files by scope, each with
+				one owner. <code>/api/settings</code> keeps the same request/response shape — it just backs a
+				different file on disk.
+			</p>
+			<table>
+				<tr>
+					<th>File</th>
+					<th>Holds</th>
+					<th>Backed by</th>
+				</tr>
+				<tr>
+					<td><code>&lt;root&gt;/settings.json</code> <span class="tag">new</span></td>
+					<td>
+						App-wide UI prefs: <code>gridSize</code>, <code>autoAdvanceToNextUnlinked</code>,
+						<code>autoSaveOnAdvance</code>, <code>railCollapsed</code>, <code>sortField</code>/<code
+							>sortDir</code
+						>, <code>verbose</code>/<code>verboseFields</code>.
+					</td>
+					<td>
+						<code>mediaSettings.ts</code> (re-targeted; app-wide read/write) ·
+						<code>GET/POST /api/settings</code>
+					</td>
+				</tr>
+				<tr>
+					<td><code>&lt;root&gt;/media/settings.json</code></td>
+					<td>Media-scoped cross-class pref: <code>classOrder</code> only (still dormant).</td>
+					<td><code>mediaSettings.ts</code> (media-scoped read/write)</td>
+				</tr>
+				<tr>
+					<td><code>&lt;root&gt;/records/settings.json</code> <span class="tag">new</span></td>
+					<td>
+						Cross-type pref: <code>typeOrder</code> (<strong>dormant</strong> — defined, unset until
+						Item 41). File created empty (<code>{}</code>).
+					</td>
+					<td><code>recordsSettings.ts</code> (new, mirrors the media-scoped half)</td>
+				</tr>
+				<tr>
+					<td><code>&lt;root&gt;/records/&lt;typeId&gt;/settings.json</code></td>
+					<td>Per-type: <code>displayName</code>, <code>schema</code>, <code>displayField</code>, <code>subtitleField</code>, <code>sortField</code>/<code>sortDir</code>, <code>icon</code>, verbose. <span class="del">(<code>dataFileName</code> removed.)</span></td>
+					<td><code>settingsFile.ts</code> · <code>jsonRepo.ts</code></td>
+				</tr>
+				<tr>
+					<td><code>&lt;root&gt;/globals/{settings,data}.json</code></td>
+					<td>Reserved singleton — <span class="ok">unchanged</span>.</td>
+					<td><code>mediaTypes.ts</code> (<code>ensureGlobalsGroupExists</code>)</td>
+				</tr>
+			</table>
+
+			<h2>4 · Discovery &amp; resolution (paths.ts)</h2>
+			<div class="card">
+				<p>The two resolution helpers change; everything else flows through them.</p>
+				<ul>
+					<li>
+						<code>listMediaTypeIds()</code> — today scans the <em>root</em> and skips
+						<code>media/</code>. After: <strong>scan <code>records/</code></strong> for type
+						subfolders, then <strong>fold in the reserved top-level <code>globals</code></strong> so
+						it still appears as a type to the records APIs.
+					</li>
+					<li>
+						<code>getMediaTypePaths(typeId)</code> — resolve
+						<code>&lt;root&gt;/records/&lt;typeId&gt;</code>, except
+						<code>typeId === 'globals'</code> → <code>&lt;root&gt;/globals</code> (the one
+						special-case). <code>dataFileName</code> indirection removed —
+						<code>dataPath</code> is always <code>&lt;baseDir&gt;/data.json</code>.
+					</li>
+					<li>
+						New: <code>getAppSettingsPath()</code> → <code>&lt;root&gt;/settings.json</code>;
+						<code>getRecordsSettingsPath()</code> → <code>&lt;root&gt;/records/settings.json</code>.
+					</li>
+					<li>
+						<strong>Reserved folder names:</strong> <code>media</code>, <code>records</code>,
+						<code>globals</code> can't be user typeIds (creation guard) — prevents a type colliding
+						with a structural folder.
+					</li>
+				</ul>
+			</div>
+
+			<h2>5 · Migration (scripts/upgrade-data.mjs)</h2>
+			<div class="card">
+				<p>
+					A new step, dry-run by default, <code>--apply</code> to write — mirroring the existing
+					file-first migration discipline. <strong>Idempotent:</strong> running twice is a no-op.
+				</p>
+				<div class="flow">
+					<span class="step">1 · detect flat layout</span><span class="arrow">→</span>
+					<span class="step">2 · move type dirs → records/</span><span class="arrow">→</span>
+					<span class="step">3 · strip dataFileName</span><span class="arrow">→</span>
+					<span class="step">4 · split media/settings.json</span><span class="arrow">→</span>
+					<span class="step">5 · create records/settings.json</span>
+				</div>
+				<ol style="margin-top: 12px">
+					<li>
+						<strong>Detect:</strong> any top-level dir other than <code>media/</code>,
+						<code>globals/</code>, <code>records/</code> that holds a <code>json</code> media-type
+						<code>settings.json</code> = a type to move. (Also: <code>media/settings.json</code> that
+						still has app-wide keys = needs the split.)
+					</li>
+					<li>
+						<strong>Move:</strong> for each such type, move
+						<code>&lt;root&gt;/&lt;typeId&gt;/</code> →
+						<code>&lt;root&gt;/records/&lt;typeId&gt;/</code> (create <code>records/</code> first).
+					</li>
+					<li>
+						<strong>Strip:</strong> rewrite each moved type's <code>settings.json</code> without the
+						<code>dataFileName</code> key (and rename a non-default data file to
+						<code>data.json</code> if one ever existed).
+					</li>
+					<li>
+						<strong>Split settings:</strong> read <code>media/settings.json</code>; write the
+						app-wide keys to <code>&lt;root&gt;/settings.json</code>; rewrite
+						<code>media/settings.json</code> with only <code>classOrder</code> (drop it entirely if
+						absent).
+					</li>
+					<li>
+						<strong>Create</strong> <code>records/settings.json</code> as <code>{}</code> if missing.
+						<code>globals/</code> is left exactly where it is.
+					</li>
+				</ol>
+				<p class="sub">
+					All writes atomic (<code>writeJsonFileAtomic</code>); directory moves via
+					<code>fs.rename</code> with a copy-fallback across devices. Dry-run prints the planned tree
+					diff without touching disk.
+				</p>
+			</div>
+
+			<h3>Old-layout detection guard (no dual-read)</h3>
+			<div class="card">
+				<p>
+					Because the app deliberately doesn't read the old layout, it must <strong>fail
+					clearly</strong> rather than silently show an empty/half data root. At list time (the first
+					<code>listMediaTypeIds()</code> / startup path), if a flat-layout signal is present — a
+					top-level non-reserved <code>json</code>-type folder, <em>or</em>
+					<code>media/settings.json</code> still carrying app-wide keys — throw:
+				</p>
+				<pre>Old data layout detected at &lt;root&gt;.
+Run:  npm run upgrade-data -- &lt;root&gt; --apply
+(then restart). See docs/plans/v1.0/18-records-storage-reorg.md</pre>
+				<p class="sub">
+					The guard is <strong>read-only</strong> — it never mutates. A correctly-migrated root has
+					no flat-layout signal, so the guard is invisible in normal operation.
+				</p>
+			</div>
+
+			<h2>6 · Implementation — files &amp; changes</h2>
+			<table>
+				<tr>
+					<th>Layer</th>
+					<th>File</th>
+					<th>Change</th>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/paths.ts</code></td>
+					<td>
+						<code>getMediaTypePaths</code> resolves <code>records/&lt;typeId&gt;</code> (globals →
+						<code>&lt;root&gt;/globals</code>); <code>listMediaTypeIds</code> scans
+						<code>records/</code> + folds in <code>globals</code>; new
+						<code>getAppSettingsPath</code> / <code>getRecordsSettingsPath</code>; drop
+						<code>dataFileName</code> (hardcode <code>data.json</code>); update the layout doc-comment.
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/mediaSettings.ts</code></td>
+					<td>
+						Split the mixed <code>MediaSettings</code>: app-wide keys read/write
+						<code>&lt;root&gt;/settings.json</code>; <code>classOrder</code> stays
+						<code>media/settings.json</code>. Keep the public read/write API stable for
+						<code>/api/settings</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/recordsSettings.ts</code> <span class="tag">new</span></td>
+					<td>
+						Read/write <code>records/settings.json</code>; defines the optional dormant
+						<code>typeOrder</code>. Mirrors the media-scoped half (preserves unknown keys on write).
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/settingsFile.ts</code></td>
+					<td>
+						Remove <code>dataFileName</code> from <code>MediaTypeSettingsFile</code> + its
+						coerce/write; drop <code>DEFAULT_DATA_FILENAME_JSON</code> usage where it only fed
+						<code>dataFileName</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>storage</td>
+					<td><code>src/lib/storage/mediaTypes.ts</code></td>
+					<td>
+						<code>createMediaType</code> writes under <code>records/&lt;typeId&gt;</code> and stops
+						writing <code>dataFileName</code>; add <code>records</code> to the reserved-name guard.
+						<code>ensureGlobalsGroupExists</code> unchanged (globals stays top-level).
+					</td>
+				</tr>
+				<tr>
+					<td>server</td>
+					<td><code>src/hooks.server.ts</code> (or list-time guard)</td>
+					<td>Old-layout detection → clear error (read-only, no mutation).</td>
+				</tr>
+				<tr>
+					<td>API</td>
+					<td><code>src/routes/api/settings/+server.ts</code></td>
+					<td>
+						No shape change — same GET/POST payload, now backed by
+						<code>&lt;root&gt;/settings.json</code> via the re-targeted module.
+					</td>
+				</tr>
+				<tr>
+					<td>script</td>
+					<td><code>scripts/upgrade-data.mjs</code></td>
+					<td>New migration step (§5), dry-run default, <code>--apply</code>, idempotent.</td>
+				</tr>
+				<tr>
+					<td>fixtures</td>
+					<td><code>test-fixtures/</code> + <code>test-fixtures/README.md</code></td>
+					<td>
+						Reseed to the new layout: move <code>notes/</code> → <code>records/notes/</code>, add
+						<code>&lt;root&gt;/settings.json</code> + <code>records/settings.json</code>, slim
+						<code>media/settings.json</code>, strip <code>dataFileName</code>. Keep
+						<code>globals/</code> top-level and the dangling <code>file</code>-ref warning case.
+					</td>
+				</tr>
+				<tr>
+					<td>docs</td>
+					<td><code>CLAUDE.md</code>, <code>docs/FEATURES.md</code></td>
+					<td>
+						Update the on-disk-layout section (root <code>settings.json</code> + <code>records/</code>
+						tree, three-settings split, globals top-level); note the migration step.
+					</td>
+				</tr>
+			</table>
+
+			<h3>On-disk / behaviour impact</h3>
+			<ul>
+				<li>
+					<span class="no">Breaking on-disk change</span> — but gated behind the explicit
+					<code>upgrade-data</code> step; no auto-migration on first run (only a clear error).
+				</li>
+				<li>
+					<span class="ok">No API shape change</span> — endpoints and client wrappers are untouched;
+					only the bytes-on-disk move.
+				</li>
+				<li>
+					<span class="ok">Lock order &amp; lazy-heal preserved</span> — manifest-before-class
+					unchanged; the records side gains no new locks.
+				</li>
+			</ul>
+
+			<h2>7 · Edge cases &amp; decisions</h2>
+			<table>
+				<tr>
+					<th>Case</th>
+					<th>Behaviour</th>
+				</tr>
+				<tr>
+					<td>App run against an un-migrated (flat) root</td>
+					<td>Guard throws the "run upgrade-data" error. No partial read, no mutation.</td>
+				</tr>
+				<tr>
+					<td><code>upgrade-data</code> run twice</td>
+					<td>Idempotent no-op — detection finds no flat-layout signal the second time.</td>
+				</tr>
+				<tr>
+					<td>A pre-existing type literally named <code>records</code> or <code>media</code></td>
+					<td>
+						Migration aborts with a named conflict error (rename the type first). New creates are
+						blocked by the reserved-name guard.
+					</td>
+				</tr>
+				<tr>
+					<td><code>media/settings.json</code> missing entirely</td>
+					<td>
+						App-wide settings fall back to defaults; <code>&lt;root&gt;/settings.json</code> created
+						with defaults on first write. No <code>classOrder</code> ⇒ no
+						<code>media/settings.json</code> needed.
+					</td>
+				</tr>
+				<tr>
+					<td><code>globals/</code> present (the common case)</td>
+					<td>Left in place; still resolved by the <code>typeId === 'globals'</code> special-case.</td>
+				</tr>
+				<tr>
+					<td>Empty data root (fresh install)</td>
+					<td>
+						No flat signal ⇒ guard passes; <code>ensureGlobalsGroupExists</code> + lazy creation
+						produce the new layout directly.
+					</td>
+				</tr>
+			</table>
+
+			<h2>8 · Verification stages (Phase 4 gates)</h2>
+			<ul>
+				<li>
+					<span class="pill">gate</span> <code>npm run check</code> + <code>npm run lint</code> clean
+					on touched files.
+				</li>
+				<li>
+					<span class="pill">gate</span> <code>npm run test</code> — <code>paths</code> resolve
+					<code>records/&lt;typeId&gt;</code> + globals special-case; the app/media/records settings
+					split reads &amp; writes to the right files; <code>dataFileName</code> gone everywhere;
+					migration converts an old-layout fixture to the new tree and is a <strong>no-op on
+					re-run</strong>; the old-layout guard fires; lock order + lazy-heal preserved.
+				</li>
+				<li>
+					<span class="pill">gate</span> <code>npm run upgrade-data -- &lt;scratch-root&gt;</code>
+					(dry-run) then <code>--apply</code> on a <strong>throwaway copy</strong>; the resulting tree
+					matches §2 and the app serves it.
+				</li>
+				<li>
+					<span class="pill">gate</span> <code>npm run test:serve</code> against the
+					<strong>updated</strong> <code>test-fixtures/</code> — Records + Globals load/edit correctly
+					post-reorg; settings (grid size etc.) persist via <code>&lt;root&gt;/settings.json</code>;
+					an un-migrated copy is refused with the expected message.
+				</li>
+				<li>
+					<span class="pill">gate</span> Docs: <code>CLAUDE.md</code> layout +
+					<code>FEATURES.md</code> + <code>test-fixtures/README.md</code> updated; Item 18 →
+					<strong>Shipped &amp; folded</strong>; triage HTML synced.
+				</li>
+			</ul>
+
+			<h2>9 · Slices (smallest shippable paths)</h2>
+			<ol>
+				<li>
+					<strong>Settings split:</strong> hoist app-wide keys to
+					<code>&lt;root&gt;/settings.json</code>, leave <code>classOrder</code> in
+					<code>media/settings.json</code> (<code>mediaSettings.ts</code> + <code>paths.ts</code> +
+					<code>/api/settings</code>); unit tests. <span class="sub">(Independent of the move.)</span>
+				</li>
+				<li>
+					<strong>records/ resolution:</strong> <code>getMediaTypePaths</code>/<code
+						>listMediaTypeIds</code
+					>
+					under <code>records/</code> + globals fold-in; drop <code>dataFileName</code>;
+					<code>settingsFile.ts</code> + <code>mediaTypes.ts</code> + reserved-name guard; new
+					<code>recordsSettings.ts</code>; unit tests.
+				</li>
+				<li><strong>Old-layout detection guard</strong> + its test.</li>
+				<li>
+					<strong>Migration step</strong> in <code>upgrade-data.mjs</code> (dry-run + apply) +
+					idempotency test against an old-layout fixture.
+				</li>
+				<li>
+					<strong>Reseed <code>test-fixtures/</code> + docs</strong> (<code>CLAUDE.md</code>,
+					<code>FEATURES.md</code>, <code>README.md</code>) + <code>test:serve</code> capture; close
+					out Item 18.
+				</li>
+			</ol>
+		</main>
+	</body>
+</html>

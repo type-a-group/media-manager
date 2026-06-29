@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Item 8 — Configurable &amp; Verbose Grid Display · 1.0 plan</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #171a21;
+        --panel2: #1d212b;
+        --ink: #e6e9ef;
+        --muted: #9aa3b2;
+        --line: #2a2f3a;
+        --accent: #6aa8ff;
+        --good: #5fd08a;
+        --warn: #e0b25f;
+        --pink: #e06a9c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 32px 24px 80px; }
+      h1 { font-size: 26px; margin: 0 0 4px; }
+      h2 { font-size: 19px; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      .sub { color: var(--muted); margin: 0 0 8px; }
+      code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      pre {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+        padding: 14px 16px; overflow-x: auto; font-size: 12.5px; line-height: 1.5;
+      }
+      .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 14px 0; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+      th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+      th { background: var(--panel2); color: var(--muted); font-weight: 600; }
+      .pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+      .pill.good { background: rgba(95,208,138,.15); color: var(--good); }
+      .pill.warn { background: rgba(224,178,95,.15); color: var(--warn); }
+      .pill.acc { background: rgba(106,168,255,.15); color: var(--accent); }
+      .muted { color: var(--muted); }
+      ul { margin: 8px 0; padding-left: 20px; }
+      li { margin: 4px 0; }
+      .tag { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+      .mock { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre; font-size: 12px; line-height: 1.35; color: #cdd4e0; }
+      .ok::before { content: "✓ "; color: var(--good); }
+      .cut::before { content: "✂ "; color: var(--pink); }
+      .lead { font-size: 16px; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Item 8 — Configurable &amp; Verbose Grid Display</h1>
+      <p class="sub">
+        1.0 feature plan · <span class="pill acc">Phase 2 — for approval</span> · usefulness 5/5 ·
+        backlog <a href="../../FUTURE_CHANGES.md">Item 8</a> · brief <a href="08-verbose-grid.md">08-verbose-grid.md</a>
+      </p>
+      <p class="lead">
+        Today a tile shows a thumbnail + one title line. This adds an opt-in <b>verbose mode</b>: a
+        Lightroom-style card that shows a chosen set of metadata fields under the thumbnail, so a
+        catalog can be scanned by its data, not just its pictures. All three Phase-1 open questions are
+        resolved (below); this plan is the design to approve before any code.
+      </p>
+
+      <h2>1 · Decisions (Phase-1 interview — resolved)</h2>
+      <table>
+        <tr><th>Question</th><th>Decision</th><th>Consequence</th></tr>
+        <tr>
+          <td><b>Layout</b></td>
+          <td><span class="pill good">Masonry tiles, fields stacked below</span></td>
+          <td>Stays in the existing balanced <code>Masonry</code> grid. Verbose cards are taller → variable height, which masonry already packs. No new layout mode.</td>
+        </tr>
+        <tr>
+          <td><b>Persistence</b></td>
+          <td><span class="pill good">Durable per-type default</span></td>
+          <td>Verbose on/off + chosen fields saved per entity (class config / record-type settings), exactly like group-by &amp; title-by. Remembered across reloads.</td>
+        </tr>
+        <tr>
+          <td><b>Field cap</b></td>
+          <td><span class="pill good">Hard cap 6</span></td>
+          <td>Picker disables further selection at 6. Keeps cards readable + list payloads lean. <b>No</b> virtualization in 1.0.</td>
+        </tr>
+        <tr>
+          <td><b>Scope</b></td>
+          <td><span class="pill good">Both Files + Records</span></td>
+          <td>Built once in the shared <code>DataGrid</code> via the side-agnostic <code>GridItem</code> contract; both hubs get it.</td>
+        </tr>
+      </table>
+
+      <h2>2 · What it looks like</h2>
+      <p class="sub">
+        Same card the grid already renders, with an optional stack of <b>key/value rows</b> inserted under
+        the existing label. Compact mode is unchanged — verbose is purely additive.
+      </p>
+      <div class="grid2">
+        <div class="panel">
+          <div class="tag">Compact (today)</div>
+          <div class="mock">┌────────────┐ ┌────────────┐
+│  ▦▦▦▦▦▦▦▦  │ │  ▦▦▦▦▦▦▦▦  │
+│  ▦▦▦▦▦▦▦▦  │ │  ▦▦▦▦▦▦▦▦  │
+│  ▦▦▦▦▦▦▦▦  │ ├────────────┤
+├────────────┤ │ ocean.png  │
+│ sunset.png │ │ [images]   │
+│ [images]   │ └────────────┘
+└────────────┘</div>
+        </div>
+        <div class="panel">
+          <div class="tag">Verbose (this item) — fields = camera · iso · lens</div>
+          <div class="mock">┌────────────┐ ┌────────────┐
+│  ▦▦▦▦▦▦▦▦  │ │  ▦▦▦▦▦▦▦▦  │
+│  ▦▦▦▦▦▦▦▦  │ │  ▦▦▦▦▦▦▦▦  │
+│  ▦▦▦▦▦▦▦▦  │ ├────────────┤
+├────────────┤ │ Ocean      │
+│ Sunset     │ │ Camera X100│
+│ Camera X100│ │ ISO    400 │
+│ ISO    200 │ │ Lens   35mm│
+│ Lens   23mm│ └────────────┘
+└────────────┘  (tiles vary in
+                 height; masonry
+                 balances them)</div>
+        </div>
+      </div>
+
+      <h3>The toolbar control</h3>
+      <p class="sub">
+        Lives in the grid toolbar next to the existing size / group-by selects (Files single-class
+        catalog &amp; Records). A <code>Popover</code> with a <code>Verbose</code> switch and a checkbox list
+        of the entity's user fields; once 6 are checked the rest disable.
+      </p>
+      <pre>[ Size ▾ ]  [ Group by ▾ ]   [ ▦ Fields ▾ ]      ← new
+                                 ┌──────────────────────┐
+                                 │ ◉ Verbose            │
+                                 │ ─────────────────    │
+                                 │ ☑ camera             │
+                                 │ ☑ iso                │
+                                 │ ☑ lens               │
+                                 │ ☐ fstop              │
+                                 │ ☐ date  (3 / 6)      │
+                                 └──────────────────────┘</pre>
+
+      <h3>Where verbose applies</h3>
+      <table>
+        <tr><th>View</th><th>Fields offered</th><th>Persisted in</th></tr>
+        <tr><td>Records <code>/media/[type]</code></td><td>type schema user-fields (<code>schemaUserFields</code>)</td><td><code>settings.json</code> (type)</td></tr>
+        <tr><td>Files — single-class catalog <code>?class=</code></td><td>that class's schema user-fields</td><td>class <code>config</code></td></tr>
+        <tr><td>Files — All Files / multi-class</td><td><span class="muted">intrinsic only: size · dimensions · type · created</span></td><td><code>media/settings.json</code></td></tr>
+      </table>
+      <p class="sub">
+        Rationale: schema-field verbose only makes sense where there <i>is</i> one schema. All Files holds
+        heterogeneous blobs, so it offers the small intrinsic set (already on <code>FileItem</code> — no
+        extra fetch). This keeps the whole "Files hub" covered without inventing cross-class fields.
+      </p>
+
+      <h2>3 · Data / API / on-disk changes</h2>
+
+      <h3>The load-bearing change: fields come back <i>inline</i> on each list row</h3>
+      <p class="sub">No per-tile fetch. The list endpoints accept a requested field set and return stringified values per row, the same way <code>title_value</code> already works.</p>
+      <table>
+        <tr><th>Layer</th><th>Change</th></tr>
+        <tr>
+          <td><code>GridItem</code> (<code>data-grid/types.ts</code>)</td>
+          <td>Add <code>fields?: { label: string; value: string }[]</code> — already label-resolved &amp; stringified by the host adapter. The grid renders these rows under the label in both variants; absent/empty ⇒ unchanged compact tile.</td>
+        </tr>
+        <tr>
+          <td><code>JsonListItem</code> &amp; <code>FileItem</code> (<code>core/types.ts</code>)</td>
+          <td>Add <code>field_values?: Record&lt;string, string&gt;</code> — the requested keys → stringified value (<code>''</code> when empty, so rows stay aligned tile-to-tile). Derived, not persisted; absent unless requested.</td>
+        </tr>
+        <tr>
+          <td>Records list (<code>jsonRepo.listRecords</code>)</td>
+          <td>Accept <code>fields: string[]</code>; for each row, <code>stringifyFieldValue</code> each requested key into <code>field_values</code>. Capped at 6 server-side (defensive). Endpoint param <code>?fields=camera,iso,lens</code>.</td>
+        </tr>
+        <tr>
+          <td>Class members (<code>classRepo.listClassMembers</code>)</td>
+          <td>Same: accept requested fields, stringify from the member record into <code>field_values</code>. Single-class catalog only (mirrors how <code>title_value</code> is already scoped there).</td>
+        </tr>
+        <tr>
+          <td>Per-type / per-class config</td>
+          <td>Add <code>verbose?: boolean</code> + <code>verboseFields?: string[]</code> to <code>ClassConfigSchema</code>, <code>MediaTypeSettingsFile</code>, and the All-Files <code>media/settings.json</code>. Saved via the existing config-patch / settings-POST paths (no new endpoints).</td>
+        </tr>
+      </table>
+
+      <h3>No migration</h3>
+      <p class="sub">All new fields are optional and absent ⇒ today's behaviour (compact). Existing data roots and the <code>test-fixtures/</code> seed read identically; the fixture only needs a class flipped to verbose to exercise the feature in <code>test:serve</code>.</p>
+
+      <h2>4 · Build slices (Phase 3)</h2>
+      <p class="sub">Smallest end-to-end paths first; each ships behind its own verification gate.</p>
+      <ol>
+        <li><b>Slice 1 — data spine.</b> <code>field_values</code> on the two list endpoints + a <code>?fields=</code> param; unit-tested. No UI yet. <span class="muted">Proves the inline-values shape on both sides before any rendering.</span></li>
+        <li><b>Slice 2 — render.</b> <code>GridItem.fields</code> + key/value rows in <code>DataGrid</code>; host adapters map <code>field_values</code> → <code>fields</code>. Verbose forced on via a temporary constant to eyeball it.</li>
+        <li><b>Slice 3 — Records control + persistence.</b> Toolbar Fields popover (switch + capped picker) on <code>/media/[type]</code>, persisted to type settings; reload-survives.</li>
+        <li><b>Slice 4 — Files control + persistence.</b> Same popover on the single-class catalog (class config) and All-Files intrinsic set (<code>media/settings.json</code>).</li>
+      </ol>
+
+      <h2>5 · Verification gates (Phase 4)</h2>
+      <ul>
+        <li><span class="ok"></span><code>npm run check</code> + <code>npm run lint</code> clean for touched files.</li>
+        <li><span class="ok"></span><code>npm run test</code> — new vitest: list endpoints return correct <code>field_values</code> for requested keys, empty ⇒ <code>''</code>, the 6-field cap is enforced, and <b>no per-record fan-out</b> (one list call). Add to <code>classRepo.test.ts</code> + the records repo test.</li>
+        <li><span class="ok"></span><code>npm run test:serve</code> — pick a field subset + toggle verbose on Files (catalog) and Records; confirm it composes with sort / filter / group-by / size and <b>persists across reload</b>. Test at the 6-field ceiling.</li>
+        <li><span class="ok"></span>UI capture — compact vs verbose at two grid sizes, image tiles + text tiles (via <code>scripts/ui-capture.mjs</code>).</li>
+        <li><span class="ok"></span>Docs same change — <code>FEATURES.md</code> (new list params + grid mode), <code>test-fixtures/</code> seed if a class default flips, Item 8 → <b>Shipped &amp; folded</b>, triage HTML synced.</li>
+      </ul>
+
+      <h2>6 · Cut line (explicitly out of 1.0)</h2>
+      <ul>
+        <li class="cut"><b>Virtualization / windowing</b> — large-catalog scroll perf is its own concern (tile <i>count</i>, not fields). Carved out as <span class="pill warn">Item 40</span> in the backlog; pull in only if real catalogs feel slow.</li>
+        <li class="cut"><b>List/row view</b> (fields <i>beside</i> a thumbnail, table-style) — a different layout mode; not built. Masonry-with-fields-below covers the scanning use case for 1.0.</li>
+        <li class="cut"><b>Per-session override on top of the durable default</b> — durable per-type only; no transient layer.</li>
+        <li class="cut"><b>Cross-class fields in All Files / multi-class</b> — intrinsic set only there; no schema-field union.</li>
+      </ul>
+
+      <h2>7 · Hand-off smoke checklist (after build, against <code>npm run test:serve</code>)</h2>
+      <ol>
+        <li>Open a class catalog (e.g. <code>?class=images</code>), open <b>Fields ▾</b>, toggle Verbose, check 3 fields → tiles grow key/value rows.</li>
+        <li>Reload → verbose + the same 3 fields are still on (durable per-class).</li>
+        <li>Open a <i>different</i> class → it's back to its own setting (independent per-entity).</li>
+        <li>Try to check a 7th field → it's disabled at 6.</li>
+        <li>Repeat on a Records type; confirm group-by + sort + size still work alongside verbose.</li>
+        <li>All Files → Fields offers intrinsic only (size/dimensions/type/created), persists in its own scope.</li>
+      </ol>
+      <p class="sub" style="margin-top:24px">Approve this and I'll start with Slice 1 (the data spine). Anything to change first — the intrinsic-only treatment of All Files, the toolbar placement, or the cut line — flag it now.</p>
+    </div>
+  </body>
+</html>

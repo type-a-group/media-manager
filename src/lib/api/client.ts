@@ -170,6 +170,8 @@ export async function apiGetTypeSettings(
 	sortField: string;
 	sortDir: string;
 	icon: string;
+	verbose: boolean;
+	verboseFields: string[];
 }> {
 	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/settings`);
 	await assertOk(res, 'Failed to read type settings');
@@ -180,7 +182,11 @@ export async function apiGetTypeSettings(
 		subtitleField: typeof data.subtitleField === 'string' ? data.subtitleField : '',
 		sortField: typeof data.sortField === 'string' ? data.sortField : '',
 		sortDir: data.sortDir === 'asc' || data.sortDir === 'desc' ? data.sortDir : '',
-		icon: typeof data.icon === 'string' ? data.icon : ''
+		icon: typeof data.icon === 'string' ? data.icon : '',
+		verbose: data.verbose === true,
+		verboseFields: Array.isArray(data.verboseFields)
+			? data.verboseFields.filter((f: unknown): f is string => typeof f === 'string')
+			: []
 	};
 }
 
@@ -197,6 +203,8 @@ export async function apiUpdateTypeSettings(
 		sortField?: string;
 		sortDir?: 'asc' | 'desc';
 		icon?: string;
+		verbose?: boolean;
+		verboseFields?: string[];
 	},
 	fetchFn: typeof fetch = fetch
 ): Promise<{ displayName: string; displayField: string; subtitleField: string; icon: string }> {
@@ -396,6 +404,8 @@ export async function apiListRecordsForType(
 		dir?: 'asc' | 'desc';
 		/** Incomplete filter (Item 10): only records with ≥1 empty user field. */
 		incomplete?: boolean;
+		/** Verbose grid (Item 8): schema field keys to inline per row as `field_values`. */
+		fields?: string[];
 	},
 	fetchFn: typeof fetch = fetch
 ): Promise<ListRecordsResponse> {
@@ -418,6 +428,7 @@ export async function apiListRecordsForType(
 	if (params?.sort) url.searchParams.set('sort', params.sort);
 	if (params?.dir) url.searchParams.set('dir', params.dir);
 	if (params?.incomplete) url.searchParams.set('incomplete', '1');
+	if (params?.fields?.length) url.searchParams.set('fields', params.fields.join(','));
 	const res = await fetchFn(url.pathname + url.search);
 	await assertOk(res, 'Failed to list records');
 	const json = await res.json();

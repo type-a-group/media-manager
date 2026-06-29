@@ -1,6 +1,5 @@
 {
 	"displayName": "Globals",
 	"kind": "json",
-	"schema": {},
-	"dataFileName": "data.json"
+	"schema": {}
 }

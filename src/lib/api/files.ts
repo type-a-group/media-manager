@@ -322,6 +322,8 @@ export async function apiListClassMembers(
 		filters?: FilterClause[];
 		/** Incomplete filter (Item 10): only members with ≥1 empty field. */
 		incomplete?: boolean;
+		/** Verbose grid (Item 8): class schema field keys to inline per member as `field_values`. */
+		fields?: string[];
 	} = {},
 	fetchFn: typeof fetch = fetch
 ): Promise<FileListResponse> {
@@ -333,6 +335,7 @@ export async function apiListClassMembers(
 	if (opts.dir) q.set('dir', opts.dir);
 	if (opts.filters && opts.filters.length > 0) q.set('filters', JSON.stringify(opts.filters));
 	if (opts.incomplete) q.set('incomplete', '1');
+	if (opts.fields?.length) q.set('fields', opts.fields.join(','));
 	const res = await fetchFn(`/api/classes/${id}/members?${q.toString()}`);
 	return jsonOrThrow(res, FileListResponseSchema, 'Failed to list members');
 }

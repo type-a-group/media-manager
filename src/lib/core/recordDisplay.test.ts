@@ -4,7 +4,9 @@ import {
 	recordDetailTitle,
 	stringifyFieldValue,
 	groupByDisplayValue,
-	projectRecordRow
+	projectRecordRow,
+	buildFieldValues,
+	MAX_VERBOSE_FIELDS
 } from './recordDisplay.js';
 import type { JsonListItem, SchemaDefinition } from './types.js';
 
@@ -90,6 +92,38 @@ describe('groupByDisplayValue', () => {
 	it('joins multiselect dropdown + list values to a string', () => {
 		expect(groupByDisplayValue(schema, 'labels', ['a', 'c'])).toBe('a, c');
 		expect(groupByDisplayValue(schema, 'tags', ['a', 'b'])).toBe('a, b');
+	});
+});
+
+describe('buildFieldValues (verbose grid, Item 8)', () => {
+	it('returns undefined when no fields are requested (compact rows)', () => {
+		expect(buildFieldValues(schema, { name: 'x' }, undefined)).toBeUndefined();
+		expect(buildFieldValues(schema, { name: 'x' }, [])).toBeUndefined();
+	});
+
+	it('inlines requested fields in order, empty ⇒ "" so rows align tile-to-tile', () => {
+		const rec = { name: 'Task', count: 7, priority: '' };
+		expect(buildFieldValues(schema, rec, ['name', 'priority', 'count'])).toEqual({
+			name: 'Task',
+			priority: '',
+			count: '7'
+		});
+	});
+
+	it('renders complex field types via stringifyFieldValue', () => {
+		const rec = { site: { display_name: 'Home', url: 'x' }, tags: ['a', 'b'] };
+		expect(buildFieldValues(schema, rec, ['site', 'tags'])).toEqual({ site: 'Home', tags: 'a, b' });
+	});
+
+	it('drops keys absent from the schema and clamps to the cap', () => {
+		expect(buildFieldValues(schema, { name: 'x' }, ['name', 'nope'])).toEqual({ name: 'x' });
+		const wide: SchemaDefinition = Object.fromEntries(
+			Array.from({ length: 9 }, (_, i) => [`g${i}`, { type: 'string' }])
+		) as unknown as SchemaDefinition;
+		const rec = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`g${i}`, `v${i}`]));
+		const keys = Object.keys(buildFieldValues(wide, rec, Object.keys(wide)) ?? {});
+		expect(keys).toHaveLength(MAX_VERBOSE_FIELDS);
+		expect(keys).toEqual(['g0', 'g1', 'g2', 'g3', 'g4', 'g5']);
 	});
 });
 

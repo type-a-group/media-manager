@@ -2,7 +2,7 @@
 
 Non-committal backlog of deferred improvements identified during codebase audits. **This is not the shipped feature set** — that's [`FEATURES.md`](FEATURES.md). Items here are candidates, not commitments.
 
-> **🚀 1.0 release plan:** a committed subset of these items is scheduled for **1.0** — see [`plans/v1.0/README.md`](plans/v1.0/README.md) (per-feature briefs + the agile interview → HTML-plan → verification process). Committed: Items **8 · 9 · 10 · 3 · 5 · 12 · 13 · 34 · 15 · 18 · 19** and the npx sub-project (**30 · 31 · 32 · 33**). When one of those ships, retire it here as usual.
+> **🚀 1.0 release plan:** a committed subset of these items is scheduled for **1.0** — see [`plans/v1.0/README.md`](plans/v1.0/README.md) (per-feature briefs + the agile interview → HTML-plan → verification process). Committed: Items **8 · 9 · 10 · 3 · 5 · 12 · 13 · 34 · 18 · 19** and the npx sub-project (**30 · 31 · 32 · 33**). When one of those ships, retire it here as usual. (Item **39**'s standalone-package extraction shipped early, out-of-band — the remaining media-manager-consumes-it swap is intentionally **not** 1.0-blocking. Item **15** (image compression) was de-scoped from 1.0 — it remains a `blocked` backlog item, not release-blocking.)
 
 > **How to read & maintain this file:** see the **"Managing FUTURE_CHANGES.md"** section in [`../CLAUDE.md`](../CLAUDE.md). The short version: items are grouped by **cluster** (not by number), every active item carries a machine-readable **frontmatter block**, item **numbers are immutable IDs** (never renumber — they're cross-referenced from `FEATURES.md` and the plan docs), and `status: ready` is a promise that an agent can pick it up with **zero open questions**.
 
@@ -26,18 +26,18 @@ acceptance: # what "done" looks like — the agent's definition of success
 
 ## Cluster index
 
-| Cluster | Items | Theme |
-| --- | --- | --- |
-| [npx-package vision](#cluster-npx-package-vision) | 30 · 31 · 32 · 33 · 7 | Run media-manager as an npx package inside a host repo |
-| [Data model & fields](#cluster-data-model--fields) | 36 · 26 · 25 · 4 · 0 | Field types, value editors, globals parity |
-| [Media kinds & preview](#cluster-media-kinds--preview) | 23 · 21 · 24 · 14 | Expand beyond images — video/gif, pdf, docx, markdown |
-| [Grid & display](#cluster-grid--display) | 8 | What each tile shows; verbose mode |
-| [Asset pipeline & deps](#cluster-asset-pipeline--deps) | 15 · 34 · 35 | Thumbnails, masonry, the `sharp` decision |
-| [Bulk & schema utilities](#cluster-bulk--schema-utilities) | 3 · 5 | Mostly shipped — small remainders to close |
-| [Integrations](#cluster-integrations) | 37 · 11 | External services, kept opt-in and out of core |
-| [Storage & routing — design](#cluster-storage--routing--design) | 20 · 18 · 19 · 16 | Decisions to make before code |
-| [Misc fixes & polish](#cluster-misc-fixes--polish) | 17 · 29 | Small, self-contained quality-of-life |
-| [Shipped & folded](#shipped--folded) | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 · 12 | Archive — see `FEATURES.md` |
+| Cluster                                                         | Items                                                     | Theme                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------ |
+| [npx-package vision](#cluster-npx-package-vision)               | 30 · 31 · 32 · 33 · 7                                     | Run media-manager as an npx package inside a host repo |
+| [Data model & fields](#cluster-data-model--fields)              | 36 · 38 · 26 · 25 · 4 · 0                                 | Field types, value editors, globals parity             |
+| [Media kinds & preview](#cluster-media-kinds--preview)          | 23 · 21 · 24 · 14                                         | Expand beyond images — video/gif, pdf, docx, markdown  |
+| [Grid & display](#cluster-grid--display)                        | 40                                                        | Large-catalog perf (verbose grid #8 shipped)           |
+| [Asset pipeline & deps](#cluster-asset-pipeline--deps)          | 15 · 39 · 35                                              | Thumbnails, masonry, the `sharp` decision              |
+| [Bulk & schema utilities](#cluster-bulk--schema-utilities)      | 3 · 5                                                     | Mostly shipped — small remainders to close             |
+| [Integrations](#cluster-integrations)                           | 37 · 11                                                   | External services, kept opt-in and out of core         |
+| [Storage & routing — design](#cluster-storage--routing--design) | 20 · 19 · 16                                              | Decisions to make before code                          |
+| [Misc fixes & polish](#cluster-misc-fixes--polish)              | 17 · 41 · 29                                              | Small, self-contained quality-of-life                  |
+| [Shipped & folded](#shipped--folded)                            | 1 · 2 · 6 · 22 · 28 · 27 · 9 · 10 · 13 · 12 · 34 · 8 · 18 | Archive — see `FEATURES.md`                            |
 
 > A visual triage board over this same data lives at [`FUTURE_CHANGES_TRIAGE.html`](FUTURE_CHANGES_TRIAGE.html) (open in a browser) — filter by status/size/flags and rank by usefulness. **Keep the two in sync** when you add, close, or re-score an item.
 
@@ -116,7 +116,14 @@ status: discussion
 size: L
 usefulness: 2
 priority: low
-files: [src/lib/storage/paths.ts, src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts, src/lib/storage/jsonRepo.ts, src/lib/core/types.ts]
+files:
+  [
+    src/lib/storage/paths.ts,
+    src/lib/storage/classRepo.ts,
+    src/lib/storage/manifest.ts,
+    src/lib/storage/jsonRepo.ts,
+    src/lib/core/types.ts
+  ]
 depends_on: []
 open_questions: 3
 acceptance:
@@ -176,6 +183,32 @@ We have a `file` field (record→blob) but no way for a record to point at **ano
 
 **Deliberately deferred (not open questions):** `relation[]` multi-target (ship single first), reverse "referenced by" back-references (needs a derived index — defer unless needed). A relation targeting a class member (blob) is what `file` already does — keep `relation` record→record to avoid overlap.
 
+### 38 · Decouple field key from display label (drop the snake_case nag)
+
+```yaml
+status: discussion
+size: M
+usefulness: 3
+priority: low
+files:
+  [
+    src/lib/core/types.ts,
+    src/lib/core/fieldKeys.ts,
+    src/lib/components/schema-editor/SchemaEditorBody.svelte,
+    src/lib/storage/jsonRepo.ts
+  ]
+depends_on: []
+open_questions: 2
+acceptance:
+  - The schema editor lets the user type a field name verbatim (no forced snake_case); the human label persists
+  - Field identity stays a stable, URL-safe slug under the hood (renames/relabels do not rewrite every record)
+  - Optional: bulk JSON export (Item 3) can resolve keys → labels so exported files read naturally
+```
+
+Today field keys are slugified to snake*case ([`SchemaEditorBody.svelte:127,224`](../src/lib/components/schema-editor/SchemaEditorBody.svelte)), enforced on disk by a regex ([`types.ts:323`](../src/lib/core/types.ts)), with the label \_re-derived* from the key ([`fieldKeys.ts: fieldLabel()`](../src/lib/core/fieldKeys.ts)). Nicholas wants the field name to be "exactly how the user types it." Full design + the Option A (free-form keys — a trap) vs **Option B** (stored `label`, stable hidden key — recommended) analysis, plus a note on whether the substrate should be **SQLite** instead of JSON-on-disk, lives in [`plans/field-labels-and-storage.md`](plans/field-labels-and-storage.md). Parked 2026-06-28 during Item 3 scoping — captured so we don't re-derive it.
+
+**Open questions:** (1) Option A vs B (recommend B). (2) Does the SQLite substrate question (see the doc) gate this, or do we ship B independently and revisit storage separately?
+
 ### 26 · File-Field UI Overhaul (preview + navigate-to-file)
 
 ```yaml
@@ -183,7 +216,12 @@ status: ready
 size: M
 usefulness: 4
 priority: medium
-files: [src/lib/components/FilePicker.svelte, src/lib/components/FieldInput.svelte, src/lib/components/FileEditorPanel.svelte]
+files:
+  [
+    src/lib/components/FilePicker.svelte,
+    src/lib/components/FieldInput.svelte,
+    src/lib/components/FileEditorPanel.svelte
+  ]
 depends_on: []
 open_questions: 0
 acceptance:
@@ -201,7 +239,12 @@ status: ready
 size: M
 usefulness: 3
 priority: medium
-files: [src/lib/components/GlobalsEditorPane.svelte, src/lib/core/fieldKeys.ts, src/lib/components/FieldInput.svelte]
+files:
+  [
+    src/lib/components/GlobalsEditorPane.svelte,
+    src/lib/core/fieldKeys.ts,
+    src/lib/components/FieldInput.svelte
+  ]
 depends_on: []
 open_questions: 0
 acceptance:
@@ -251,7 +294,13 @@ status: ready
 size: L
 usefulness: 4
 priority: medium
-files: [src/lib/core/images.ts, src/lib/components/FileEditorPanel.svelte, src/lib/components/data-grid/DataGrid.svelte, src/lib/server/fileMetadata.ts]
+files:
+  [
+    src/lib/core/images.ts,
+    src/lib/components/FileEditorPanel.svelte,
+    src/lib/components/data-grid/DataGrid.svelte,
+    src/lib/server/fileMetadata.ts
+  ]
 depends_on: []
 open_questions: 0
 acceptance:
@@ -320,30 +369,25 @@ The user value (manage a set of `.md` files with schema-driven metadata, e.g. bl
 
 ## Cluster: Grid & display
 
-What each tile shows. (Sorting — Item 9 — and the empty/missing-field filter — Item 10 — shipped; see **Shipped & folded**.) Item 8 still names components removed in the file-first redesign — repointed below.
+What each tile shows. (Sorting — Item 9 —, the empty/missing-field filter — Item 10 —, and the **verbose grid — Item 8** — all shipped; see **Shipped & folded**.) Remaining here: large-catalog virtualization (Item 40), carved out of Item 8.
 
-### 8 · Configurable & Verbose Grid Display
+### 40 · Grid virtualization for large catalogs
 
 ```yaml
-status: blocked
-size: L
-usefulness: 5
-priority: high
-files: [src/lib/components/data-grid/DataGrid.svelte, src/lib/components/data-grid/types.ts, src/lib/stores/settings.ts, src/lib/storage/jsonRepo.ts, src/lib/storage/classRepo.ts]
+status: discussion
+size: M
+usefulness: 2
+priority: low
+files: [src/lib/components/masonry/Masonry.svelte, src/lib/components/data-grid/DataGrid.svelte]
 depends_on: []
-open_questions: 3
+open_questions: 1
 acceptance:
-  - A field-subset picker drives a "verbose" multi-field card (key/value rows or chips) per tile
-  - Image grids show metadata fields next to a larger thumbnail
-  - List responses carry the requested field values per item (extend list endpoints, don't fetch per-record)
-  - Choice persists (per-session and/or durable per-type default)
+  - The tile grid renders only tiles near the viewport (windowing), recycling nodes on scroll
+  - Scroll stays smooth in verbose mode at large member counts
+  - Masonry column balance is preserved under windowing (estimated positions, no jump)
 ```
 
-> 🔧 **Stale refs repointed.** The original pointers named `JsonRecordGrid.svelte`, `ImageViewGrid.svelte`, `getDisplayName`, and `selection.svelte.ts` — **all removed.** The single tile grid is now [`DataGrid.svelte`](../src/lib/components/data-grid/DataGrid.svelte) (+ `types.ts`), grid state lives in [`stores/settings.ts`](../src/lib/stores/settings.ts) (the `selection` store is gone), and the **display-field / title-by selector partly shipped** (per-entity `displayField` in the unified `EntitySettingsDialog`). What remains is the **verbose multi-field mode** + the field-subset picker.
-
-High priority, user-requested (lightroom-style scanning). **Open questions:** per-type persistent default vs. per-session; verbose layout (key/value rows vs. mini-table vs. chips); how many fields before lists get noisy/slow — cap or virtualize?
-
-> 🪧 **Reuse the freed second tile slot.** `GridItem.secondaryLabel` exists but is **unused on the Files side** (records use it for the subtitle). It's the natural mechanism for this item's compact per-tile metadata — wire the field-subset picker to populate `secondaryLabel`/a sibling meta line rather than inventing a new tile region. Item 9 (Sorting) deliberately left this slot free: it surfaces the last-modified timestamp **in the side panel, not the tile**, so the grid stays clean until this configurable-display work lands here.
+Carved out of **Item 8** during its interview. The grid renders **every** tile today (no windowing); verbose mode (Item 8) makes each tile heavier, so the scroll-jank threshold for big catalogs arrives sooner — but the underlying limit is tile **count**, independent of verbose. Windowing is meaningfully trickier on **masonry** specifically: knowing which tiles are in-window needs their estimated positions, which depend on the balancing pass — so `Masonry.svelte` must expose/precompute per-tile offsets. **Open question:** trigger/threshold — always-on windowing vs. only above N tiles vs. a simpler "load more"/paged fallback; decide before building so the `Masonry` API change is right once. Explicitly **not** 1.0-blocking — pull in only if real catalogs feel slow.
 
 ## Cluster: Asset pipeline & deps
 
@@ -367,23 +411,25 @@ acceptance:
 
 Manage compressed variants (via `sharp`). **Open question (blocks):** strong overlap with Item 7's asset-volume concerns (thumbnails, selective export) and Items 34/35 — decide the **one** resize pipeline before building two parallel ones. Explicitly non-urgent.
 
-### 34 · Reimplement masonry grid layout
+### 39 · Consume `@nicbat/svelte-masonry` as a GitHub dependency
 
 ```yaml
 status: ready
-size: M
-usefulness: 2
+size: S
+usefulness: 3
 priority: low
-files: [src/lib/components/data-grid/DataGrid.svelte, src/lib/components/data-grid/types.ts]
+files: [src/lib/components/masonry/index.ts, src/lib/components/masonry/Masonry.svelte, src/lib/components/data-grid/DataGrid.svelte, package.json, ../CLAUDE.md]
 depends_on: []
 open_questions: 0
 acceptance:
-  - Variable-height tiles packed without the dead space the fixed grid leaves
-  - Wired into DataGrid behind the existing GridSize control (both files hub + record views inherit it)
-  - Preserves the side-agnostic GridItem contract (incl. the reserved `secondaryLabel`)
+  - media-manager depends on `github:nicbat/svelte-masonry#<tag>` in package.json (npm-registry release deferred)
+  - `src/lib/components/masonry/Masonry.svelte` deleted; `index.ts` re-exports `Masonry` from `@nicbat/svelte-masonry` (or DataGrid imports it directly and the folder is removed) — no behavior change to the files grid
+  - CLAUDE.md's "in-house `Masonry.svelte`" notes updated to say it's an external dependency
 ```
 
-`@masonry-grid/svelte` is a kept-but-unused dependency (retained deliberately, 2026-06-21). Visual polish only. **Decided (not blocking):** pick `@masonry-grid/svelte` vs. CSS `columns` vs. a small JS packer at implementation time — it's an implementation detail, not a product question. Masonry applies to the **tile grid** (files hub), not the records-native vertical list (`RecordListColumn`).
+> ✅ **Extraction shipped early (2026-06-28), out-of-band.** The component now lives in its own standalone repo — **[github.com/nicbat/svelte-masonry](https://github.com/nicbat/svelte-masonry)** (`@nicbat/svelte-masonry`, tagged `v0.1.0`): SvelteKit lib project, `svelte-package` build (`publint`-clean), `svelte` as a peerDep, README with a props table + MIT LICENSE, plus a live demo route. Built off the in-repo copy unchanged (it imports only `svelte`). The earlier **open question is resolved** — chose a **separate standalone repo + `@nicbat/` scope** over a monorepo workspace.
+
+What **remains** (and is deliberately **not** 1.0-blocking, per the user): media-manager still uses its **local copy** at [`src/lib/components/masonry/`](../src/lib/components/masonry/Masonry.svelte). Swap that for the GitHub dependency so the two don't drift. The package's `prepare` script runs `svelte-package`, so a git install builds `dist/` on the consumer's machine — no pre-built artifacts needed. `npm publish --access public` to the npm registry is a later, separate step (no code change from where the package is now).
 
 ### 35 · Remove (or actually use) the `sharp` dependency
 
@@ -507,29 +553,13 @@ acceptance:
 
 Partly shipped already (the `?record=` deep link landed with the sub-app restructure). The fuller vision: per-file routes (`/media/file/[id]`), per-class routes, shareable filter URLs — so app state is addressable and bookmarkable. **Enabler:** unblocks the clean "go to file" affordance (Item 26) and the mobile drill-down (Item 29). **Open questions:** the route-tree shape; how much in-page state migrates to URLs.
 
-### 18 · Records Storage Reorganization
-
-```yaml
-status: discussion
-size: M
-usefulness: 2
-priority: low
-files: [src/lib/storage/jsonRepo.ts, src/lib/storage/paths.ts]
-depends_on: []
-open_questions: 3
-acceptance:
-  - (Decide the json-side layout before moving any files)
-```
-
-Parallel to the file-first `media/` reorg: move the `json`-kind side under a top-level `records/` folder (record files + `records/settings.json`). Internal layout change, low direct user value. **Now revisitable** since the classes layout is settled. **Open questions:** how `globals` fits; whether each json "type" is a subfolder; what lives in `records/settings.json` vs. per-type; migration from today's top-level per-type folders.
-
 ### 19 · Per-Class "Should / Shouldn't Be Here" Review (excludedFiles successor)
 
 ```yaml
 status: discussion
 size: M
-usefulness: 2
-priority: low
+usefulness: 3
+priority: medium
 files: [src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts]
 depends_on: []
 open_questions: 0
@@ -540,6 +570,8 @@ acceptance:
 ```
 
 The file-first redesign removed per-class `excludedFiles` (membership is opt-in). This reintroduces the **useful** half — triage — without the opt-out burden. `discussion` because it's a design idea (the value/shape isn't confirmed), even though the mechanics are clear. Keep distinct from delete-from-disk (global) and remove-from-class (drops membership).
+
+**Deferred out of 1.0 (decided 2026-06-28).** The mechanics are trivial, but `dismiss-as-candidate` only pays off when there's a candidate _suggestion_ stream worth suppressing — and today the only candidate source is the existing **"Unclassified"** filter (a manual scan, no heuristic). The cheap "Unclassified-only" version is a checkmark that doesn't earn its UI; the valuable version needs a **heuristic candidate source** (extension / EXIF / name match), which is a bigger, separate suggestion-engine feature. So 1.0 ships without it. Kept at `usefulness: 3 · priority: medium` because once a heuristic candidate source exists this becomes genuinely useful; revisit then. Independent of Item 18 (records-side; `media/` internals untouched), so nothing here was unblocked by that reorg.
 
 ### 16 · Open Design Questions
 
@@ -571,7 +603,12 @@ status: blocked
 size: M
 usefulness: 3
 priority: medium
-files: [src/routes/files/+page.svelte, src/routes/api/files/upload/+server.ts, src/lib/storage/classRepo.ts]
+files:
+  [
+    src/routes/files/+page.svelte,
+    src/routes/api/files/upload/+server.ts,
+    src/lib/storage/classRepo.ts
+  ]
 depends_on: []
 open_questions: 4
 acceptance:
@@ -583,6 +620,30 @@ acceptance:
 > 🔧 **Stale refs repointed.** Original pointers named `ImageEditorPane.svelte` + `repo.ts` (removed). Upload now flows through [`files/+page.svelte`](../src/routes/files/+page.svelte) → [`/api/files/upload`](../src/routes/api/files/upload/+server.ts) → [`classRepo.ts`](../src/lib/storage/classRepo.ts).
 
 User-requested; **decisions locked:** capture the relative path within the dropped folder; user picks an existing schema field per upload; relative-path-only (browser limitation). **Open questions (block):** filename collisions in the flat global store (Item 6 shipped, which helps — relative path can disambiguate); populate-only-when-empty vs. always-overwrite; remember last-used field per type; ship `webkitdirectory` input first vs. drag-drop directory support too.
+
+### 41 · Manual ordering of classes & record types in the rails
+
+```yaml
+status: discussion
+size: M
+usefulness: 2
+priority: low
+files:
+  [
+    src/lib/components/rail/EntityRail.svelte,
+    src/lib/components/records/RecordsRail.svelte,
+    src/lib/storage/mediaSettings.ts,
+    src/routes/api/classes/+server.ts
+  ]
+depends_on: [18]
+open_questions: 1
+acceptance:
+  - User can reorder classes in the /files rail and record types in the /media rail; the order persists
+  - classOrder (media/settings.json) and typeOrder (records/settings.json) are applied as sort-on-read in the canonical list endpoints (/api/classes GET, /api/media-types listing) so every consumer (rail, command palette, file picker) inherits the order
+  - Newly created / unlisted entities append after the ordered ones, by the existing default sort
+```
+
+Today `classOrder` (in `media/settings.json`) is a **dead/latent field** — defined and preserved-on-write but never read or applied, and there's no reorder UI. Item 18 adds the symmetric dormant `typeOrder` to `records/settings.json`. **This item activates both at once** so classes and record types stay in sync by construction: build the reorder UX + server-side sort-on-read for both sides. **Decided:** persist to the existing `classOrder`/`typeOrder` fields; sort server-side at the canonical list endpoints (not per-component); unlisted entities append by the current default order. **Open question:** the reorder interaction — `⋮` **Move up / Move down** in the existing `EntityRowMenu` (lower-risk, reuses a shipped component, keyboard-accessible) vs. **drag-and-drop** (mirrors `GlobalsEditorPane`'s drag, more code) vs. both. **Split out of Item 18** deliberately — ordering is a feature, not a migration, so it was dropped from 1.0 and kept here. Not 1.0.
 
 ### 29 · Records Explorer — Mobile / Narrow Drill-Down
 
@@ -607,15 +668,18 @@ The Records Explorer ships as a desktop three-pane layout; three columns don't f
 
 Archive — kept as tombstones so cross-references and the triage board resolve. **Authoritative status lives in [`FEATURES.md`](FEATURES.md).** Do not re-litigate these here.
 
-| # | Item | Disposition |
-| --- | --- | --- |
-| 1 | File Field Picker UI | ✅ **Shipped** — `FilePicker` over the global blob store (search + thumbnails), stores the chosen blob id. |
-| 2 | Missing File Indicators (API + UI) | ✅ **Shipped** — flagged end-to-end (`missing_file_fields` / `_missing_files`); grid badges + inline editor warnings. |
-| 6 | Stable File IDs | ✅ **Shipped (Option 3)** — manifest UUIDs, O(1) rename, lazy-heal. Foundational for Items 7/12/17. See `STABLE_FILE_IDS.md`. |
-| 22 | Group-by across multiple classes ("all of" view) | ✅ **Shipped** — Group-by lists one `(class, field)` per intersected class; `listAllFiles` takes `groupBy`. |
-| 28 | Per-Type / Per-Class Icon Picker | ✅ **Shipped** — curated Lucide set in the unified `EntitySettingsDialog`; rendered on rails, breadcrumb, palette, grid chips. |
-| 9 | Sorting & Ordering | ✅ **Shipped** — shared `SortControl` + `core/sort.ts` comparator (empties-last, stable tie-break); `?sort&dir` on records `list` / `/api/files` / class `members`; persisted per-entity (type `settings.json` · class `config` · `media/settings.json`). Folded in: last-modified shown in the side panels (`core/datetime.ts`). |
-| 10 | Filter for Missing / Empty Fields | ✅ **Shipped** — rail "Show" group (`EmptyFieldFilter`): "Incomplete only" (any empty user field) + per-field "is empty"; on Records + single-class Files catalog. One shared empty predicate (`core/filters.ts` `isEmptyValue`/`recordHasEmptyField`); `?incomplete` on records `list` / class `members`, per-field via `?filters`. Transient (not persisted). Complements Item 2 (missing **file** references). |
-| 13 | Swap Width/Height (orientation fix) | ✅ **Shipped (reframed)** — became a **dimension-consistency check + fix**: surfaces only when stored manifest dims disagree with the real **orientation-corrected** image (warning badge on `MetadataButton` + in-dialog banner). Smart "Correct dimensions" + manual "Swap W↔H"; dependency-free (exiftool). Orientation rule in `core/images.ts`; `compareStoredVsImage`/`dimensionConsistency` in `fileMetadata.ts`; `setBlobDimensions` in `manifest.ts`; `GET .../dimension-check` + `POST .../dimensions`. Pixel re-encode deferred (Item 35/`sharp`). |
-| 12 | Fix / Normalize File Extension (+ rename UX) | ✅ **Shipped** — magic-byte sniff (PNG/JPG/GIF/TIFF/WEBP/BMP/PDF/HEIC) flags a name extension that disagrees with content; shares the `MetadataButton` warning **badge** (`needsAttention = dim‖ext`) + a one-tap **"Fix to .png"** hint in the editor header. The header rename was made first-class — **split base-name + extension fields** (commit on blur/Enter), retiring the duplicate dialog rename. Pure `detectExtensionMismatch`/`extensionConsistency` in `fileMetadata.ts`; `GET .../extension-check`; reuses O(1) `renameBlobById`. No auto-fix-on-upload, no bulk fix. |
-| 27 | npx Package Distribution | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)". |
+| #   | Item                                             | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | File Field Picker UI                             | ✅ **Shipped** — `FilePicker` over the global blob store (search + thumbnails), stores the chosen blob id.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 2   | Missing File Indicators (API + UI)               | ✅ **Shipped** — flagged end-to-end (`missing_file_fields` / `_missing_files`); grid badges + inline editor warnings.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 6   | Stable File IDs                                  | ✅ **Shipped (Option 3)** — manifest UUIDs, O(1) rename, lazy-heal. Foundational for Items 7/12/17. See `STABLE_FILE_IDS.md`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 22  | Group-by across multiple classes ("all of" view) | ✅ **Shipped** — Group-by lists one `(class, field)` per intersected class; `listAllFiles` takes `groupBy`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 28  | Per-Type / Per-Class Icon Picker                 | ✅ **Shipped** — curated Lucide set in the unified `EntitySettingsDialog`; rendered on rails, breadcrumb, palette, grid chips.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 9   | Sorting & Ordering                               | ✅ **Shipped** — shared `SortControl` + `core/sort.ts` comparator (empties-last, stable tie-break); `?sort&dir` on records `list` / `/api/files` / class `members`; persisted per-entity (type `settings.json` · class `config` · `media/settings.json`). Folded in: last-modified shown in the side panels (`core/datetime.ts`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 10  | Filter for Missing / Empty Fields                | ✅ **Shipped** — rail "Show" group (`EmptyFieldFilter`): "Incomplete only" (any empty user field) + per-field "is empty"; on Records + single-class Files catalog. One shared empty predicate (`core/filters.ts` `isEmptyValue`/`recordHasEmptyField`); `?incomplete` on records `list` / class `members`, per-field via `?filters`. Transient (not persisted). Complements Item 2 (missing **file** references).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 13  | Swap Width/Height (orientation fix)              | ✅ **Shipped (reframed)** — became a **dimension-consistency check + fix**: surfaces only when stored manifest dims disagree with the real **orientation-corrected** image (warning badge on `MetadataButton` + in-dialog banner). Smart "Correct dimensions" + manual "Swap W↔H"; dependency-free (exiftool). Orientation rule in `core/images.ts`; `compareStoredVsImage`/`dimensionConsistency` in `fileMetadata.ts`; `setBlobDimensions` in `manifest.ts`; `GET .../dimension-check` + `POST .../dimensions`. Pixel re-encode deferred (Item 35/`sharp`).                                                                                                                                                                                                                                                                                                                                                         |
+| 12  | Fix / Normalize File Extension (+ rename UX)     | ✅ **Shipped** — magic-byte sniff (PNG/JPG/GIF/TIFF/WEBP/BMP/PDF/HEIC) flags a name extension that disagrees with content; shares the `MetadataButton` warning **badge** (`needsAttention = dim‖ext`) + a one-tap **"Fix to .png"** hint in the editor header. The header rename was made first-class — **split base-name + extension fields** (commit on blur/Enter), retiring the duplicate dialog rename. Pure `detectExtensionMismatch`/`extensionConsistency` in `fileMetadata.ts`; `GET .../extension-check`; reuses O(1) `renameBlobById`. No auto-fix-on-upload, no bulk fix.                                                                                                                                                                                                                                                                                                                                  |
+| 34  | Reimplement masonry grid layout                  | ✅ **Shipped** — replaced `@masonry-grid/svelte` with an in-house, dependency-free, order-preserving balanced packer (`src/lib/components/masonry/Masonry.svelte`), wired into `DataGrid`'s thumbnail variant behind the existing `GridSize` (`minColumnWidth`); images render at native aspect ratio (no fixed-height frames — height is estimated for column-balancing only, so it can't clip/misalign). Old library removed. Publishable-extraction follow-up = [Item 39](#cluster-asset-pipeline--deps).                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 8   | Configurable & Verbose Grid Display              | ✅ **Shipped 2026-06-28** — opt-in **"Show"** mode: shared `VerboseFieldsMenu` (`Show ▾` popover: **Show on tiles** toggle + **grouped** scrollable 6-item-capped checkboxes w/ divider headers) renders chosen items as key/value rows under each tile/row, on **both** Files (`DataGrid` masonry card) and Records (`RecordListColumn`). Two groups: **File info** (intrinsic size/dimensions/type/date-added, namespaced `file:*`, client-side, in **every** Files view incl. catalog) + **Fields** (class/type schema, server-resolved inline as `field_values` via `?fields=`, shared `buildFieldValues` — no per-tile fetch). Catalog can mix both; All Files = File info only; Records = its fields. Persisted durable per-entity (class `config` · type `settings.json` · `media/settings.json`). Plan: `plans/v1.0/08-verbose-grid-plan.html`. Virtualization carved out → [Item 40](#cluster-grid--display). |
+| 18  | Records Storage Reorganization                   | ✅ **Shipped 2026-06-28** — `json` record types moved under `<root>/records/<typeId>/`; app-wide prefs hoisted to `<root>/settings.json` (`media/settings.json` keeps only `classOrder`); new `records/settings.json` holds a **dormant** `typeOrder`; reserved `globals` stays top-level; dead `dataFileName` dropped (`data.json` hardcoded). Resolution via `getMediaTypeBaseDir`/`listMediaTypeIds` (scans `records/` + folds in `globals`). Explicit `upgrade-data` step 6 (idempotent); no dual-read — `hooks.server.ts` + `layoutGuard.ts` fail loudly on the old flat layout. Plan: `plans/v1.0/18-records-storage-reorg-plan.html`. Reorder UX split to [Item 41](#cluster-misc-fixes--polish).                                                                                                                                                                                                               |
+| 27  | npx Package Distribution                         | ➡️ **Folded into [Item 30](#30--editor-npx-setup--zero-config-root-discovery-mode-a)** — publish mechanics now live in Item 30's "Publishing (later phase)".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

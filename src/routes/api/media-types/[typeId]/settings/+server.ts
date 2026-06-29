@@ -6,6 +6,7 @@ import {
 	readMediaTypeSettingsFileSync,
 	writeMediaTypeSettingsFile
 } from '$lib/storage/settingsFile.js';
+import { MAX_VERBOSE_FIELDS } from '$lib/core/recordDisplay.js';
 import { z } from 'zod';
 
 const SettingsPatchSchema = z.object({
@@ -19,7 +20,11 @@ const SettingsPatchSchema = z.object({
 	// The list sort direction.
 	sortDir: z.enum(['asc', 'desc']).optional(),
 	// Per-type icon id (a curated Lucide id). Empty string clears it (back to the generic fallback).
-	icon: z.string().max(64).optional()
+	icon: z.string().max(64).optional(),
+	// Verbose grid (Item 8): show each row's chosen fields as key/value rows.
+	verbose: z.boolean().optional(),
+	// Verbose grid (Item 8): the schema field keys shown per row (capped server-side at MAX_VERBOSE_FIELDS).
+	verboseFields: z.array(z.string().max(256)).optional()
 });
 
 /** GET: Current settings for this `json` media type. */
@@ -33,12 +38,13 @@ export const GET: RequestHandler = async ({ params }) => {
 		return json({
 			displayName: settings.displayName,
 			kind: settings.kind,
-			dataFileName: settings.dataFileName,
 			displayField: settings.displayField ?? '',
 			subtitleField: settings.subtitleField ?? '',
 			sortField: settings.sortField ?? '',
 			sortDir: settings.sortDir ?? '',
-			icon: settings.icon ?? ''
+			icon: settings.icon ?? '',
+			verbose: settings.verbose ?? false,
+			verboseFields: settings.verboseFields ?? []
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
@@ -77,6 +83,12 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		if (parsed.data.sortDir !== undefined) patch.sortDir = parsed.data.sortDir;
 		// Empty string clears the icon (back to the generic fallback); any other value persists it.
 		if (parsed.data.icon !== undefined) patch.icon = parsed.data.icon || undefined;
+		// Verbose grid (Item 8): persist the toggle + the chosen fields (clamped to MAX_VERBOSE_FIELDS).
+		if (parsed.data.verbose !== undefined) patch.verbose = parsed.data.verbose || undefined;
+		if (parsed.data.verboseFields !== undefined)
+			patch.verboseFields = parsed.data.verboseFields.length
+				? parsed.data.verboseFields.slice(0, MAX_VERBOSE_FIELDS)
+				: undefined;
 		const updated = await writeMediaTypeSettingsFile(paths.baseDir, patch as never);
 		return json({
 			displayName: updated.displayName,
@@ -85,7 +97,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			subtitleField: updated.subtitleField ?? '',
 			sortField: updated.sortField ?? '',
 			sortDir: updated.sortDir ?? '',
-			icon: updated.icon ?? ''
+			icon: updated.icon ?? '',
+			verbose: updated.verbose ?? false,
+			verboseFields: updated.verboseFields ?? []
 		});
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

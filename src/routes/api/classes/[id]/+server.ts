@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { readClassFile, updateClassConfig, deleteClass } from '$lib/storage/classRepo.js';
+import { MAX_VERBOSE_FIELDS } from '$lib/core/recordDisplay.js';
 
 const ConfigPatchSchema = z.object({
 	displayName: z.string().min(1).max(256).optional(),
@@ -12,7 +13,11 @@ const ConfigPatchSchema = z.object({
 	sortDir: z.enum(['asc', 'desc']).optional(),
 	gridSize: z.enum(['small', 'medium', 'large']).optional(),
 	// Per-class icon id (a curated Lucide id; '' resolves to the generic fallback when rendered).
-	icon: z.string().max(64).optional()
+	icon: z.string().max(64).optional(),
+	// Verbose grid (Item 8): show each catalog tile's chosen fields as key/value rows.
+	verbose: z.boolean().optional(),
+	// Verbose grid (Item 8): the class schema field keys shown per tile (capped at MAX_VERBOSE_FIELDS).
+	verboseFields: z.array(z.string().max(256)).optional()
 });
 
 /** GET: A class's schema + config (the editor/grid bootstrap). */
@@ -36,6 +41,12 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		// Empty `sortField` clears the per-class sort override (back to default).
 		const patch = { ...parsed.data };
 		if (patch.sortField === '') patch.sortField = undefined;
+		// Verbose grid (Item 8): clamp the field set defensively; drop an off+empty pair to undefined.
+		if (patch.verboseFields !== undefined)
+			patch.verboseFields = patch.verboseFields.length
+				? patch.verboseFields.slice(0, MAX_VERBOSE_FIELDS)
+				: undefined;
+		if (patch.verbose === false) patch.verbose = undefined;
 		const config = await updateClassConfig(params.id, patch);
 		return json({ success: true, config });
 	} catch (err) {

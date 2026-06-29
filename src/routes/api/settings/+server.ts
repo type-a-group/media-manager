@@ -18,7 +18,10 @@ const PatchSchema = z.object({
 	railCollapsed: z.boolean().optional(),
 	// All Files hub list sort (Item 9). Empty string clears the override (default sort).
 	sortField: z.string().max(256).optional(),
-	sortDir: z.enum(['asc', 'desc']).optional()
+	sortDir: z.enum(['asc', 'desc']).optional(),
+	// All Files hub verbose grid (Item 8): intrinsic field keys shown per tile (size/dimensions/type/created).
+	verbose: z.boolean().optional(),
+	verboseFields: z.array(z.string().max(64)).optional()
 });
 
 /** GET: current global settings. */
@@ -30,7 +33,9 @@ export const GET: RequestHandler = async () => {
 		autoSaveOnAdvance: s.autoSaveOnAdvance,
 		railCollapsed: s.railCollapsed,
 		sortField: s.sortField ?? '',
-		sortDir: s.sortDir ?? ''
+		sortDir: s.sortDir ?? '',
+		verbose: s.verbose ?? false,
+		verboseFields: s.verboseFields ?? []
 	});
 };
 
@@ -44,6 +49,10 @@ export const POST: RequestHandler = async ({ request }) => {
 	// Empty `sortField` clears the override (back to default); coerce to undefined so it isn't persisted.
 	const patch = { ...parsed.data };
 	if (patch.sortField === '') patch.sortField = undefined;
+	// Verbose grid (Item 8): drop an off/empty pair to undefined so it isn't persisted.
+	if (patch.verbose === false) patch.verbose = undefined;
+	if (patch.verboseFields !== undefined && patch.verboseFields.length === 0)
+		patch.verboseFields = undefined;
 	const updated = await writeMediaSettings(patch);
 	return json({
 		gridSize: updated.gridSize,
@@ -51,6 +60,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		autoSaveOnAdvance: updated.autoSaveOnAdvance,
 		railCollapsed: updated.railCollapsed,
 		sortField: updated.sortField ?? '',
-		sortDir: updated.sortDir ?? ''
+		sortDir: updated.sortDir ?? '',
+		verbose: updated.verbose ?? false,
+		verboseFields: updated.verboseFields ?? []
 	});
 };

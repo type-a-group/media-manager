@@ -210,3 +210,67 @@ describe('missing-file detection helpers', () => {
 		expect(available.has(onDisk![0])).toBe(true);
 	});
 });
+
+describe('quiet heal — write only on real change (Item 32)', () => {
+	let root: string;
+	let filesDir: string;
+	let manifestPath: string;
+
+	beforeEach(() => {
+		root = path.join(tmpdir(), `mm-quiet-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+		filesDir = path.join(root, 'media', 'files');
+		manifestPath = path.join(root, 'media', 'manifest.json');
+		fs.mkdirSync(filesDir, { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	/**
+	 * Backdate the manifest's mtime so a subsequent real write is unambiguously detectable, and return
+	 * the stored value. (A no-op reconcile must leave this untouched; a real change must advance it.)
+	 */
+	function freezeAndReadMtime(): number {
+		const old = new Date(Date.now() - 60_000);
+		fs.utimesSync(manifestPath, old, old);
+		return fs.statSync(manifestPath).mtimeMs;
+	}
+
+	it('reconcile does NOT rewrite the manifest when nothing changed (zero browse churn)', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		await reconcile(['a.png']); // first run mints + writes
+		const before = freezeAndReadMtime();
+
+		const result = await reconcile(['a.png']); // identical disk state — must be a no-op
+
+		expect(fs.statSync(manifestPath).mtimeMs).toBe(before); // file was not touched
+		expect(result.added).toHaveLength(0);
+		expect(result.missing).toHaveLength(0);
+	});
+
+	it('reconcile rewrites + reports when a new blob appears on disk', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		await reconcile(['a.png']);
+		const before = freezeAndReadMtime();
+
+		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');
+		const result = await reconcile(['a.png', 'b.png']); // real change
+
+		expect(fs.statSync(manifestPath).mtimeMs).toBeGreaterThan(before); // file was rewritten
+		expect(result.added.map((a) => a.file_name)).toEqual(['b.png']);
+	});
+
+	it('reconcile rewrites + reports when a known blob goes missing, then is quiet while it stays missing', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		await mintFileId('b.png'); // registered but never on disk-list below
+		await reconcile(['a.png', 'b.png']);
+		const before = freezeAndReadMtime();
+
+		const result = await reconcile(['a.png']); // b.png vanished → flip missing flag, write once
+		expect(fs.statSync(manifestPath).mtimeMs).toBeGreaterThan(before);
+		expect(result.missing.map((m) => m.file_name)).toContain('b.png');
+
+		// Already-flagged-missing on the next browse ⇒ no further write.
+		const after = freezeAndReadMtime();
+		await reconcile(['a.png']);
+		expect(fs.statSync(manifestPath).mtimeMs).toBe(after);
+	});
+});

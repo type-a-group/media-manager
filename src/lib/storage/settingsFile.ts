@@ -4,9 +4,6 @@ import path from 'node:path';
 import { writeJsonFileAtomic } from './json.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
 
-/** Default data filename for `json` media types. */
-export const DEFAULT_DATA_FILENAME_JSON = 'data.json';
-
 /**
  * Media type kind. After the file-first redesign the only top-level media-type kind is `json`
  * (records, no file attachments); all file-backed catalogs are now **classes** under `media/classes/`.
@@ -19,7 +16,6 @@ export type MediaTypeKind = 'json';
  * @param displayName - Human-readable name for the media type
  * @param kind - Always `json`
  * @param schema - Field definitions (embedded)
- * @param dataFileName - Filename for the records JSON (default `data.json`)
  * @param displayField - The schema field used to title each record row in the Records Explorer list
  *   ("title by"). Persisted so the choice sticks across type switches — the records-side analogue of
  *   {@link ClassConfig.displayField}. Absent ⇒ fall back to the `name` field / first string field.
@@ -29,20 +25,24 @@ export type MediaTypeKind = 'json';
  *   field key. Persisted per-type, like {@link displayField}; absent ⇒ the default (`last_modified`).
  * @param sortDir - Sort direction (`asc` | `desc`); absent ⇒ `desc` (most recent first).
  *
- * Grid size and navigation prefs are **global** app settings (`media/settings.json` via
- * `mediaSettings.ts`), not per-type — they are intentionally absent here.
+ * Grid size and navigation prefs are **global** app settings (`<root>/settings.json` via
+ * `mediaSettings.ts`), not per-type — they are intentionally absent here. The records JSON is always
+ * `data.json` (the configurable `dataFileName` was dropped in Item 18).
  */
 export interface MediaTypeSettingsFile {
 	displayName?: string;
 	kind: MediaTypeKind;
 	schema?: SchemaDefinition;
-	dataFileName?: string;
 	displayField?: string;
 	subtitleField?: string;
 	sortField?: string;
 	sortDir?: 'asc' | 'desc';
 	/** Optional per-type icon — a curated Lucide id (see `core/icons.ts`); absent ⇒ generic fallback. */
 	icon?: string;
+	/** Verbose grid (Item 8): when true the record list shows each row's `verboseFields` as key/value rows. */
+	verbose?: boolean;
+	/** Verbose grid (Item 8): the schema field keys (≤ `MAX_VERBOSE_FIELDS`) shown per row when `verbose`. */
+	verboseFields?: string[];
 }
 
 /**
@@ -66,13 +66,15 @@ export function readMediaTypeSettingsFileSync(baseDir: string): MediaTypeSetting
 			displayName: typeof parsed.displayName === 'string' ? parsed.displayName : undefined,
 			kind: 'json',
 			schema,
-			dataFileName:
-				typeof parsed.dataFileName === 'string' ? parsed.dataFileName : DEFAULT_DATA_FILENAME_JSON,
 			displayField: typeof parsed.displayField === 'string' ? parsed.displayField : undefined,
 			subtitleField: typeof parsed.subtitleField === 'string' ? parsed.subtitleField : undefined,
 			sortField: typeof parsed.sortField === 'string' ? parsed.sortField : undefined,
 			sortDir: parsed.sortDir === 'asc' || parsed.sortDir === 'desc' ? parsed.sortDir : undefined,
-			icon: typeof parsed.icon === 'string' ? parsed.icon : undefined
+			icon: typeof parsed.icon === 'string' ? parsed.icon : undefined,
+			verbose: typeof parsed.verbose === 'boolean' ? parsed.verbose : undefined,
+			verboseFields: Array.isArray(parsed.verboseFields)
+				? (parsed.verboseFields.filter((f) => typeof f === 'string') as string[])
+				: undefined
 		};
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException;
@@ -98,12 +100,13 @@ export async function writeMediaTypeSettingsFile(
 				displayName: patch.displayName,
 				kind: patch.kind,
 				schema: patch.schema ?? {},
-				dataFileName: patch.dataFileName ?? DEFAULT_DATA_FILENAME_JSON,
 				displayField: patch.displayField,
 				subtitleField: patch.subtitleField,
 				sortField: patch.sortField,
 				sortDir: patch.sortDir,
-				icon: patch.icon
+				icon: patch.icon,
+				verbose: patch.verbose,
+				verboseFields: patch.verboseFields
 			};
 	const settingsPath = path.join(baseDir, 'settings.json');
 	await fs.mkdir(path.dirname(settingsPath), { recursive: true });

@@ -3,6 +3,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { FileText, TriangleAlert } from 'lucide-svelte';
 	import EntityIcon from '$lib/components/EntityIcon.svelte';
+	import { Masonry } from '$lib/components/masonry/index.js';
 	import { gridColMin, type GridItem, type GridConfig, type GridCallbacks } from './types.js';
 
 	/**
@@ -10,6 +11,10 @@
 	 * data-fetching or mutation: the host maps its rows to {@link GridItem}s, optionally pre-groups
 	 * them, and injects toolbar/bulk controls via snippets. Grouping is host-side so the grid stays
 	 * agnostic of how each side derives a group value.
+	 *
+	 * The `thumbnail` variant lays tiles out as a balanced {@link Masonry} so images keep their native
+	 * aspect ratio (the column-balancing reads `GridItem.aspectRatio`); the name-forward `text` variant
+	 * (json records, no blob to preview) stays a uniform square CSS grid.
 	 *
 	 * @param items - Flat, already-filtered/ordered items (used when `groups` is null).
 	 * @param groups - Pre-grouped `[groupKey, items][]`; a null key renders an unlabelled section.
@@ -38,6 +43,8 @@
 	const sections = $derived<[string | null, GridItem[]][]>(groups ?? [[null, items]]);
 	const total = $derived(sections.reduce((n, [, list]) => n + list.length, 0));
 	const colMin = $derived(gridColMin(config.size));
+	/** Masonry for image tiles (native aspect ratio); uniform square CSS grid for name-forward records. */
+	const masonry = $derived(config.variant !== 'text');
 	const gridStyle = $derived(`grid-template-columns: repeat(auto-fill, minmax(${colMin}px, 1fr))`);
 </script>
 
@@ -70,21 +77,29 @@
 					{item.primaryLabel}
 				</span>
 			</div>
+		{:else if item.thumbnailUrl}
+			<!--
+				Image tile: render at the blob's true aspect ratio (no crop) — that is the point of the
+				masonry. When the manifest recorded dims we set `aspect-ratio` up front so the box reserves
+				space and there's no load-shift; when it didn't, the image flows to its natural size on load
+				(`height:auto`) and the masonry just balanced it as a square — harmless per the Masonry note.
+			-->
+			<img
+				src={item.thumbnailUrl}
+				alt={item.primaryLabel}
+				class="block w-full bg-muted {item.aspectRatio && item.aspectRatio > 0
+					? 'h-full object-cover'
+					: 'h-auto'}"
+				style={item.aspectRatio && item.aspectRatio > 0 ? `aspect-ratio: ${item.aspectRatio}` : ''}
+				loading="lazy"
+			/>
 		{:else}
+			<!-- No blob to preview (non-image / missing): square file-icon fallback. -->
 			<div class="flex aspect-square items-center justify-center bg-muted">
-				{#if item.thumbnailUrl}
-					<img
-						src={item.thumbnailUrl}
-						alt={item.primaryLabel}
-						class="h-full w-full object-cover"
-						loading="lazy"
-					/>
-				{:else}
-					<FileText class="size-8 text-muted-foreground" />
-				{/if}
+				<FileText class="size-8 text-muted-foreground" />
 			</div>
 		{/if}
-		{#if config.variant !== 'text' || item.chips.length > 0 || item.extraChips || item.secondaryLabel}
+		{#if config.variant !== 'text' || item.chips.length > 0 || item.extraChips || item.secondaryLabel || item.fields?.length}
 			<div class="p-1.5">
 				{#if config.variant !== 'text'}
 					<div class="truncate text-xs" title={item.primaryLabel}>{item.primaryLabel}</div>
@@ -93,6 +108,17 @@
 					<div class="truncate text-[11px] text-muted-foreground" title={item.secondaryLabel}>
 						{item.secondaryLabel}
 					</div>
+				{/if}
+				{#if item.fields?.length}
+					<!-- Verbose mode (Item 8): key/value rows under the label; empty values render a muted dash. -->
+					<dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px] leading-tight">
+						{#each item.fields as f (f.label)}
+							<dt class="truncate text-muted-foreground" title={f.label}>{f.label}</dt>
+							<dd class="truncate {f.value ? '' : 'text-muted-foreground'}" title={f.value}>
+								{f.value || '—'}
+							</dd>
+						{/each}
+					</dl>
 				{/if}
 				{#if item.chips.length > 0 || item.extraChips}
 					<div class="mt-0.5 flex flex-wrap gap-0.5">
@@ -142,11 +168,25 @@
 							<span class="ml-1 font-normal">({groupItems.length})</span>
 						</h3>
 					{/if}
-					<div class="grid gap-3" style={gridStyle}>
-						{#each groupItems as item (item.id)}
-							{@render tile(item)}
-						{/each}
-					</div>
+					{#if masonry}
+						<Masonry
+							items={groupItems}
+							getKey={(item) => item.id}
+							aspectRatio={(item) => item.aspectRatio}
+							minColumnWidth={colMin}
+							gap={12}
+						>
+							{#snippet children(item)}
+								{@render tile(item)}
+							{/snippet}
+						</Masonry>
+					{:else}
+						<div class="grid gap-3" style={gridStyle}>
+							{#each groupItems as item (item.id)}
+								{@render tile(item)}
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		{/if}

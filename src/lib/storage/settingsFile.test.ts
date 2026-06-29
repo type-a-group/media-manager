@@ -2,11 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import path from 'node:path';
-import {
-	readMediaTypeSettingsFileSync,
-	writeMediaTypeSettingsFile,
-	DEFAULT_DATA_FILENAME_JSON
-} from './settingsFile.js';
+import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
 
 describe('settingsFile displayField (persisted "title by")', () => {
 	let dir: string;
@@ -27,7 +23,6 @@ describe('settingsFile displayField (persisted "title by")', () => {
 		expect(after?.displayField).toBe('title');
 		// Other fields are preserved across the partial merge.
 		expect(after?.displayName).toBe('Books');
-		expect(after?.dataFileName).toBe(DEFAULT_DATA_FILENAME_JSON);
 	});
 
 	it('clears displayField when written as undefined', async () => {

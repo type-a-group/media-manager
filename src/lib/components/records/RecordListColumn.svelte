@@ -6,6 +6,7 @@
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
+	import VerboseFieldsMenu from '$lib/components/data-grid/VerboseFieldsMenu.svelte';
 	import { ListChecks, Plus, X, AlertTriangle } from 'lucide-svelte';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import { recordListTitle, recordListSubtitle } from '$lib/core/recordDisplay.js';
@@ -42,6 +43,9 @@
 		sortField = $bindable(''),
 		sortDir = $bindable('desc'),
 		onSortChange,
+		verbose = $bindable(false),
+		verboseFields = $bindable<string[]>([]),
+		onVerboseChange,
 		selectionMode,
 		selectedIds,
 		selectedRecordId,
@@ -63,6 +67,10 @@
 		sortField?: string;
 		sortDir?: SortDir;
 		onSortChange?: () => void;
+		/** Verbose grid (Item 8): bindable toggle + chosen fields; `onVerboseChange` persists + reloads. */
+		verbose?: boolean;
+		verboseFields?: string[];
+		onVerboseChange?: () => void;
 		selectionMode: boolean;
 		selectedIds: Set<string>;
 		selectedRecordId: string | null;
@@ -78,6 +86,9 @@
 
 	/** Schema field keys eligible for group-by / title (name first). */
 	const schemaFieldKeys = $derived(schema ? schemaUserFieldKeys(schema) : []);
+
+	/** Verbose-grid field options (Item 8): the type's user fields as `{ key, label }`. */
+	const verboseOptions = $derived(schemaFieldKeys.map((k) => ({ key: k, label: fieldLabel(k) })));
 
 	/** Sort options (Item 9): built-ins + each schema field. */
 	const sortOptions = $derived([
@@ -116,6 +127,17 @@
 	function rowSubtitle(item: JsonListItem): string | null {
 		const s = recordListSubtitle(item);
 		return s && s !== recordListTitle(item) ? s : null;
+	}
+
+	/**
+	 * Verbose-mode key/value rows for a record (Item 8): the server inlined the chosen field set as
+	 * `field_values` (insertion order = the picker order), each value already stringified (`''` when
+	 * empty). Label each key for display; absent ⇒ no rows (compact). Mirrors the Files tile's
+	 * `GridItem.fields`, just rendered in the list row instead of a `DataGrid` tile.
+	 */
+	function verboseRows(item: JsonListItem): { label: string; value: string }[] {
+		const fv = item.field_values;
+		return fv ? Object.entries(fv).map(([k, value]) => ({ label: fieldLabel(k), value })) : [];
 	}
 </script>
 
@@ -175,6 +197,13 @@
 			bind:dir={sortDir}
 			onchange={onSortChange}
 		/>
+		<VerboseFieldsMenu
+			bind:verbose
+			bind:selected={verboseFields}
+			groups={[{ label: 'Fields', options: verboseOptions }]}
+			onchange={onVerboseChange}
+			disabled={verboseOptions.length === 0}
+		/>
 	</div>
 
 	<!-- Bulk bar -->
@@ -233,6 +262,19 @@
 						</span>
 						{#if subtitle}
 							<span class="w-full min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>
+						{/if}
+						{#if verboseRows(item).length}
+							<!-- Verbose mode (Item 8): chosen field values as key/value rows under the row title. -->
+							<dl
+								class="mt-1 grid w-full min-w-0 grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs leading-tight"
+							>
+								{#each verboseRows(item) as f (f.label)}
+									<dt class="truncate text-muted-foreground" title={f.label}>{f.label}</dt>
+									<dd class="truncate {f.value ? '' : 'text-muted-foreground'}" title={f.value}>
+										{f.value || '—'}
+									</dd>
+								{/each}
+							</dl>
 						{/if}
 					</button>
 				</div>

@@ -29,6 +29,7 @@
 	import SearchFieldSelect from '$lib/components/SearchFieldSelect.svelte';
 	import EmptyFieldFilter from '$lib/components/EmptyFieldFilter.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
+	import VerboseFieldsMenu from '$lib/components/data-grid/VerboseFieldsMenu.svelte';
 	import EntityRowMenu from '$lib/components/entity-settings/EntityRowMenu.svelte';
 	import EntitySettingsDialog from '$lib/components/entity-settings/EntitySettingsDialog.svelte';
 	import { classSettingsAdapter } from '$lib/components/entity-settings/adapters.js';
@@ -67,6 +68,17 @@
 	let sortDir = $state<SortDir>('desc');
 	let hubSortField = $state('created_at');
 	let hubSortDir = $state<SortDir>('desc');
+	/**
+	 * Verbose grid (Item 8). `verbose`/`verboseFields` are the **active** choice bound to the toolbar;
+	 * like the sort, the persistence target depends on the view: a solo class catalog saves to its class
+	 * config — a mix of class schema keys (server-resolved into `field_values`) and File-info keys —
+	 * while All Files / multi-class saves to the media-wide hub default (`hubVerbose*`), File-info only.
+	 * File-info keys are resolved client-side. See {@link FILE_INFO_OPTIONS} / {@link verboseGroups}.
+	 */
+	let verbose = $state(false);
+	let verboseFields = $state<string[]>([]);
+	let hubVerbose = $state(false);
+	let hubVerboseFields = $state<string[]>([]);
 	/**
 	 * Empty/incomplete quick-filter (Item 10) — only meaningful in a single-class catalog (it needs a
 	 * schema). Transient (NOT persisted), reset when the solo class changes/clears. `incomplete` keeps
@@ -232,6 +244,76 @@
 		return [...builtins, ...fields].map((k) => ({ value: k, label: sortLabel(k) }));
 	});
 
+	/**
+	 * Verbose grid (Item 8) **File info** options — blob-intrinsic keys that exist for any file
+	 * regardless of class. Available in **every** Files view (incl. a single-class catalog, alongside
+	 * that class's Fields). Keys are namespaced with {@link FILE_INFO_PREFIX} so they coexist with schema
+	 * field keys in one `verboseFields` array and are resolved **client-side** (see {@link intrinsicValue})
+	 * — the server's `field_values` only ever covers real schema fields.
+	 */
+	const FILE_INFO_PREFIX = 'file:';
+	const FILE_INFO_OPTIONS = [
+		{ key: `${FILE_INFO_PREFIX}size`, label: 'Size' },
+		{ key: `${FILE_INFO_PREFIX}dimensions`, label: 'Dimensions' },
+		{ key: `${FILE_INFO_PREFIX}type`, label: 'Type' },
+		{ key: `${FILE_INFO_PREFIX}created`, label: 'Date added' }
+	];
+
+	/**
+	 * Verbose-grid groups for the active view: a **File info** group always, plus a **Fields** group of
+	 * the solo class's schema fields when in a single-class catalog. All Files / multi-class shows File
+	 * info only (heterogeneous blobs have no shared schema).
+	 */
+	const verboseGroups = $derived(
+		soloClass
+			? [
+					{ label: 'File info', options: FILE_INFO_OPTIONS },
+					{
+						label: 'Fields',
+						options: catalogSchemaKeys.map((k) => ({ key: k, label: fieldLabel(k) }))
+					}
+				]
+			: [{ label: 'File info', options: FILE_INFO_OPTIONS }]
+	);
+
+	/** A verboseFields key is a File-info (intrinsic) key vs. a class schema field key. */
+	const isFileInfoKey = (key: string) => key.startsWith(FILE_INFO_PREFIX);
+
+	/** Compact human byte size (e.g. `1.2 MB`); whole numbers for bytes. */
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		const units = ['KB', 'MB', 'GB', 'TB'];
+		let v = bytes / 1024;
+		let i = 0;
+		while (v >= 1024 && i < units.length - 1) {
+			v /= 1024;
+			i++;
+		}
+		return `${v.toFixed(1)} ${units[i]}`;
+	}
+
+	/** Render one File-info (intrinsic) key for a blob to a short string (`''` when unknown). */
+	function intrinsicValue(f: FileItem, key: string): string {
+		const k = key.slice(FILE_INFO_PREFIX.length);
+		if (k === 'size') return f.size != null ? formatBytes(f.size) : '';
+		if (k === 'dimensions') return f.width && f.height ? `${f.width}×${f.height}` : '';
+		if (k === 'type') {
+			const dot = f.file_name.lastIndexOf('.');
+			return dot > 0 ? f.file_name.slice(dot + 1).toUpperCase() : '';
+		}
+		if (k === 'created') return f.created_at ? new Date(f.created_at).toLocaleDateString() : '';
+		return '';
+	}
+
+	/** Label for a verboseFields key — File-info keys come from the fixed list, else the schema label. */
+	function verboseKeyLabel(key: string): string {
+		if (isFileInfoKey(key))
+			return (
+				FILE_INFO_OPTIONS.find((o) => o.key === key)?.label ?? key.slice(FILE_INFO_PREFIX.length)
+			);
+		return fieldLabel(key);
+	}
+
 	/** Load a class's catalog config (group-by + sort defaults, schema keys) for the catalog view. */
 	async function loadCatalogConfig(classId: string) {
 		try {
@@ -241,11 +323,16 @@
 			// Per-class persisted sort; default last_modified desc (catalog rows have records).
 			sortField = detail.config.sortField || 'last_modified';
 			sortDir = detail.config.sortDir === 'asc' ? 'asc' : 'desc';
+			// Per-class persisted verbose grid (Item 8). Fields are class schema keys (server-resolved).
+			verbose = detail.config.verbose ?? false;
+			verboseFields = detail.config.verboseFields ?? [];
 		} catch {
 			catalogSchemaKeys = [];
 			catalogGroupBy = '';
 			sortField = 'last_modified';
 			sortDir = 'desc';
+			verbose = false;
+			verboseFields = [];
 		}
 	}
 
@@ -269,7 +356,13 @@
 					sort: sortField || undefined,
 					dir: sortDir,
 					filters,
-					incomplete: incomplete || undefined
+					incomplete: incomplete || undefined,
+					// Verbose grid (Item 8): only the schema-field keys go to the server (it inlines them as
+					// `field_values`); File-info keys are intrinsic and resolved client-side, so strip them.
+					fields:
+						verbose && verboseFields.length
+							? verboseFields.filter((k) => !isFileInfoKey(k))
+							: undefined
 				});
 				files = data.files;
 			} else {
@@ -277,6 +370,9 @@
 				// Outside a catalog the sort comes from the remembered media-wide hub default.
 				sortField = hubSortField;
 				sortDir = hubSortDir;
+				// Verbose (Item 8) outside a catalog uses the hub default; fields are intrinsic (client-side).
+				verbose = hubVerbose;
+				verboseFields = hubVerboseFields;
 				const [gc, gf] = crossMode && crossGroupBy ? crossGroupBy.split('::') : [];
 				const data = await apiListFiles({
 					query: query || undefined,
@@ -328,6 +424,30 @@
 		} catch (e) {
 			console.error(e);
 			toast.error('Failed to save sort');
+		}
+		await loadFiles();
+	}
+
+	/**
+	 * Persist + apply a verbose-grid change (Item 8). A solo class saves to its class config; every other
+	 * view saves to the media-wide hub default. The control has already updated `verbose`/`verboseFields`.
+	 */
+	async function onVerboseChange() {
+		try {
+			if (soloClass) {
+				await apiUpdateClassConfig(soloClass, { verbose, verboseFields });
+			} else {
+				hubVerbose = verbose;
+				hubVerboseFields = verboseFields;
+				await fetch('/api/settings', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ verbose, verboseFields })
+				});
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to save fields');
 		}
 		await loadFiles();
 	}
@@ -409,10 +529,16 @@
 	/** Map a blob row to a side-agnostic grid item (chips = class membership, capped at 3 + "+N"). */
 	function toGridItem(f: FileItem): GridItem {
 		const shown = f.classes.slice(0, 3);
+		// In a single-class catalog view the server resolves that class's "Title by" field into
+		// `title_value`; show it as the tile label and demote the filename to a muted subtitle so it's
+		// not lost. Outside that view (All Files) `title_value` is absent ⇒ the filename stays primary.
+		const title = f.title_value?.trim();
 		return {
 			id: f.id,
-			primaryLabel: f.file_name,
+			primaryLabel: title || f.file_name,
+			secondaryLabel: title && title !== f.file_name ? f.file_name : undefined,
 			thumbnailUrl: hasAllowedImageExtension(f.file_name) ? apiBlobUrl(f.id) : undefined,
+			aspectRatio: f.width && f.height ? f.width / f.height : undefined,
 			chips:
 				f.classes.length === 0
 					? [{ label: 'unclassified', tone: 'muted' }]
@@ -422,6 +548,16 @@
 							iconFallback: 'tag' as const
 						})),
 			extraChips: f.classes.length > 3 ? f.classes.length - 3 : undefined,
+			// Verbose mode (Item 8): walk the chosen keys in picker order, resolving each from the right
+			// source — File-info (intrinsic) keys client-side, schema-field keys from the server's inlined
+			// `field_values`. This lets a single-class catalog mix both groups on one tile.
+			fields:
+				verbose && verboseFields.length
+					? verboseFields.map((k) => ({
+							label: verboseKeyLabel(k),
+							value: isFileInfoKey(k) ? intrinsicValue(f, k) : (f.field_values?.[k] ?? '')
+						}))
+					: undefined,
 			warning: f.missing_file_fields?.length
 				? `Missing file reference: ${f.missing_file_fields.join(', ')}`
 				: undefined
@@ -481,6 +617,11 @@
 			const s = await fetch('/api/settings').then((r) => r.json());
 			hubSortField = typeof s.sortField === 'string' && s.sortField ? s.sortField : 'created_at';
 			hubSortDir = s.sortDir === 'asc' ? 'asc' : 'desc';
+			// All Files verbose grid (Item 8) hub default.
+			hubVerbose = s.verbose === true;
+			hubVerboseFields = Array.isArray(s.verboseFields)
+				? s.verboseFields.filter((f: unknown): f is string => typeof f === 'string')
+				: [];
 		} catch {
 			/* defaults already set */
 		}
@@ -907,6 +1048,12 @@
 					bind:field={sortField}
 					bind:dir={sortDir}
 					onchange={onSortChange}
+				/>
+				<VerboseFieldsMenu
+					bind:verbose
+					bind:selected={verboseFields}
+					groups={verboseGroups}
+					onchange={onVerboseChange}
 				/>
 				<span class="text-muted-foreground">Size</span>
 				<Select.Root

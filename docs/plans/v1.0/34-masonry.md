@@ -1,6 +1,8 @@
 # Item 34 — Reimplement Masonry Grid Layout
 
-> 1.0 brief. Backlog: [Item 34](../../FUTURE_CHANGES.md#34--reimplement-masonry-grid-layout). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement). **Status: ready.** Coordinate with Item 8 — both touch `DataGrid`.
+> 1.0 brief. Backlog: [Item 34](../../FUTURE_CHANGES.md#shipped--folded) (now a Shipped tombstone). Build process: [working agreement](README.md#how-we-build-each-feature-the-working-agreement).
+>
+> **✅ Shipped 2026-06-28.** Replaced `@masonry-grid/svelte` with an in-house, dependency-free, order-preserving balanced packer ([`src/lib/components/masonry/Masonry.svelte`](../../../src/lib/components/masonry/Masonry.svelte)), wired into `DataGrid`'s `thumbnail` variant behind the existing `GridSize` (records' `text` variant stays a uniform square grid). Images render at native aspect ratio; tile height is **estimated for column-balancing only**, never a fixed pixel height, so a wrong/absent ratio can't clip or misalign a tile (the failure mode the old fixed-frame library had). Old dependency removed. **Follow-up:** [Item 39](../../FUTURE_CHANGES.md#39--extract-masonry-into-a-standalone-publishable-package) — extract the component into its own publishable package (the user committed to this in 1.0; in-repo for now).
 
 ## Backlog snapshot
 

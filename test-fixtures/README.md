@@ -3,17 +3,19 @@
 A **pristine, committed sample data root** in the **file-first layout**, so all storage/UI
 code paths can be exercised:
 
-| Path                           | What                                                                                                             |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `media/files/`                 | The global blob dir: three PNGs, one `.txt`, one transposed `.jpg`, and one mis-extensioned `.jpg`               |
-| `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                                                 |
+| Path                           | What                                                                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `media/files/`                 | The global blob dir: three PNGs, one `.txt`, one transposed `.jpg`, and one mis-extensioned `.jpg`                                                                             |
+| `media/manifest.json`          | Blob registry (v2) with the derived `classes[]` membership index                                                                                                               |
 | `media/files/rotated.jpg`      | Unclassified JPEG with EXIF Orientation 6 + intentionally **transposed** stored dims (1200×800 vs displayed 800×1200) — exercises the Item 13 dimension-mismatch warning + fix |
-| `media/files/mislabeled.jpg`   | Unclassified **PNG bytes** with a `.jpg` name — the sniff detects `.png`, exercising the Item 12 extension-mismatch badge + one-tap "Fix to .png" |
-| `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken); `config.icon: image`  |
-| `media/classes/documents.json` | Class with the `.txt` as a member (any file type); `config.icon: file-text`                                      |
-| `media/settings.json`          | Media-wide prefs (class order, grid size)                                                                        |
-| `notes/`                       | `json` type; two records; `attachment` **file** field (one valid, one broken); `settings.json` `icon: newspaper` |
-| `globals/`                     | The reserved `json` singleton                                                                                    |
+| `media/files/mislabeled.jpg`   | Unclassified **PNG bytes** with a `.jpg` name — the sniff detects `.png`, exercising the Item 12 extension-mismatch badge + one-tap "Fix to .png"                              |
+| `media/classes/images.json`    | Class over the three PNGs; has a `related_doc` **file** field (one valid ref, one broken); `config.icon: image`                                                                |
+| `media/classes/documents.json` | Class with the `.txt` as a member (any file type); `config.icon: file-text`                                                                                                    |
+| `settings.json`                | App-wide UI prefs (grid size, navigation) — hoisted out of `media/settings.json` (Item 18)                                                                                     |
+| `media/settings.json`          | Media-scoped prefs: `classOrder` only (Item 18)                                                                                                                                |
+| `records/settings.json`        | Records-scoped prefs — empty `{}` (the dormant `typeOrder` home; Item 18 / Item 41)                                                                                            |
+| `records/notes/`               | `json` record type; two records; `attachment` **file** field (one valid, one broken); `settings.json` `icon: newspaper`                                                        |
+| `globals/`                     | The reserved `json` singleton — stays **top-level** (not under `records/`)                                                                                                     |
 
 Every blob lives in `media/files/` (`getGlobalFilesDir()`) and is registered in
 `media/manifest.json` with a stable id; a class is a member-keyed metadata table

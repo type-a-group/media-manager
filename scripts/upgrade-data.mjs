@@ -613,17 +613,131 @@ function fileFieldKeys(s) {
 				fs.rmSync(baseDir, { recursive: true, force: true });
 			}
 
-			// 4. Persist manifest + media settings, then drop the old store.
+			// 4. Persist manifest + media settings, then drop the old store. `media/settings.json` holds
+			// only the media-scoped classOrder (Item 18 — app-wide prefs live in <root>/settings.json).
 			writeJsonAtomic(path.join(mediaDir, 'manifest.json'), manifest);
 			if (!fs.existsSync(path.join(mediaDir, 'settings.json'))) {
-				writeJsonAtomic(path.join(mediaDir, 'settings.json'), {
-					classOrder: fileBackedTypes,
-					gridSize: 'medium'
-				});
+				writeJsonAtomic(path.join(mediaDir, 'settings.json'), { classOrder: fileBackedTypes });
 			}
 			fs.rmSync(oldFilesDir, { recursive: true, force: true });
 		}
 	);
+})();
+
+// --- Step 6: records reorg + settings split (Item 18) ---
+// Move top-level `json` record types under `records/`, hoist app-wide prefs from the misnamed
+// `media/settings.json` to `<root>/settings.json`, strip the dead `dataFileName`, and create
+// `records/settings.json`. The reserved `globals` singleton stays top-level. Idempotent: each
+// sub-action is planned only while still needed, so a second run is a no-op.
+(function planRecordsReorg() {
+	const RECORDS_DIR = 'records';
+	const APP_KEYS = [
+		'gridSize',
+		'autoAdvanceToNextUnlinked',
+		'autoSaveOnAdvance',
+		'railCollapsed',
+		'sortField',
+		'sortDir',
+		'verbose',
+		'verboseFields'
+	];
+	const recordsDir = path.join(root, RECORDS_DIR);
+
+	/** Remove the dead `dataFileName` key from a type settings.json, if present. */
+	const stripDataFileName = (settingsPath) => {
+		const s = readJsonSafe(settingsPath);
+		if (s && typeof s === 'object' && 'dataFileName' in s) {
+			delete s.dataFileName;
+			writeJsonAtomic(settingsPath, s);
+		}
+	};
+
+	/** Move a directory, falling back to copy+remove across devices. */
+	const moveDir = (src, dest) => {
+		try {
+			fs.renameSync(src, dest);
+		} catch {
+			fs.cpSync(src, dest, { recursive: true });
+			fs.rmSync(src, { recursive: true, force: true });
+		}
+	};
+
+	// Top-level `json` record types to relocate (globals stays top-level; media/ is the hub).
+	const topLevelTypes = typeDirs.filter(
+		(id) => id !== 'globals' && readSettings(path.join(root, id))?.kind === 'json'
+	);
+
+	// Collision guard: a pre-existing type literally named "records" can't share the new container.
+	if (topLevelTypes.includes(RECORDS_DIR)) {
+		conflicts.push(
+			`A record type folder is named "${RECORDS_DIR}", which collides with the new records/ container. Rename it before migrating.`
+		);
+	}
+
+	// 6a. Move each top-level json type → records/<id>/ (+ strip dataFileName).
+	for (const id of topLevelTypes) {
+		if (id === RECORDS_DIR) continue; // flagged as a conflict above
+		const src = path.join(root, id);
+		const dest = path.join(recordsDir, id);
+		if (fs.existsSync(dest)) {
+			conflicts.push(
+				`[${id}] records/${id}/ already exists — left top-level copy in place: ${src}`
+			);
+			continue;
+		}
+		plan(`move record type "${id}" → records/${id}/ ${c.dim('(+ strip dataFileName)')}`, () => {
+			fs.mkdirSync(recordsDir, { recursive: true });
+			moveDir(src, dest);
+			stripDataFileName(path.join(dest, 'settings.json'));
+		});
+	}
+
+	// 6b. Strip the dead dataFileName from already-placed types (globals + anything under records/).
+	const stripTargets = [path.join(root, 'globals', 'settings.json')];
+	if (fs.existsSync(recordsDir)) {
+		for (const ent of fs.readdirSync(recordsDir, { withFileTypes: true })) {
+			if (ent.isDirectory()) stripTargets.push(path.join(recordsDir, ent.name, 'settings.json'));
+		}
+	}
+	for (const sp of stripTargets) {
+		const s = readJsonSafe(sp);
+		if (s && typeof s === 'object' && 'dataFileName' in s) {
+			plan(`strip dead dataFileName from ${path.relative(root, sp)}`, () => stripDataFileName(sp));
+		}
+	}
+
+	// 6c. Hoist app-wide prefs out of media/settings.json → <root>/settings.json (keep only classOrder).
+	const mediaSettingsPath = path.join(root, 'media', 'settings.json');
+	const ms = readJsonSafe(mediaSettingsPath);
+	if (ms && typeof ms === 'object' && APP_KEYS.some((k) => k in ms)) {
+		plan('hoist app-wide prefs: media/settings.json → <root>/settings.json', () => {
+			const appPatch = {};
+			for (const k of APP_KEYS) if (k in ms) appPatch[k] = ms[k];
+			const rootSettingsPath = path.join(root, 'settings.json');
+			const existingRoot = readJsonSafe(rootSettingsPath) || {};
+			writeJsonAtomic(rootSettingsPath, { ...existingRoot, ...appPatch });
+			// media/settings.json keeps only classOrder (drop the file entirely if there is none).
+			if (Array.isArray(ms.classOrder)) {
+				writeJsonAtomic(mediaSettingsPath, { classOrder: ms.classOrder });
+			} else {
+				fs.rmSync(mediaSettingsPath, { force: true });
+			}
+		});
+	}
+
+	// 6d. Create records/settings.json (dormant typeOrder home) when there are record types.
+	const recordsHasTypes =
+		fs.existsSync(recordsDir) &&
+		fs
+			.readdirSync(recordsDir, { withFileTypes: true })
+			.some((e) => e.isDirectory() && readSettings(path.join(recordsDir, e.name)));
+	const recordsSettingsPath = path.join(recordsDir, 'settings.json');
+	if ((topLevelTypes.length > 0 || recordsHasTypes) && !fs.existsSync(recordsSettingsPath)) {
+		plan('create records/settings.json', () => {
+			fs.mkdirSync(recordsDir, { recursive: true });
+			writeJsonAtomic(recordsSettingsPath, {});
+		});
+	}
 })();
 
 // --- Report ---
