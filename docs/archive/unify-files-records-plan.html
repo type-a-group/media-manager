@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Unifying Files &amp; Records — design</title>
+		<style>
+			:root {
+				--bg: #ffffff;
+				--fg: #0f172a;
+				--muted: #64748b;
+				--muted-bg: #f1f5f9;
+				--border: #e2e8f0;
+				--border-strong: #cbd5e1;
+				--primary: #0f172a;
+				--secondary: #e2e8f0;
+				--accent: #2563eb;
+				--warn: #d97706;
+				--danger: #dc2626;
+				--ok: #16a34a;
+				--radius: 10px;
+				--shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.1);
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font:
+					15px/1.55 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+				color: var(--fg);
+				background: #f8fafc;
+			}
+			.wrap {
+				max-width: 1100px;
+				margin: 0 auto;
+				padding: 40px 24px 96px;
+			}
+			h1 {
+				font-size: 30px;
+				margin: 0 0 6px;
+				letter-spacing: -0.02em;
+			}
+			h2 {
+				font-size: 21px;
+				margin: 48px 0 10px;
+				letter-spacing: -0.01em;
+				border-bottom: 1px solid var(--border);
+				padding-bottom: 6px;
+			}
+			h3 {
+				font-size: 15px;
+				margin: 22px 0 4px;
+			}
+			.lede {
+				color: var(--muted);
+				font-size: 16px;
+				max-width: 80ch;
+			}
+			p {
+				max-width: 82ch;
+			}
+			code {
+				background: var(--muted-bg);
+				padding: 1px 6px;
+				border-radius: 6px;
+				font-size: 0.86em;
+			}
+			.callout {
+				border: 1px solid var(--border);
+				background: #fff;
+				border-radius: var(--radius);
+				padding: 14px 18px;
+				box-shadow: var(--shadow);
+				margin: 18px 0;
+			}
+			.callout.insight {
+				border-left: 4px solid var(--accent);
+			}
+			.callout.ok {
+				border-left: 4px solid var(--ok);
+			}
+			.callout.warn {
+				border-left: 4px solid var(--warn);
+			}
+			ul.tight {
+				margin: 6px 0 0;
+				padding-left: 18px;
+			}
+			ul.tight li {
+				margin: 4px 0;
+			}
+			.two {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 18px;
+			}
+			@media (max-width: 900px) {
+				.two {
+					grid-template-columns: 1fr;
+				}
+			}
+			.caption {
+				font-size: 12.5px;
+				color: var(--muted);
+				margin: 8px 2px 0;
+				text-align: center;
+			}
+			.mockwrap {
+				background: #eef2f7;
+				padding: 16px;
+				border: 1px solid var(--border);
+				border-radius: 14px;
+				margin: 12px 0;
+			}
+
+			/* ---- app chrome mock ---- */
+			.app {
+				display: flex;
+				background: var(--bg);
+				border: 1px solid var(--border-strong);
+				border-radius: 10px;
+				overflow: hidden;
+				box-shadow: var(--shadow);
+				height: 340px;
+				font-size: 11.5px;
+			}
+			.rail {
+				flex: 0 0 150px;
+				border-right: 1px solid var(--border);
+				background: #f8fafc;
+				display: flex;
+				flex-direction: column;
+				padding: 8px 7px;
+				gap: 6px;
+			}
+			.rail .rhead {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-weight: 700;
+				font-size: 12px;
+				padding: 0 2px 4px;
+			}
+			.rail .tog {
+				margin-left: auto;
+				color: var(--muted);
+				border: 1px solid var(--border);
+				background: #fff;
+				border-radius: 5px;
+				width: 18px;
+				height: 18px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+			.srch {
+				border: 1px solid var(--border-strong);
+				background: #fff;
+				border-radius: 6px;
+				padding: 4px 7px;
+				color: var(--muted);
+			}
+			.fielddd {
+				border: 1px solid var(--border-strong);
+				background: #fff;
+				border-radius: 6px;
+				padding: 4px 7px;
+				color: var(--fg);
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 6px;
+			}
+			.fielddd .cv {
+				color: var(--muted);
+			}
+			.seclbl {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				font-size: 9px;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				color: var(--muted);
+				font-weight: 700;
+				padding: 4px 2px 0;
+			}
+			.seclbl .add {
+				color: var(--accent);
+				font-weight: 700;
+				cursor: pointer;
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 7px;
+				padding: 5px 6px;
+				border-radius: 6px;
+				color: var(--fg);
+			}
+			.row:hover {
+				background: var(--muted-bg);
+			}
+			.row.on {
+				background: var(--primary);
+				color: #fff;
+			}
+			.row .nm {
+				flex: 1;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.row .ct {
+				font-size: 9px;
+				opacity: 0.7;
+			}
+			.row .dots {
+				opacity: 0.45;
+			}
+			.main {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+			.hd {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 10px;
+				border-bottom: 1px solid var(--border);
+			}
+			.hd .ttl {
+				font-weight: 700;
+				font-size: 13px;
+			}
+			.hd .sp {
+				flex: 1;
+			}
+			.pill {
+				border: 1px solid var(--border-strong);
+				background: #fff;
+				border-radius: 6px;
+				padding: 3px 8px;
+				color: var(--muted);
+			}
+			.pill.dark {
+				background: var(--primary);
+				color: #fff;
+				border-color: var(--primary);
+			}
+			.dots2 {
+				border: 1px solid var(--border);
+				background: #fff;
+				border-radius: 6px;
+				width: 24px;
+				height: 22px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: var(--muted);
+			}
+			.body {
+				flex: 1;
+				display: flex;
+				min-height: 0;
+			}
+			.content {
+				flex: 1;
+				padding: 10px;
+				overflow: hidden;
+			}
+			.grid {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 7px;
+			}
+			.tile {
+				border: 1px solid var(--border);
+				border-radius: 7px;
+				overflow: hidden;
+				background: #fff;
+			}
+			.tile .thumb {
+				aspect-ratio: 1;
+				background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: #94a3b8;
+				font-size: 16px;
+			}
+			.tile .lab {
+				padding: 3px 5px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				font-size: 9.5px;
+			}
+			.tile .chip {
+				display: inline-block;
+				background: var(--secondary);
+				border-radius: 4px;
+				padding: 0 4px;
+				font-size: 8px;
+				margin: 0 3px 4px;
+			}
+			.list .lrow {
+				display: flex;
+				flex-direction: column;
+				border-bottom: 1px solid var(--border);
+				padding: 6px 7px;
+			}
+			.list .lrow.on {
+				background: var(--muted-bg);
+			}
+			.list .lt {
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.list .ls {
+				color: var(--muted);
+				font-size: 9.5px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.panel {
+				flex: 0 0 150px;
+				border-left: 1px solid var(--border);
+				background: #fff;
+				display: flex;
+				flex-direction: column;
+			}
+			.panel .phd {
+				display: flex;
+				align-items: center;
+				gap: 5px;
+				border-bottom: 1px solid var(--border);
+				padding: 7px 8px;
+			}
+			.panel .chev {
+				border: 1px solid var(--border);
+				border-radius: 5px;
+				width: 18px;
+				height: 18px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: var(--muted);
+			}
+			.panel .pttl {
+				flex: 1;
+				font-weight: 600;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.panel .pbody {
+				padding: 9px;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.fld {
+				display: flex;
+				flex-direction: column;
+				gap: 3px;
+			}
+			.fld .fl {
+				font-size: 9px;
+				color: var(--muted);
+			}
+			.fld .fi {
+				border: 1px solid var(--border);
+				border-radius: 5px;
+				padding: 4px 6px;
+				background: #fff;
+				color: var(--fg);
+			}
+			.ghost {
+				flex: 1;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: #cbd5e1;
+				font-style: italic;
+				border-left: 1px dashed var(--border);
+				background: repeating-linear-gradient(
+					45deg,
+					#fbfdff,
+					#fbfdff 8px,
+					#f4f8fc 8px,
+					#f4f8fc 16px
+				);
+			}
+
+			/* ---- dedup diagram ---- */
+			.diagram {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 0;
+				border: 1px solid var(--border-strong);
+				border-radius: 12px;
+				overflow: hidden;
+				margin: 16px 0;
+				background: #fff;
+				box-shadow: var(--shadow);
+			}
+			.col {
+				padding: 14px 16px;
+			}
+			.col.files {
+				border-right: 1px solid var(--border);
+			}
+			.col h4 {
+				margin: 0 0 8px;
+				font-size: 13px;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.shared-bar {
+				grid-column: 1 / -1;
+				background: linear-gradient(90deg, #ecfdf5, #eff6ff);
+				border-top: 1px solid var(--border);
+				padding: 14px 16px;
+			}
+			.box {
+				border: 1px solid var(--border);
+				border-radius: 7px;
+				padding: 7px 10px;
+				margin: 6px 0;
+				font-size: 13px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.box.kill {
+				border-color: #fecaca;
+				background: #fef2f2;
+				text-decoration: line-through;
+				color: #b91c1c;
+				text-decoration-thickness: 1px;
+			}
+			.box.keep {
+				border-color: #bbf7d0;
+				background: #f0fdf4;
+			}
+			.box.shared {
+				border-color: #bfdbfe;
+				background: #eff6ff;
+				font-weight: 600;
+			}
+			.tag {
+				font-size: 10px;
+				font-weight: 700;
+				border-radius: 999px;
+				padding: 1px 8px;
+				margin-left: auto;
+			}
+			.tag.r {
+				background: #fee2e2;
+				color: #b91c1c;
+			}
+			.tag.g {
+				background: #dcfce7;
+				color: #15803d;
+			}
+			.tag.b {
+				background: #dbeafe;
+				color: #1d4ed8;
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+				font-size: 13.5px;
+				margin: 10px 0;
+			}
+			th,
+			td {
+				border: 1px solid var(--border);
+				padding: 7px 10px;
+				text-align: left;
+				vertical-align: top;
+			}
+			th {
+				background: var(--muted-bg);
+				font-size: 12px;
+				text-transform: uppercase;
+				letter-spacing: 0.03em;
+			}
+			.arrow {
+				color: var(--accent);
+				font-weight: 700;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<h1>Unifying the Files &amp; Records interfaces</h1>
+			<p class="lede">
+				Two sibling sub-apps — <strong>Files</strong> (<code>/files</code>, blobs + opt-in classes)
+				and <strong>Records</strong> (<code>/media</code>, schema-backed types) — should feel like
+				one product. This makes their chrome converge on shared primitives, moves Records' search
+				into the rail, adds a <em>search-field</em> picker to both, hides the editor panel until a
+				row is clicked, and deletes a pile of forked code.
+			</p>
+
+			<div class="callout insight">
+				<strong>Locked decisions.</strong>
+				<ul class="tight">
+					<li>
+						<strong>Header stays in the content column</strong> — the panel opens beside it. The
+						"full-width" feel comes for free once Records stops reserving panel space.
+					</li>
+					<li>
+						<strong>Maximize reuse</strong> — Records' detail pane adopts
+						<code>EditorPanelShell</code>; its list adopts <code>DataGrid</code> (text variant +
+						subtitle); both sides share a new <code>SearchBox</code> and a
+						<code>schemaUserFields()</code> util.
+					</li>
+					<li><strong>Files header ⋮</strong> stays solo-class-only (already correct).</li>
+					<li>
+						<strong>Search-field picker</strong> defaults to <em>All fields</em>, narrowable to one.
+					</li>
+				</ul>
+			</div>
+
+			<h2>1 · The two interfaces, after</h2>
+			<p>
+				Same skeleton on both sides: <strong>rail</strong> (header · search · field-picker · entity
+				list with inline <span class="arrow">+ New</span>) → <strong>content</strong> (header with
+				count · group-by · ⋮ + a <code>DataGrid</code>) → <strong>editor panel</strong>
+				that only exists once you click a tile/row.
+			</p>
+
+			<div class="two">
+				<div>
+					<div class="mockwrap">
+						<div class="app">
+							<div class="rail">
+								<div class="rhead">Files <span class="tog">‹</span></div>
+								<div class="srch">🔍 Search…</div>
+								<div class="fielddd">Field <span class="cv">All fields ▾</span></div>
+								<div class="seclbl">Classes <span class="add">+ New</span></div>
+								<div class="row on">
+									<span class="nm">☑ Images</span><span class="ct">42</span
+									><span class="dots">⋮</span>
+								</div>
+								<div class="row">
+									<span class="nm">☐ Documents</span><span class="ct">17</span
+									><span class="dots">⋮</span>
+								</div>
+								<div class="row">
+									<span class="nm">☐ Unclassified</span><span class="ct">5</span>
+								</div>
+							</div>
+							<div class="main">
+								<div class="hd">
+									<span class="ttl">42 files</span>
+									<span class="pill">Group ▾</span>
+									<span class="pill">Size ▾</span>
+									<span class="sp"></span>
+									<span class="pill">Upload</span>
+									<span class="dots2">⋮</span>
+								</div>
+								<div class="body">
+									<div class="content">
+										<div class="grid">
+											<div class="tile">
+												<div class="thumb">▦</div>
+												<div class="lab">sunset.png</div>
+											</div>
+											<div class="tile">
+												<div class="thumb">▦</div>
+												<div class="lab">a-very-long-filename.jpg</div>
+											</div>
+											<div class="tile">
+												<div class="thumb">▦</div>
+												<div class="lab">cat.png</div>
+											</div>
+											<div class="tile">
+												<div class="thumb">▦</div>
+												<div class="lab">doc.pdf</div>
+											</div>
+										</div>
+									</div>
+									<div class="ghost">panel hidden<br />until click</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="caption">
+						<strong>Files</strong> — search + field-picker now in the rail; panel absent until a
+						tile is clicked.
+					</div>
+				</div>
+
+				<div>
+					<div class="mockwrap">
+						<div class="app">
+							<div class="rail">
+								<div class="rhead">Records <span class="tog">‹</span></div>
+								<div class="srch">🔍 Search…</div>
+								<div class="fielddd">Field <span class="cv">All fields ▾</span></div>
+								<div class="seclbl">Record types <span class="add">+ New</span></div>
+								<div class="row on">
+									<span class="nm">📄 Notes</span><span class="ct">12</span
+									><span class="dots">⋮</span>
+								</div>
+								<div class="row">
+									<span class="nm">📄 Books</span><span class="ct">30</span
+									><span class="dots">⋮</span>
+								</div>
+							</div>
+							<div class="main">
+								<div class="hd">
+									<span class="ttl">12 records</span>
+									<span class="pill">Group ▾</span>
+									<span class="pill">Filter</span>
+									<span class="sp"></span>
+									<span class="pill dark">+ New</span>
+									<span class="dots2">⋮</span>
+								</div>
+								<div class="body">
+									<div class="content">
+										<div class="list">
+											<div class="lrow on">
+												<span class="lt">Welcome note</span
+												><span class="ls">high · a long subtitle that ellipsizes…</span>
+											</div>
+											<div class="lrow">
+												<span class="lt">Second note</span><span class="ls">low</span>
+											</div>
+											<div class="lrow">
+												<span class="lt">A record whose title is too long to fit</span
+												><span class="ls">medium</span>
+											</div>
+										</div>
+									</div>
+									<div class="ghost">panel hidden<br />until click</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="caption">
+						<strong>Records</strong> — search moved to the rail,
+						<span class="arrow">+ New type</span> inline with the section label, title/subtitle
+						ellipsize, panel absent until a row is clicked.
+					</div>
+				</div>
+			</div>
+
+			<h3>The same panel, once you click a row</h3>
+			<div class="mockwrap" style="max-width: 560px; margin: 12px auto">
+				<div class="app" style="height: 260px">
+					<div class="rail" style="flex-basis: 120px">
+						<div class="rhead">Records <span class="tog">‹</span></div>
+						<div class="srch">🔍</div>
+						<div class="seclbl">Types <span class="add">+</span></div>
+						<div class="row on"><span class="nm">📄 Notes</span></div>
+					</div>
+					<div class="main">
+						<div class="hd">
+							<span class="ttl">12 records</span><span class="sp"></span
+							><span class="dots2">⋮</span>
+						</div>
+						<div class="body">
+							<div class="content">
+								<div class="list">
+									<div class="lrow on">
+										<span class="lt">Welcome note</span><span class="ls">high</span>
+									</div>
+									<div class="lrow">
+										<span class="lt">Second note</span><span class="ls">low</span>
+									</div>
+								</div>
+							</div>
+							<div class="panel">
+								<div class="phd">
+									<span class="chev">⌃</span><span class="chev">⌄</span
+									><span class="pttl">Welcome note</span><span class="chev">✕</span>
+								</div>
+								<div class="pbody">
+									<div class="fld">
+										<span class="fl">Title</span><span class="fi">Welcome note</span>
+									</div>
+									<div class="fld">
+										<span class="fl">Priority</span><span class="fi">high ▾</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="caption">
+				Both sides now use one panel — <code>EditorPanelShell</code> (prev/next chevrons, close,
+				arrow keys) wrapping <code>FieldInput</code> rows. Header stays put; panel slots in beside
+				the list.
+			</div>
+
+			<h2>2 · What changes, mapped to your asks</h2>
+			<table>
+				<tr>
+					<th>Your ask</th>
+					<th>Side</th>
+					<th>Change</th>
+				</tr>
+				<tr>
+					<td>Search bar in the sidebar</td>
+					<td>Records</td>
+					<td>
+						Move the search <code>Input</code> out of the list header into the rail's
+						<code>belowHeader</code> slot (where Files keeps it). Shared <code>SearchBox</code>.
+					</td>
+				</tr>
+				<tr>
+					<td>"+ New" inline with the section label</td>
+					<td>Records</td>
+					<td>
+						Replace the full-width bottom "New record type" button with an inline
+						<span class="arrow">+ New</span> next to a <em>Record types</em> section label — mirrors
+						Files' <em>Classes · + New</em>.
+					</td>
+				</tr>
+				<tr>
+					<td>Panel hidden until a row is clicked</td>
+					<td>Records</td>
+					<td>
+						Drop the 440px placeholder <code>&lt;aside&gt;</code>; render the panel only
+						<code>{#if selectedRecordId}</code> — exactly like Files.
+					</td>
+				</tr>
+				<tr>
+					<td>Title/subtitle ellipsis</td>
+					<td>Records</td>
+					<td>
+						Already <code>truncate</code>d in <code>RecordListColumn</code>; preserved when it moves
+						into <code>DataGrid</code>'s text tile (verify against real long strings).
+					</td>
+				</tr>
+				<tr>
+					<td>Header across the whole screen</td>
+					<td>Records</td>
+					<td>
+						Falls out of "panel hidden until click": the content header now spans the full width
+						whenever no row is open.
+					</td>
+				</tr>
+				<tr>
+					<td>Search-field dropdown (under search)</td>
+					<td>Both</td>
+					<td>
+						A <code>Select</code> under the search box. <strong>Records:</strong> every schema field
+						of the active type. <strong>Files:</strong> fields of the single/intersected class(es),
+						else just <em>Filename</em> — mirrors group-by. Default <em>All fields</em>; trigger
+						uses <code>truncate</code> so the value can't clip out.
+					</td>
+				</tr>
+				<tr>
+					<td>⋮ menu in the header</td>
+					<td>Files</td>
+					<td>
+						Already present for the solo-class view; keep solo-only. Ensure styling matches Records'
+						header ⋮.
+					</td>
+				</tr>
+			</table>
+
+			<h2>3 · Duplicate code we delete &amp; what we share</h2>
+			<p>
+				The agents found four real forks. Each collapses onto a primitive that already exists or
+				gets created once and used by both sides.
+			</p>
+
+			<div class="diagram">
+				<div class="col files">
+					<h4>📁 Files — before</h4>
+					<div class="box keep">
+						EntityRail + EntityRowMenu <span class="tag g">already shared</span>
+					</div>
+					<div class="box keep">DataGrid <span class="tag g">already shared</span></div>
+					<div class="box">
+						FileEditorPanel → EditorPanelShell <span class="tag b">shell shared</span>
+					</div>
+					<div class="box kill">
+						inline search <code>Input</code> <span class="tag r">→ SearchBox</span>
+					</div>
+					<div class="box kill">
+						catalogSchemaKeys / crossSchemas <span class="tag r">→ util</span>
+					</div>
+				</div>
+				<div class="col">
+					<h4>📄 Records — before</h4>
+					<div class="box keep">RecordsRail (wraps EntityRail) <span class="tag g">keep</span></div>
+					<div class="box keep">
+						RecordListColumn vertical list <span class="tag g">kept records-native</span>
+					</div>
+					<div class="box kill">
+						RecordDetailPane chrome <span class="tag r">→ EditorPanelShell</span>
+					</div>
+					<div class="box kill">440px placeholder aside <span class="tag r">delete</span></div>
+					<div class="box kill">schemaFieldKeys ×3 copies <span class="tag r">→ util</span></div>
+				</div>
+				<div class="shared-bar">
+					<h4 style="margin-top: 0">🔵 Shared primitives after the merge</h4>
+					<div class="box shared">SearchBox.svelte <span class="tag b">new · both rails</span></div>
+					<div class="box shared">
+						SearchFieldSelect.svelte <span class="tag b">new · both rails</span>
+					</div>
+					<div class="box shared">
+						schemaUserFields() in core/fieldKeys <span class="tag b">new · kills 5 copies</span>
+					</div>
+					<div class="box shared">EditorPanelShell <span class="tag b">now both panels</span></div>
+					<div class="box shared">
+						DataGrid (text variant + subtitle) <span class="tag b">now both lists</span>
+					</div>
+				</div>
+			</div>
+
+			<div class="callout warn">
+				<strong>Behavioral reconciliations (the risk in "maximize reuse").</strong>
+				<ul class="tight">
+					<li>
+						<strong>Autosave (decided):</strong> both sides adopt Records' debounced-always
+						autosave. <code>FileEditorPanel</code> loses its explicit per-section "Save" buttons and
+						gains the debounced save + "Saving…/Saved" status. One save policy across both panels —
+						simpler merge onto <code>EditorPanelShell</code>.
+					</li>
+					<li>
+						<strong>Arrow keys:</strong> Files uses ←/→, Records' pane used ↑/↓. Unify on
+						<code>EditorPanelShell</code>'s ←/→ (skipped while typing in a field).
+					</li>
+					<li>
+						<strong>DataGrid subtitle (decided):</strong> add an optional
+						<code>secondaryLabel</code> to <code>GridItem</code> now — Records' text list uses it
+						for title + muted subtitle. Wiring a subtitle onto the Files <em>thumbnail</em> tiles is
+						deferred (the field is there, unused on that side for now).
+					</li>
+					<li>
+						<strong>Search scope:</strong> Records search is client-side over the title today;
+						field-scoped search needs it to match the chosen field's value (client-side filter over
+						the loaded list keeps it simple; no API change required for v1).
+					</li>
+				</ul>
+			</div>
+
+			<h2>4 · Out of scope (for this pass)</h2>
+			<ul class="tight">
+				<li>Globals' bespoke <code>GlobalsEditorPane</code> — untouched.</li>
+				<li>
+					Server-side field search / new API params — v1 filters client-side over the loaded list.
+				</li>
+				<li>Mobile drill-down, deep-link routing, icon picker (existing FUTURE_CHANGES items).</li>
+			</ul>
+		</div>
+	</body>
+</html>

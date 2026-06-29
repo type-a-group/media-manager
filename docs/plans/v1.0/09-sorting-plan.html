@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Item 9 — Sorting &amp; Ordering · 1.0 Plan</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1f2430; --ink: #e6e9ef;
+    --muted: #9aa3b2; --line: #2a3140; --accent: #6ea8fe; --good: #5bd6a6;
+    --warn: #f0b85c; --chip: #243044; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 32px 24px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 8px; color: var(--accent); }
+  p, li { color: var(--ink); }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 20px; margin: 14px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .chip { display: inline-block; background: var(--chip); border: 1px solid var(--line);
+    border-radius: 999px; padding: 1px 10px; font-size: 12px; margin: 1px 3px 1px 0; }
+  .pill { border-radius: 6px; padding: 1px 7px; font-size: 12px; font-weight: 600; }
+  .ready { background: rgba(91,214,166,.15); color: var(--good); border: 1px solid rgba(91,214,166,.35); }
+  .note { background: rgba(240,184,92,.10); border: 1px solid rgba(240,184,92,.30); }
+  .mock { font-family: var(--mono); font-size: 12.5px; white-space: pre; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; color: #cdd6e6; }
+  .ok::before { content: "✓ "; color: var(--good); }
+  .key { color: var(--warn); }
+  ul.tight { margin: 6px 0; } ul.tight li { margin: 2px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+  .tag { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Item 9 — Sorting &amp; Ordering</h1>
+  <p class="sub">media-manager 1.0 · Phase 2 design plan · <span class="pill ready">ready</span> · size M</p>
+  <p class="small">Backlog: Item 9 · Brief: <code>docs/plans/v1.0/09-sorting.md</code> · This plan supersedes the brief where they differ (agile rule).</p>
+
+  <div class="panel">
+    <strong>One-line goal.</strong> Add a server-side <em>sort field + direction</em> control to every list view
+    (Files hub · single-class catalog · Records), composing with the existing search + filter + group-by,
+    with the choice persisted durably <em>per entity</em>.
+  </div>
+
+  <h2>1 · Decisions resolved (Phase 1 interview)</h2>
+  <table>
+    <tr><th>Decision</th><th>Resolution</th></tr>
+    <tr><td>Persistence</td><td><b>Per-entity, durable</b> — each class / record-type / the Files hub remembers its own sort, like <code>group-by</code> and <code>title-by</code> do today.</td></tr>
+    <tr><td>Control location</td><td><b>Content toolbar</b>, next to group-by and grid-size (where view controls already live). Not in the rail.</td></tr>
+    <tr><td>Default sort</td><td><b>Most recent first</b> — <code>last_modified</code> desc where a record exists; on the Files hub (no record context) this resolves to <code>created_at</code> desc.</td></tr>
+    <tr><td>Empty values</td><td><b>Always last</b> — empties sink to the bottom in <em>both</em> directions (never crowd the top), tie-broken by <code>id</code>.</td></tr>
+    <tr><td>Direction control</td><td><b>Separate toggle button</b> (↑/↓ icon) beside the field <code>Select</code> — direction stays visible and one-tap.</td></tr>
+  </table>
+  <div class="panel note">
+    <b>Folded-in cleanup (this item).</b> While we add sort-by-recency, surface the
+    <b>last-modified timestamp</b> on every file/record so the ordering is legible — see
+    <a href="#ts" style="color:var(--accent)">§7</a>. Bundling it here keeps the recency UX honest:
+    no point sorting by a date the user can't see.
+  </div>
+
+  <h2>2 · Where each sort lives (persistence)</h2>
+  <p class="sub">Three surfaces, three existing per-entity stores. No new storage file; each gains two optional keys: <code>sortField</code> + <code>sortDir</code>.</p>
+  <table>
+    <tr><th>Surface</th><th>Persisted in</th><th>Write path</th></tr>
+    <tr>
+      <td><b>Records</b> (<code>/media/[typeId]</code>)</td>
+      <td><code>MediaTypeSettingsFile</code> → type <code>settings.json</code></td>
+      <td><code>POST /api/media-types/[typeId]/settings</code></td>
+    </tr>
+    <tr>
+      <td><b>Single-class catalog</b> (Files, one class)</td>
+      <td><code>ClassConfig</code> → <code>media/classes/&lt;id&gt;.json</code></td>
+      <td><code>PATCH /api/classes/[id]</code></td>
+    </tr>
+    <tr>
+      <td><b>All Files hub</b> (no / multi class)</td>
+      <td><code>MediaSettings</code> → <code>media/settings.json</code></td>
+      <td><code>POST /api/settings</code></td>
+    </tr>
+  </table>
+  <p class="small">Mirrors how <code>displayField</code>/<code>subtitleField</code>/<code>gridGroupByField</code> persist per-entity and how <code>classOrder</code> lives in media settings. <b>Globals</b> is a singleton with no list → no sort control.</p>
+
+  <h2>3 · Sortable fields per surface</h2>
+  <p class="sub">Built-in keys are recognized by the server; schema fields are offered from <code>schemaUserFields()</code>. A surface only offers fields it actually has.</p>
+  <div class="grid2">
+    <div class="panel">
+      <h3 style="margin-top:0">Records</h3>
+      <span class="chip">Name / title</span><span class="chip">Last modified</span>
+      <span class="chip">…each user schema field</span>
+      <p class="small">Sorts <code>title_value</code> for Name (so a chosen title-by wins, consistent with the grid label).</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Single-class catalog</h3>
+      <span class="chip">Name (filename)</span><span class="chip">Last modified</span>
+      <span class="chip">Date added</span><span class="chip">Size</span>
+      <span class="chip">…each class schema field</span>
+      <p class="small"><code>last_modified</code> comes from the class record; <code>created_at</code>/<code>size</code> from the manifest entry.</p>
+    </div>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">All Files hub</h3>
+    <span class="chip">Name (filename)</span><span class="chip">Date added</span><span class="chip">Size</span>
+    <p class="small">No single class → no schema fields and no per-record <code>last_modified</code>. The "most recent" default resolves to <code>created_at</code> desc here.</p>
+  </div>
+
+  <div class="panel note">
+    <b>Built-in key vocabulary (server contract).</b>
+    <span class="chip mono">name</span>
+    <span class="chip mono">last_modified</span>
+    <span class="chip mono">created_at</span>
+    <span class="chip mono">size</span>
+    — plus a raw <span class="mono">&lt;schemaFieldKey&gt;</span> for any user field. Unknown/empty <code>sort</code> ⇒ the surface default.
+  </div>
+
+  <h2>4 · Sort semantics (one comparator, shared)</h2>
+  <ul class="tight">
+    <li><b>Strings</b> (name, string/url/list fields): case-insensitive <code>localeCompare</code>. URL → <code>display_name</code>; list → joined text; boolean → false&nbsp;&lt;&nbsp;true.</li>
+    <li><b>Numbers</b> (size, number fields): numeric.</li>
+    <li><b>Dates</b> (<code>last_modified</code>, <code>created_at</code> — ISO strings): lexicographic compare (correct &amp; stable for ISO-8601).</li>
+    <li><b>Empties last, always.</b> Missing / null / "" sort to the end regardless of direction — incomplete rows never crowd the top.</li>
+    <li><b>Stable tie-break by <code>id</code></b> so equal keys keep a deterministic order across reloads.</li>
+  </ul>
+  <p class="small">Lives as one helper (e.g. <code>core/sort.ts</code> <span class="tag">client+server safe</span>) reused by all three repos so behaviour is identical and unit-testable in isolation.</p>
+
+  <h2>5 · API changes</h2>
+  <p class="sub">Add <code>?sort=&lt;key&gt;&amp;dir=&lt;asc|desc&gt;</code> to three list endpoints; apply in the repo, replacing the hardcoded <code>file_name</code> sort.</p>
+  <table>
+    <tr><th>Endpoint</th><th>Repo function</th></tr>
+    <tr><td><code>GET /api/media-types/[typeId]/records (list)</code></td><td><code>jsonRepo.listRecords</code></td></tr>
+    <tr><td><code>GET /api/files</code></td><td><code>classRepo.listAllFiles</code></td></tr>
+    <tr><td><code>GET /api/classes/[id]/members</code></td><td><code>classRepo.listClassMembers</code></td></tr>
+  </table>
+  <p class="small">Both <code>classRepo</code> functions currently end with <code>files.sort((a,b) =&gt; a.file_name.localeCompare(b.file_name))</code> — that line becomes <code>sortItems(files, sortField, sortDir)</code>. <code>listRecords</code> currently returns disk order; it gets the same call before projection.</p>
+  <p class="small"><b>Settings endpoints extended:</b> <code>PatchSchema</code> in <code>/api/settings</code> gains <code>sortField?/sortDir?</code>; <code>MediaTypeSettingsFile</code> and <code>ClassConfig</code> Zod schemas + their PATCH/POST handlers gain the two keys (preserved on write, like the other per-entity prefs).</p>
+
+  <h2>6 · UI — the toolbar control</h2>
+  <p class="sub">A shadcn <code>Select</code> (field) + an icon <code>Button</code> (direction toggle), placed beside the existing Group-by / Size controls in each page's content toolbar.</p>
+
+  <div class="mock">Files hub — content toolbar
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Group by [ Classes ▾ ]   Sort [ Date added ▾ ] [ ↓ ]   Size [ ▭ ▭▭ ▭▭▭ ]   │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    ▲              ▲
+                          field Select      direction toggle (↓ desc / ↑ asc)
+
+Single-class catalog (class "images" selected)
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Group by [ None ▾ ]   Sort [ Last modified ▾ ] [ ↓ ]   Size [ ▭ ▭▭ ▭▭▭ ]   │
+└────────────────────────────────────────────────────────────────────────────┘
+   Sort field options: Name · Last modified · Date added · Size · {schema fields}
+
+Records (/media/notes)
+┌────────────────────────────────────────────────────────────────────────────┐
+│  Group by [ None ▾ ]   Sort [ Name ▾ ] [ ↑ ]   + New record   Settings       │
+└────────────────────────────────────────────────────────────────────────────┘
+   Sort field options: Name · Last modified · {schema fields}</div>
+
+  <ul class="tight">
+    <li><b>Direction toggle</b> = an icon button cycling asc⇄desc (<code>ArrowDown</code>/<code>ArrowUp</code> from lucide), with an <code>aria-label</code> announcing the current direction.</li>
+    <li>Changing either control <b>re-runs the list query</b> with the new <code>?sort/?dir</code> and <b>persists</b> via the surface's write path — same pattern as <code>changeCatalogGroupBy</code> already uses for group-by.</li>
+    <li><b>Empty / loading states:</b> control is enabled whenever the grid is; switching sort shows the grid's existing loading affordance. No special empty-state — sort of zero rows is a no-op.</li>
+    <li><b>Mobile:</b> same controls; they wrap under the toolbar like the existing ones (no new responsive work beyond matching group-by).</li>
+  </ul>
+
+  <h2 id="ts">7 · Surface the last-modified timestamp (folded-in cleanup)</h2>
+  <p class="sub">Today the timestamp is stored but never shown. Make it visible in <b>the side panel only</b>, so sort-by-recency is legible without cluttering the grid. One shared formatter; no new endpoint.</p>
+
+  <h3>What date each editor shows</h3>
+  <table>
+    <tr><th>Editor</th><th>Field shown</th><th>Label</th></tr>
+    <tr><td><code>RecordDetailPane</code> (records)</td><td>record <code>last_modified</code></td><td>"Modified …"</td></tr>
+    <tr><td><code>FileEditorPanel</code> (blob)</td><td>blob <code>created_at</code></td><td>"Added …"</td></tr>
+    <tr><td><code>FileEditorPanel</code> per-class section</td><td>that class record's <code>last_modified</code></td><td>"Modified …"</td></tr>
+    <tr><td><code>GlobalsEditorPane</code></td><td>record <code>last_modified</code></td><td>"Modified …"</td></tr>
+  </table>
+  <p class="small">No new data wiring: records already carry <code>last_modified</code>; the blob's <code>created_at</code> is on <code>FileItem</code>; and <code>FileEditorPanel</code> already loads each class section's record (which carries <code>last_modified</code>). Missing timestamps render nothing.</p>
+
+  <h3>Where it renders</h3>
+  <ul class="tight">
+    <li><b>Side panel only</b> — a muted "Modified …" / "Added …" line in the shared <code>EditorPanelShell</code> header area, so it shows for <code>FileEditorPanel</code>, <code>RecordDetailPane</code>, and <code>GlobalsEditorPane</code> consistently (the CLAUDE.md parity rule). <b>Not on the grid tiles</b> — the tile stays clean.</li>
+    <li><b>Formatter</b> — one <code>formatTimestamp(iso)</code> helper in <code>core/</code> <span class="tag">client+server safe</span>: absolute local date+time (e.g. <span class="mono">Jun 26, 2026, 3:40 PM</span>) with the full ISO string as a <code>title</code> tooltip. No relative-time dependency for 1.0.</li>
+  </ul>
+
+  <div class="mock">Editor side panel (header area)
+┌─────────────────────────────┐
+│  cover.jpg          ‹  ›  ✕  │
+│  Added Jun 26, 2026, 3:40 PM │  ← muted timestamp line (EditorPanelShell)
+├─────────────────────────────┤
+│  ▸ class: images            │
+│      Modified Jun 26 …       │  ← per-section record timestamp (FileEditorPanel)
+│      … fields …             │
+└─────────────────────────────┘</div>
+
+  <div class="panel note">
+    <b>Deferred to Item 8 (Configurable &amp; Verbose Grid Display):</b> the grid tile's
+    <em>second display slot</em> (<code>GridItem.secondaryLabel</code>, currently unused on the Files
+    side) is the natural home for <em>configurable</em> per-tile metadata — now noted there in
+    <code>FUTURE_CHANGES.md</code>. Item 9 keeps that slot free on purpose and puts the timestamp in
+    the panel, so the grid stays clean until Item 8 lands.
+  </div>
+
+  <h2>8 · Build slices (Phase 3 — vertical, smallest-shippable)</h2>
+  <table>
+    <tr><th>#</th><th>Slice (thin end-to-end path)</th><th>Gate</th></tr>
+    <tr><td>1</td><td><b>Comparator core.</b> <code>core/sort.ts</code> + the built-in key extractors. Pure, no wiring.</td><td>unit</td></tr>
+    <tr><td>2</td><td><b>Records vertical.</b> <code>?sort/?dir</code> on records list → <code>listRecords</code> sort → toolbar control → persist in type settings. One surface, working end-to-end.</td><td>unit + serve + capture</td></tr>
+    <tr><td>3</td><td><b>Single-class catalog vertical.</b> Same on <code>/api/classes/[id]/members</code> + <code>ClassConfig</code>.</td><td>unit + serve</td></tr>
+    <tr><td>4</td><td><b>All Files hub vertical.</b> Same on <code>/api/files</code> + <code>MediaSettings</code> (created_at default).</td><td>unit + serve + capture</td></tr>
+    <tr><td>5</td><td><b>Timestamp in the side panel.</b> <code>formatTimestamp</code> helper + the muted "Modified"/"Added" line in <code>EditorPanelShell</code>, across all three editors (§7).</td><td>serve + capture</td></tr>
+    <tr><td>6</td><td><b>Docs + close.</b> FEATURES.md query params; fixtures unchanged (no on-disk structure change beyond optional keys); Item 9 → Shipped &amp; folded; triage HTML synced.</td><td>review</td></tr>
+  </table>
+
+  <h2>9 · Verification gates (Phase 4)</h2>
+  <ul class="tight">
+    <li class="ok"><code>npm run check</code> + <code>npm run lint</code> clean on touched files.</li>
+    <li class="ok"><code>npm run test</code> — comparator: each built-in sort, asc/desc, empties-last, stable id tie-break, every field type (string/number/boolean/list/url/file). Plus a per-repo test asserting the list applies it and composes with search/filter.</li>
+    <li class="ok"><code>npm run test:serve</code> — sort by name / recency / a schema field in Files, a single-class catalog, and Records; confirm it stacks with an active search + filter + group-by.</li>
+    <li class="ok"><b>Persistence across reload</b> — set a non-default sort per surface, reload, confirm it sticks (and is independent per entity).</li>
+    <li class="ok">UI capture (<code>test-ui-feature</code>) of the control + before/after ordering for at least Files and Records, <b>and</b> the side-panel timestamp line.</li>
+    <li class="ok">FEATURES.md updated (new query params); Item 9 moved to Shipped &amp; folded; triage HTML count synced.</li>
+  </ul>
+
+  <h2>10 · Explicit cut-line (out of scope for 1.0)</h2>
+  <ul class="tight">
+    <li><b>Manual drag-reorder</b> / arbitrary saved orderings — sorting is field-driven only.</li>
+    <li><b>Multi-key sort</b> (primary + secondary chosen by the user) — single key + id tie-break only.</li>
+    <li><b>Per-group sort</b> inside group-by buckets beyond the single global comparator.</li>
+    <li><b>Sort on Globals</b> — singleton, no list.</li>
+  </ul>
+
+  <p class="small legend">
+    <span>Status: ready</span><span>Default: most recent first</span><span>Persist: per-entity</span><span>Control: content toolbar</span>
+  </p>
+</div>
+</body>
+</html>

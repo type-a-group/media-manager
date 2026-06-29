@@ -1,0 +1,18 @@
+{
+	"records": [
+		{
+			"id": "00000000-0000-4000-8000-000000000001",
+			"site_title": "My Site",
+			"theme": "dark",
+			"maintenance_mode": false,
+			"contact_email": "hi@example.com",
+			"social_links": [
+				{ "display_name": "GitHub", "url": "https://github.com" },
+				{ "display_name": "Mastodon", "url": "https://mastodon.social" }
+			],
+			"__field_kinds": "{\"site_title\":\"string\",\"theme\":\"dropdown\",\"maintenance_mode\":\"boolean\",\"contact_email\":\"string\",\"social_links\":\"list\"}",
+			"__field_meta": "{\"theme\":{\"options\":[\"light\",\"dark\"]},\"social_links\":{\"itemType\":\"url\"}}",
+			"__layout": "{\"sections\":[{\"id\":\"sec_site\",\"name\":\"Site\",\"collapsed\":false,\"fields\":[\"site_title\",\"theme\",\"maintenance_mode\"]},{\"id\":\"sec_contact\",\"name\":\"Contact\",\"collapsed\":true,\"fields\":[\"contact_email\",\"social_links\"]}],\"defaultSectionId\":\"sec_site\",\"fieldSort\":\"manual\"}"
+		}
+	]
+}

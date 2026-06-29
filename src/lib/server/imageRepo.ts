@@ -1,15 +1,10 @@
-import { createImageRepo, createMediaTypeRepo } from '$lib/storage/repo.js';
-import type { ImageRepo } from '$lib/storage/repo.js';
-import type { JsonRepo } from '$lib/storage/jsonRepo.js';
+import { createJsonRepoForType, type JsonRepo } from '$lib/storage/jsonRepo.js';
+import { getMediaTypePaths } from '$lib/storage/paths.js';
 
-/**
- * Safe typeId: only alphanumeric, hyphen, underscore (no path traversal).
- */
+/** Safe typeId / class id: only alphanumeric, hyphen, underscore (no path traversal). */
 const TYPE_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 
-/**
- * Validate typeId and return it, or throw.
- */
+/** Validate a typeId / class id and return it, or throw. */
 export function validateTypeId(typeId: string): string {
 	if (!typeId || !TYPE_ID_REGEX.test(typeId)) {
 		throw new Error('Invalid media type id');
@@ -18,22 +13,13 @@ export function validateTypeId(typeId: string): string {
 }
 
 /**
- * Singleton image repository instance for SvelteKit server routes (legacy single-folder).
- *
- * Use case:
- * - Avoid re-creating repository helpers for every request.
- *
- * Concerns / future improvements:
- * - If we later add configurable roots, this should be created from env/config per deployment.
+ * Get the repo for a top-level (`json`) media type by typeId. After the file-first redesign all
+ * top-level media types are `json` (file-backed catalogs are now classes under `media/classes/`,
+ * served by `classRepo`), so this always returns a {@link JsonRepo}.
  */
-export const imageRepo = createImageRepo();
-
-/**
- * Get a repo for a media type by typeId (folder name under root).
- * Validates typeId and returns ImageRepo or JsonRepo depending on kind.
- */
-export function getMediaTypeRepo(typeId: string): ImageRepo | JsonRepo {
+export function getMediaTypeRepo(typeId: string): JsonRepo {
 	const safe = validateTypeId(typeId);
-	return createMediaTypeRepo(safe);
+	const paths = getMediaTypePaths(safe);
+	if (paths.kind !== 'json') throw new Error(`Not a valid media-type folder: ${typeId}`);
+	return createJsonRepoForType(safe);
 }
-

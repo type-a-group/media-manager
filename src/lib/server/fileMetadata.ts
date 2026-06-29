@@ -2,6 +2,7 @@ import { exiftool } from 'exiftool-vendored';
 import * as fssync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import { orientationCorrectedDimensions } from '$lib/core/images.js';
 
 const OVERWRITE_ORIGINAL = '-overwrite_original';
 
@@ -9,7 +10,12 @@ const OVERWRITE_ORIGINAL = '-overwrite_original';
 const MAGIC: { bytes: number[]; ext: string; offset?: number }[] = [
 	{ bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], ext: '.png' },
 	{ bytes: [0xff, 0xd8, 0xff], ext: '.jpg' },
-	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' } // RIFF
+	{ bytes: [0x47, 0x49, 0x46, 0x38], ext: '.gif' }, // GIF8
+	{ bytes: [0x49, 0x49, 0x2a, 0x00], ext: '.tif' }, // TIFF little-endian
+	{ bytes: [0x4d, 0x4d, 0x00, 0x2a], ext: '.tif' }, // TIFF big-endian
+	{ bytes: [0x52, 0x49, 0x46, 0x46], ext: '.webp' }, // RIFF
+	{ bytes: [0x42, 0x4d], ext: '.bmp' }, // BM
+	{ bytes: [0x25, 0x50, 0x44, 0x46], ext: '.pdf' } // %PDF
 ];
 
 /** HEIC/HEIF ftyp brands (at byte offset 4). */
@@ -33,7 +39,7 @@ function isHeicBuffer(buf: Buffer, bytesRead: number): boolean {
  * @param filePath - Absolute path to the file
  * @returns Extension including dot (e.g. '.jpg', '.png') or null if unknown; caller should fall back to path.extname()
  */
-async function detectExtensionFromMagic(filePath: string): Promise<string | null> {
+export async function detectExtensionFromMagic(filePath: string): Promise<string | null> {
 	const fd = await fs.open(filePath, 'r');
 	try {
 		const buf = Buffer.alloc(12);
@@ -49,8 +55,122 @@ async function detectExtensionFromMagic(filePath: string): Promise<string | null
 	}
 }
 
+/** exiftool tag keys mapped to explicit top-level fields (excluded from the generic `exif` blob). */
+const COMMON_EXPLICIT_KEYS = new Set([
+	'ImageWidth',
+	'ImageHeight',
+	'FileType',
+	'FileName',
+	'Directory',
+	'FileSize',
+	'FileModifyDate',
+	'FileAccessDate',
+	'FileCreateDate',
+	'FileInodeChangeDate',
+	'SourceFile'
+]);
+
+/** exiftool PDF tag keys mapped to explicit top-level fields (excluded from the generic `exif` blob). */
+const PDF_EXPLICIT_KEYS = new Set([
+	'Title',
+	'Author',
+	'Subject',
+	'Keywords',
+	'Creator',
+	'Producer',
+	'PDFVersion',
+	'PageCount',
+	'Encryption',
+	'CreateDate',
+	'ModifyDate'
+]);
+
 /**
- * Read image metadata from a file on disk using exiftool-vendored.
+ * Build the generic `exif` blob from all exiftool tags except system tags and any explicitly-mapped ones.
+ *
+ * @param tags - Raw exiftool tags
+ * @param extraExclude - Additional tag keys to omit (e.g. ones mapped to top-level PDF fields)
+ * @returns Object of remaining tag key/value pairs (never null; caller decides on emptiness)
+ *
+ * Use case:
+ * - Preserves "whatever information we can get" from a file under one blob, without duplicating
+ *   the values surfaced as friendly top-level fields.
+ */
+function buildExifBlob(
+	tags: Record<string, unknown>,
+	extraExclude: ReadonlySet<string> = new Set()
+): Record<string, unknown> {
+	const exif: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(tags)) {
+		if (key === 'errors' || COMMON_EXPLICIT_KEYS.has(key) || extraExclude.has(key)) continue;
+		if (value !== undefined && value !== null) exif[key] = value;
+	}
+	return exif;
+}
+
+/**
+ * Build the metadata response for a PDF document.
+ *
+ * @param base - Shared base fields (filename, size, dates, optional extension-mismatch info)
+ * @param tags - Raw exiftool tags read from the PDF
+ * @returns Metadata object in the same shape the UI consumes, with document fields populated and
+ *          image-only fields left undefined.
+ *
+ * Use case:
+ * - PDFs carry document properties (title, author, page count) rather than image EXIF; this maps
+ *   the common PDF tags to friendly fields while keeping everything else under `exif`.
+ *
+ * Concerns / future improvements:
+ * - exiftool exposes more PDF tags (e.g. Linearized, Trapped); these are retained in `exif`.
+ */
+function buildPdfMetadata(base: Record<string, unknown>, tags: Record<string, unknown>) {
+	const str = (v: unknown) => (v == null ? undefined : String(v));
+	const exif = buildExifBlob(tags, PDF_EXPLICIT_KEYS);
+	return {
+		...base,
+		format: 'pdf',
+
+		title: str(tags.Title),
+		author: str(tags.Author),
+		subject: str(tags.Subject),
+		keywords: str(tags.Keywords),
+		creator: str(tags.Creator),
+		producer: str(tags.Producer),
+		pdfVersion: str(tags.PDFVersion),
+		pageCount: tags.PageCount != null ? Number(tags.PageCount) : undefined,
+		encryption: str(tags.Encryption),
+		pdfCreateDate: str(tags.CreateDate),
+		pdfModifyDate: str(tags.ModifyDate),
+
+		// Image-only fields are not applicable to PDFs.
+		width: undefined,
+		height: undefined,
+		density: undefined,
+		channels: undefined,
+		depth: undefined,
+		space: undefined,
+		hasAlpha: undefined,
+		hasProfile: undefined,
+
+		exif: Object.keys(exif).length > 0 ? exif : null,
+		rawExif: null,
+
+		orientation: undefined,
+		compression: undefined,
+		resolutionUnit: undefined,
+		isProgressive: undefined,
+		pages: undefined,
+		pageHeight: undefined,
+		loop: undefined,
+		delay: undefined,
+
+		aspectRatio: null,
+		megapixels: null
+	};
+}
+
+/**
+ * Read file metadata from a file on disk using exiftool-vendored.
  * Returns a response shape compatible with the existing API and MetadataButton UI.
  *
  * @param imagesDir - Absolute directory containing images
@@ -73,37 +193,16 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 	const stats = await fs.stat(filePath);
 	const fileExt = path.extname(filename).toLowerCase();
 	const detectedExt = await detectExtensionFromMagic(filePath);
-	const norm = (e: string) => (e === '.jpeg' ? '.jpg' : e);
-	const extensionMismatch =
-		detectedExt != null && norm(fileExt) !== norm(detectedExt.toLowerCase());
+	const extCheck = detectExtensionMismatch(filename, detectedExt);
+	const extensionMismatch = extCheck.mismatch;
 
 	const tags = await exiftool.read(filePath);
 
-	const width = tags.ImageWidth ?? null;
-	const height = tags.ImageHeight ?? null;
-	const format = tags.FileType?.toLowerCase?.() ?? null;
+	const isPdf =
+		fileExt === '.pdf' || detectedExt === '.pdf' || tags.FileType?.toLowerCase?.() === 'pdf';
 
-	// Build exif-like object from all tags (excluding a few we map explicitly) for the UI
-	const explicitKeys = new Set([
-		'ImageWidth',
-		'ImageHeight',
-		'FileType',
-		'FileName',
-		'Directory',
-		'FileSize',
-		'FileModifyDate',
-		'FileAccessDate',
-		'FileCreateDate',
-		'FileInodeChangeDate',
-		'SourceFile'
-	]);
-	const exif: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(tags)) {
-		if (key === 'errors' || explicitKeys.has(key)) continue;
-		if (value !== undefined && value !== null) exif[key] = value;
-	}
-
-	return {
+	// Fields shared by every supported file type.
+	const base = {
 		filename,
 		fileSize: stats.size,
 		fileSizeFormatted: formatFileSize(stats.size),
@@ -116,7 +215,19 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 					fileExtension: fileExt || undefined,
 					detectedFormatExtension: detectedExt
 				}
-			: {}),
+			: {})
+	};
+
+	if (isPdf) return buildPdfMetadata(base, tags as Record<string, unknown>);
+
+	const width = tags.ImageWidth ?? null;
+	const height = tags.ImageHeight ?? null;
+	const format = tags.FileType?.toLowerCase?.() ?? null;
+
+	const exif = buildExifBlob(tags as Record<string, unknown>);
+
+	return {
+		...base,
 
 		width: width ?? undefined,
 		height: height ?? undefined,
@@ -142,12 +253,8 @@ export async function readImageFileMetadata(imagesDir: string, filename: string)
 		loop: undefined,
 		delay: undefined,
 
-		aspectRatio:
-			width != null && height != null ? (width / height).toFixed(2) : null,
-		megapixels:
-			width != null && height != null
-				? ((width * height) / 1_000_000).toFixed(2)
-				: null
+		aspectRatio: width != null && height != null ? (width / height).toFixed(2) : null,
+		megapixels: width != null && height != null ? ((width * height) / 1_000_000).toFixed(2) : null
 	};
 }
 
@@ -200,11 +307,7 @@ export async function stripImageFileMetadata(
 				await fs.unlink(tempBackupPath).catch(() => {});
 			}
 		} else if (options.gpsOnly) {
-			await exiftool.write(tempPath, {}, [
-				'-GPS*=',
-				'-Geolocation*=',
-				OVERWRITE_ORIGINAL
-			]);
+			await exiftool.write(tempPath, {}, ['-GPS*=', '-Geolocation*=', OVERWRITE_ORIGINAL]);
 		} else {
 			throw new Error('stripImageFileMetadata: specify options.all or options.gpsOnly');
 		}
@@ -230,10 +333,17 @@ export async function stripImageFileMetadata(
  *
  * @param filePath - Absolute path to the image file
  * @returns Object with width and height (numbers or undefined)
+ *
+ * Concerns / future improvements:
+ * - PDFs are skipped: exiftool reports page size in points, not pixels, and the sidebar renders
+ *   these as "W × H px", which would be misleading. Returns undefined dimensions for PDFs.
  */
 export async function readImageDimensions(
 	filePath: string
 ): Promise<{ width: number | undefined; height: number | undefined }> {
+	if (path.extname(filePath).toLowerCase() === '.pdf') {
+		return { width: undefined, height: undefined };
+	}
 	try {
 		const tags = await exiftool.read(filePath);
 		return {
@@ -243,6 +353,162 @@ export async function readImageDimensions(
 	} catch {
 		return { width: undefined, height: undefined };
 	}
+}
+
+/** Outcome of comparing a blob's stored manifest dimensions against the real image (Item 13). */
+export interface DimensionConsistency {
+	/** Dimensions currently stored in the manifest (either may be undefined). */
+	stored: { width: number | undefined; height: number | undefined };
+	/** Raw pixel dimensions read from the file (pre-orientation), or undefined if unreadable. */
+	fileRaw: { width: number | undefined; height: number | undefined };
+	/** EXIF Orientation tag value (1–8), or undefined when absent. */
+	orientation: number | undefined;
+	/** Orientation-corrected (displayed) dimensions — what the image actually looks like. */
+	corrected: { width: number; height: number } | undefined;
+	/** True iff stored dims exist and disagree with `corrected` (the actionable mismatch). */
+	mismatch: boolean;
+}
+
+/**
+ * Pure comparison of stored manifest dimensions against an image's raw dimensions + EXIF Orientation.
+ * No IO — the single source of the "are the stored dims right?" rule, shared by the standalone check
+ * (which reads the file) and the metadata endpoint (which already has these values).
+ *
+ * A mismatch is only flagged when stored dimensions actually exist — an un-backfilled blob is not
+ * "wrong", just unmeasured (the normal lazy backfill handles that). Missing raw dims ⇒ no mismatch.
+ *
+ * @param stored - Dimensions currently stored in the manifest.
+ * @param fileRaw - Raw (pre-orientation) pixel dimensions read from the file.
+ * @param orientation - EXIF Orientation tag value (1–8), or undefined when absent.
+ * @returns A {@link DimensionConsistency} describing the comparison.
+ */
+export function compareStoredVsImage(
+	stored: { width: number | undefined; height: number | undefined },
+	fileRaw: { width: number | undefined; height: number | undefined },
+	orientation: number | undefined
+): DimensionConsistency {
+	if (fileRaw.width == null || fileRaw.height == null) {
+		return { stored, fileRaw, orientation, corrected: undefined, mismatch: false };
+	}
+	const corrected = orientationCorrectedDimensions(fileRaw.width, fileRaw.height, orientation);
+	const mismatch =
+		stored.width != null &&
+		stored.height != null &&
+		(stored.width !== corrected.width || stored.height !== corrected.height);
+	return { stored, fileRaw, orientation, corrected, mismatch };
+}
+
+/**
+ * Compare a blob's stored manifest dimensions against the real image, accounting for EXIF Orientation.
+ *
+ * Reads the file's raw `ImageWidth`/`ImageHeight` + `Orientation` via exiftool, then defers to
+ * {@link compareStoredVsImage}. Fails safe: any read error, a PDF, or unreadable dimensions yield
+ * `mismatch: false`.
+ *
+ * @param filePath - Absolute path to the blob.
+ * @param stored - The dimensions currently stored in the manifest for this blob.
+ * @returns A {@link DimensionConsistency} describing the comparison.
+ *
+ * Use case:
+ * - Drives the Item 13 "stored dimensions look wrong" warning badge + the smart "Correct dimensions"
+ *   fix (the lightweight `/dimension-check` endpoint).
+ */
+export async function dimensionConsistency(
+	filePath: string,
+	stored: { width: number | undefined; height: number | undefined }
+): Promise<DimensionConsistency> {
+	const empty: DimensionConsistency = {
+		stored,
+		fileRaw: { width: undefined, height: undefined },
+		orientation: undefined,
+		corrected: undefined,
+		mismatch: false
+	};
+	if (path.extname(filePath).toLowerCase() === '.pdf') return empty;
+	let tags;
+	try {
+		tags = await exiftool.read(filePath);
+	} catch {
+		return empty;
+	}
+	const rawW = typeof tags.ImageWidth === 'number' ? tags.ImageWidth : undefined;
+	const rawH = typeof tags.ImageHeight === 'number' ? tags.ImageHeight : undefined;
+	const orientation = typeof tags.Orientation === 'number' ? tags.Orientation : undefined;
+	return compareStoredVsImage(stored, { width: rawW, height: rawH }, orientation);
+}
+
+/** Result of comparing a file's name-extension against its sniffed (magic-byte) type (Item 12). */
+export interface ExtensionConsistency {
+	/** Current name extension incl. dot, lowercased (e.g. `.jpg`), or undefined when the name has none. */
+	fileExtension: string | undefined;
+	/** Extension sniffed from magic bytes incl. dot (e.g. `.png`), or undefined when the type is unknown. */
+	detectedExtension: string | undefined;
+	/** True iff the sniffed type is known and disagrees with the name extension (the actionable case). */
+	mismatch: boolean;
+}
+
+/** Extensions treated as equivalent so a benign spelling never registers as a mismatch. */
+const EXTENSION_ALIASES: Record<string, string> = { '.jpeg': '.jpg', '.tiff': '.tif' };
+
+/** Canonicalise an extension for comparison (lowercase + collapse known aliases). */
+function normalizeExtension(ext: string): string {
+	const lower = ext.toLowerCase();
+	return EXTENSION_ALIASES[lower] ?? lower;
+}
+
+/**
+ * Pure comparison of a filename's extension against a sniffed (magic-byte) extension. No IO — the
+ * single source of the "is the extension wrong?" rule, shared by the standalone check (which reads
+ * the file) and the metadata endpoint (which already sniffed the bytes).
+ *
+ * A mismatch is only flagged when the sniffed type is known; an unrecognised type ⇒ no mismatch
+ * (we never claim a name is wrong on a hunch). `.jpeg`/`.jpg` and `.tiff`/`.tif` are equivalent.
+ *
+ * @param filename - The blob's current filename (basename).
+ * @param detectedExt - Extension sniffed from magic bytes incl. dot, or null/undefined if unknown.
+ * @returns An {@link ExtensionConsistency} describing the comparison.
+ */
+export function detectExtensionMismatch(
+	filename: string,
+	detectedExt: string | null | undefined
+): ExtensionConsistency {
+	const fileExt = path.extname(filename).toLowerCase();
+	if (detectedExt == null) {
+		return { fileExtension: fileExt || undefined, detectedExtension: undefined, mismatch: false };
+	}
+	const detected = detectedExt.toLowerCase();
+	return {
+		fileExtension: fileExt || undefined,
+		detectedExtension: detected,
+		mismatch: normalizeExtension(fileExt) !== normalizeExtension(detected)
+	};
+}
+
+/**
+ * Sniff a blob's true type from magic bytes and compare it to its name extension (Item 12).
+ *
+ * Reads only the first bytes (no exiftool), then defers to {@link detectExtensionMismatch}. Fails
+ * safe: any read error yields `mismatch: false`.
+ *
+ * @param filePath - Absolute path to the blob.
+ * @param filename - The blob's current filename (basename) — the source of the name extension.
+ * @returns An {@link ExtensionConsistency} describing the comparison.
+ *
+ * Use case:
+ * - Drives the Item 12 "extension doesn't match content" warning badge + one-tap fix (the
+ *   lightweight `/extension-check` endpoint), without a full metadata read.
+ */
+export async function extensionConsistency(
+	filePath: string,
+	filename: string
+): Promise<ExtensionConsistency> {
+	let detected: string | null = null;
+	try {
+		detected = await detectExtensionFromMagic(filePath);
+	} catch {
+		detected = null;
+	}
+	return detectExtensionMismatch(filename, detected);
 }
 
 /**

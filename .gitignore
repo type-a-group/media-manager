@@ -8,6 +8,9 @@ node_modules
 /.svelte-kit
 /build
 
+# Reader library build (media-manager/reader) — built on demand / at publish (prepublishOnly)
+/dist
+
 # OS
 .DS_Store
 Thumbs.db
@@ -24,3 +27,15 @@ vite.config.ts.timestamp-*
 
 # Build fallback (when MEDIA_MANAGER_ROOT is not set)
 .media-manager-build
+
+# Disposable working copy of test-fixtures/ created by `npm run test:serve`.
+# The pristine seed lives in test-fixtures/ (tracked); this copy is mutated at runtime.
+/test-data
+
+# Google Photos integration secret (Item 37): per-workspace OAuth creds + refresh token.
+# Never commit, never seed into test-fixtures/.
+google.json
+
+# UI screenshots/videos captured by the Playwright UI-capture helper (scripts/ui-capture.mjs).
+# Dev artifacts for eyeballing a feature; not source. Includes throwaway capture scripts (_*.mjs).
+/.screenshots

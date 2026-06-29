@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Per-Entity Icon Picker — Workflow</title>
+		<script src="https://unpkg.com/lucide@latest"></script>
+		<style>
+			:root {
+				--bg: #f6f7f9;
+				--card: #ffffff;
+				--ink: #0f172a;
+				--muted: #64748b;
+				--line: #e2e8f0;
+				--primary: #6366f1;
+				--primary-soft: #eef2ff;
+				--accent: #0ea5e9;
+				--ok: #16a34a;
+				--warn: #d97706;
+				--radius: 12px;
+				--mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+				--sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+			}
+			body {
+				margin: 0;
+				font-family: var(--sans);
+				color: var(--ink);
+				background: var(--bg);
+				line-height: 1.55;
+			}
+			.wrap {
+				max-width: 980px;
+				margin: 0 auto;
+				padding: 48px 24px 96px;
+			}
+			header.hero {
+				background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%);
+				color: #fff;
+				border-radius: 18px;
+				padding: 36px 36px 32px;
+				margin-bottom: 32px;
+				box-shadow: 0 20px 45px -20px rgba(79, 70, 229, 0.7);
+			}
+			header.hero .eyebrow {
+				font-size: 12px;
+				letter-spacing: 0.14em;
+				text-transform: uppercase;
+				opacity: 0.85;
+				font-weight: 600;
+			}
+			header.hero h1 {
+				margin: 8px 0 6px;
+				font-size: 30px;
+				letter-spacing: -0.02em;
+			}
+			header.hero p {
+				margin: 0;
+				max-width: 64ch;
+				opacity: 0.92;
+			}
+			.hero-icons {
+				display: flex;
+				gap: 10px;
+				margin-top: 18px;
+			}
+			.hero-icons span {
+				width: 40px;
+				height: 40px;
+				display: grid;
+				place-items: center;
+				background: rgba(255, 255, 255, 0.18);
+				border-radius: 10px;
+			}
+			.hero-icons span svg {
+				width: 20px;
+				height: 20px;
+			}
+
+			section {
+				margin: 40px 0;
+			}
+			h2 {
+				font-size: 13px;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+				color: var(--muted);
+				font-weight: 700;
+				margin: 0 0 16px;
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			h2 svg {
+				width: 15px;
+				height: 15px;
+			}
+			h3 {
+				font-size: 16px;
+				margin: 0 0 4px;
+			}
+
+			.card {
+				background: var(--card);
+				border: 1px solid var(--line);
+				border-radius: var(--radius);
+				padding: 22px 24px;
+				box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+			}
+			.grid2 {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 16px;
+			}
+			.grid3 {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 16px;
+			}
+			@media (max-width: 760px) {
+				.grid2,
+				.grid3 {
+					grid-template-columns: 1fr;
+				}
+			}
+
+			.decision {
+				display: flex;
+				gap: 14px;
+				align-items: flex-start;
+			}
+			.decision .ic {
+				flex: none;
+				width: 38px;
+				height: 38px;
+				border-radius: 10px;
+				background: var(--primary-soft);
+				color: var(--primary);
+				display: grid;
+				place-items: center;
+			}
+			.decision .ic svg {
+				width: 19px;
+				height: 19px;
+			}
+			.decision h3 {
+				font-size: 14px;
+			}
+			.decision p {
+				margin: 2px 0 0;
+				font-size: 13px;
+				color: var(--muted);
+			}
+			.tag {
+				display: inline-block;
+				font-size: 11px;
+				font-weight: 600;
+				background: var(--primary-soft);
+				color: var(--primary);
+				padding: 1px 8px;
+				border-radius: 999px;
+				margin-top: 6px;
+			}
+
+			/* Step flow */
+			.steps {
+				counter-reset: step;
+				display: flex;
+				flex-direction: column;
+				gap: 20px;
+			}
+			.step {
+				display: grid;
+				grid-template-columns: 44px 1fr;
+				gap: 16px;
+				align-items: start;
+			}
+			.step .num {
+				counter-increment: step;
+				width: 36px;
+				height: 36px;
+				border-radius: 50%;
+				background: var(--ink);
+				color: #fff;
+				font-weight: 700;
+				display: grid;
+				place-items: center;
+				font-size: 15px;
+			}
+			.step .num::before {
+				content: counter(step);
+			}
+			.step .body h3 {
+				margin-bottom: 4px;
+			}
+			.step .body p {
+				margin: 0 0 12px;
+				color: var(--muted);
+				font-size: 14px;
+			}
+
+			/* Mock UI primitives */
+			.mock {
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				background: #fff;
+				overflow: hidden;
+				font-size: 13px;
+			}
+			.mock-head {
+				background: #f8fafc;
+				border-bottom: 1px solid var(--line);
+				padding: 6px 10px;
+				font-size: 11px;
+				color: var(--muted);
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+			.mock-head .dot {
+				width: 8px;
+				height: 8px;
+				border-radius: 50%;
+				background: #cbd5e1;
+			}
+			.mock-body {
+				padding: 12px;
+			}
+
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 8px;
+				border-radius: 8px;
+			}
+			.row.sel {
+				background: var(--primary-soft);
+			}
+			.row:hover {
+				background: #f1f5f9;
+			}
+			.row svg {
+				width: 16px;
+				height: 16px;
+				color: var(--muted);
+			}
+			.row .count {
+				margin-left: auto;
+				font-size: 11px;
+				color: var(--muted);
+			}
+			.row .dots {
+				margin-left: auto;
+				color: var(--muted);
+			}
+
+			.btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				border: 1px solid var(--line);
+				background: #fff;
+				border-radius: 8px;
+				padding: 6px 10px;
+				font-size: 13px;
+				cursor: default;
+				color: var(--ink);
+			}
+			.btn.primary {
+				background: var(--primary);
+				color: #fff;
+				border-color: var(--primary);
+			}
+			.btn.icon {
+				width: 36px;
+				height: 36px;
+				padding: 0;
+				justify-content: center;
+			}
+
+			.tabstrip {
+				display: flex;
+				gap: 2px;
+				border-bottom: 1px solid var(--line);
+				margin-bottom: 14px;
+			}
+			.tabstrip .t {
+				padding: 6px 12px;
+				font-size: 13px;
+				color: var(--muted);
+				border-bottom: 2px solid transparent;
+			}
+			.tabstrip .t.on {
+				color: var(--ink);
+				border-color: var(--primary);
+				font-weight: 600;
+			}
+
+			.field-label {
+				font-size: 12px;
+				font-weight: 600;
+				margin-bottom: 6px;
+				display: block;
+			}
+			.input {
+				border: 1px solid var(--line);
+				border-radius: 8px;
+				padding: 7px 10px;
+				font-size: 13px;
+				color: var(--ink);
+				background: #fff;
+				width: 100%;
+			}
+
+			/* Icon picker popover */
+			.popover {
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				background: #fff;
+				box-shadow: 0 18px 40px -18px rgba(15, 23, 42, 0.45);
+				padding: 12px;
+				width: 260px;
+			}
+			.icon-grid {
+				display: grid;
+				grid-template-columns: repeat(7, 1fr);
+				gap: 4px;
+				margin-top: 10px;
+			}
+			.icon-grid .opt {
+				aspect-ratio: 1;
+				border-radius: 8px;
+				display: grid;
+				place-items: center;
+				color: var(--muted);
+				cursor: default;
+			}
+			.icon-grid .opt:hover {
+				background: #f1f5f9;
+				color: var(--ink);
+			}
+			.icon-grid .opt.on {
+				background: var(--primary-soft);
+				color: var(--primary);
+				box-shadow: inset 0 0 0 1.5px var(--primary);
+			}
+			.icon-grid .opt svg {
+				width: 18px;
+				height: 18px;
+			}
+
+			.avatar-trigger {
+				width: 38px;
+				height: 38px;
+				border-radius: 9px;
+				border: 1px dashed var(--line);
+				display: grid;
+				place-items: center;
+				color: var(--primary);
+				background: var(--primary-soft);
+			}
+			.avatar-trigger svg {
+				width: 19px;
+				height: 19px;
+			}
+
+			/* chips */
+			.chip {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				background: #f1f5f9;
+				color: #475569;
+				border-radius: 999px;
+				padding: 1px 8px 1px 6px;
+				font-size: 11px;
+				font-weight: 500;
+			}
+			.chip svg {
+				width: 12px;
+				height: 12px;
+			}
+
+			.crumbs {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				font-size: 13px;
+				color: var(--muted);
+			}
+			.crumbs .cur {
+				color: var(--ink);
+				font-weight: 600;
+				display: inline-flex;
+				align-items: center;
+				gap: 5px;
+			}
+			.crumbs .cur svg {
+				width: 14px;
+				height: 14px;
+				color: var(--primary);
+			}
+			.crumbs .sep {
+				color: #cbd5e1;
+			}
+
+			.cmd .ci {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 8px;
+				border-radius: 7px;
+				font-size: 13px;
+			}
+			.cmd .ci svg {
+				width: 15px;
+				height: 15px;
+				color: var(--muted);
+			}
+			.cmd .ci.on {
+				background: var(--primary-soft);
+			}
+			.cmd .grouplabel {
+				font-size: 10px;
+				letter-spacing: 0.1em;
+				text-transform: uppercase;
+				color: var(--muted);
+				padding: 8px 8px 2px;
+			}
+
+			.tile {
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				overflow: hidden;
+				background: #fff;
+			}
+			.tile .thumb {
+				aspect-ratio: 1;
+				background: #eef2f6;
+				display: grid;
+				place-items: center;
+				color: #94a3b8;
+			}
+			.tile .thumb svg {
+				width: 26px;
+				height: 26px;
+			}
+			.tile .meta {
+				padding: 7px 8px;
+			}
+			.tile .meta .nm {
+				font-size: 11px;
+			}
+			.tile .meta .chips {
+				display: flex;
+				gap: 3px;
+				margin-top: 4px;
+				flex-wrap: wrap;
+			}
+
+			.before-after {
+				display: grid;
+				grid-template-columns: 1fr auto 1fr;
+				gap: 14px;
+				align-items: center;
+			}
+			.before-after .arrow {
+				color: var(--primary);
+			}
+			.before-after .lbl {
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+				color: var(--muted);
+				margin-bottom: 6px;
+				font-weight: 700;
+			}
+			@media (max-width: 760px) {
+				.before-after {
+					grid-template-columns: 1fr;
+				}
+				.before-after .arrow {
+					transform: rotate(90deg);
+					justify-self: center;
+				}
+			}
+
+			/* code / file list */
+			code {
+				font-family: var(--mono);
+				font-size: 12.5px;
+				background: #f1f5f9;
+				padding: 1px 6px;
+				border-radius: 5px;
+			}
+			pre {
+				font-family: var(--mono);
+				font-size: 12.5px;
+				background: #0f172a;
+				color: #e2e8f0;
+				padding: 16px;
+				border-radius: 10px;
+				overflow-x: auto;
+				line-height: 1.5;
+			}
+			pre .k {
+				color: #c4b5fd;
+			}
+			pre .s {
+				color: #86efac;
+			}
+			pre .c {
+				color: #64748b;
+			}
+			.filelist {
+				list-style: none;
+				padding: 0;
+				margin: 0;
+			}
+			.filelist li {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 9px 0;
+				border-bottom: 1px solid var(--line);
+				font-size: 13.5px;
+			}
+			.filelist li:last-child {
+				border: 0;
+			}
+			.filelist .badge {
+				font-size: 10px;
+				font-weight: 700;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+				padding: 2px 7px;
+				border-radius: 5px;
+				flex: none;
+			}
+			.badge.new {
+				background: #dcfce7;
+				color: #166534;
+			}
+			.badge.edit {
+				background: #fef3c7;
+				color: #92400e;
+			}
+			.filelist code {
+				font-size: 12px;
+			}
+			.note {
+				font-size: 12.5px;
+				color: var(--muted);
+			}
+
+			.callout {
+				border-left: 3px solid var(--accent);
+				background: #f0f9ff;
+				padding: 12px 16px;
+				border-radius: 0 8px 8px 0;
+				font-size: 13.5px;
+				color: #0c4a6e;
+			}
+			.callout strong {
+				color: #075985;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<header class="hero">
+				<div class="eyebrow">media-manager · FUTURE_CHANGES §28</div>
+				<h1>Per-Entity Icon Picker</h1>
+				<p>
+					Give every <strong>class</strong> and <strong>record type</strong> a distinct Lucide icon
+					so the rails, headers, command palette, and file chips become scannable at a glance. This
+					document walks the access workflow and the surfaces that change — review it before we
+					build.
+				</p>
+				<div class="hero-icons">
+					<span><i data-lucide="image"></i></span>
+					<span><i data-lucide="film"></i></span>
+					<span><i data-lucide="music"></i></span>
+					<span><i data-lucide="file-text"></i></span>
+					<span><i data-lucide="tag"></i></span>
+					<span><i data-lucide="bookmark"></i></span>
+				</div>
+			</header>
+
+			<!-- DECISIONS -->
+			<section>
+				<h2><i data-lucide="check-circle-2"></i> Decisions locked in</h2>
+				<div class="grid2">
+					<div class="card decision">
+						<div class="ic"><i data-lucide="shapes"></i></div>
+						<div>
+							<h3>Lucide icons only</h3>
+							<p>
+								A curated subset of the Lucide set the app already uses everywhere. Stored as a
+								stable string id (e.g. <code>"film"</code>), validated against the known set,
+								generic fallback when unset/unknown.
+							</p>
+							<span class="tag">stored: lucide id</span>
+						</div>
+					</div>
+					<div class="card decision">
+						<div class="ic"><i data-lucide="layout-grid"></i></div>
+						<div>
+							<h3>Four render surfaces</h3>
+							<p>
+								Rails (expanded + collapsed), list/catalog header + breadcrumbs, the ⌘K command
+								palette, and the per-file class chips in the Files grid.
+							</p>
+							<span class="tag">scannable everywhere</span>
+						</div>
+					</div>
+					<div class="card decision">
+						<div class="ic"><i data-lucide="user-round-cog"></i></div>
+						<div>
+							<h3>User entities only</h3>
+							<p>
+								Classes &amp; record types get a picker (they own the
+								<code>EntitySettingsDialog</code> General tab). All&nbsp;Files, Globals, and the
+								sub-app icons stay fixed.
+							</p>
+							<span class="tag">no reserved entities</span>
+						</div>
+					</div>
+					<div class="card decision">
+						<div class="ic"><i data-lucide="square-pen"></i></div>
+						<div>
+							<h3>Inline beside the name</h3>
+							<p>
+								An avatar-style icon button sits to the left of the Display-name input in the
+								General tab and opens the picker popover.
+							</p>
+							<span class="tag">one shared dialog</span>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- WORKFLOW -->
+			<section>
+				<h2><i data-lucide="route"></i> Accessing the picker — step by step</h2>
+				<div class="steps">
+					<div class="step">
+						<div class="num"></div>
+						<div class="body">
+							<h3>Open the entity's ⋮ menu → Settings…</h3>
+							<p>
+								From a class row in the Files rail, or a type row in the Records rail (also
+								reachable from the content-header ⋮). Opens the shared
+								<code>EntitySettingsDialog</code>.
+							</p>
+							<div class="grid2">
+								<div class="mock">
+									<div class="mock-head"><span class="dot"></span> Files rail — classes</div>
+									<div class="mock-body">
+										<div class="row sel">
+											<i data-lucide="image"></i> <span>Photos</span><span class="count">128</span
+											><span class="dots"
+												><i data-lucide="ellipsis-vertical" style="width: 14px"></i
+											></span>
+										</div>
+										<div class="row">
+											<i data-lucide="file-text"></i> <span>Documents</span
+											><span class="count">42</span>
+										</div>
+										<div class="row">
+											<i data-lucide="film"></i> <span>Clips</span><span class="count">17</span>
+										</div>
+									</div>
+								</div>
+								<div class="mock">
+									<div class="mock-head"><span class="dot"></span> ⋮ menu</div>
+									<div class="mock-body">
+										<div class="row"><i data-lucide="settings"></i> <span>Settings…</span></div>
+										<div class="row" style="color: #dc2626">
+											<i data-lucide="trash-2" style="color: #dc2626"></i> <span>Delete</span>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="step">
+						<div class="num"></div>
+						<div class="body">
+							<h3>The General tab shows the icon avatar</h3>
+							<p>
+								An icon button sits to the left of Display name. Unset entities show a dashed
+								placeholder with the generic fallback glyph.
+							</p>
+							<div class="mock">
+								<div class="mock-head"><span class="dot"></span> Photos — settings</div>
+								<div class="mock-body">
+									<div class="tabstrip">
+										<div class="t on">General</div>
+										<div class="t">Fields</div>
+										<div class="t">Danger</div>
+									</div>
+									<div style="display: flex; gap: 12px; align-items: flex-end">
+										<div>
+											<span class="field-label">Icon</span>
+											<div class="avatar-trigger"><i data-lucide="image"></i></div>
+										</div>
+										<div style="flex: 1">
+											<span class="field-label">Display name</span>
+											<div class="input">Photos</div>
+										</div>
+									</div>
+									<div style="margin-top: 14px">
+										<span class="field-label">Title rows by</span>
+										<div
+											class="input"
+											style="display: flex; justify-content: space-between; align-items: center"
+										>
+											Default <i data-lucide="chevron-down" style="width: 15px; color: #94a3b8"></i>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="step">
+						<div class="num"></div>
+						<div class="body">
+							<h3>Click it → searchable Lucide grid popover</h3>
+							<p>
+								Type to filter the curated set; click to select (highlighted). A “No icon” option
+								clears it back to the fallback.
+							</p>
+							<div class="popover">
+								<div class="input" style="display: flex; align-items: center; gap: 6px">
+									<i data-lucide="search" style="width: 14px; color: #94a3b8"></i>
+									<span style="color: #94a3b8">Search icons…</span>
+								</div>
+								<div class="icon-grid">
+									<div class="opt on"><i data-lucide="image"></i></div>
+									<div class="opt"><i data-lucide="film"></i></div>
+									<div class="opt"><i data-lucide="music"></i></div>
+									<div class="opt"><i data-lucide="file-text"></i></div>
+									<div class="opt"><i data-lucide="tag"></i></div>
+									<div class="opt"><i data-lucide="bookmark"></i></div>
+									<div class="opt"><i data-lucide="star"></i></div>
+									<div class="opt"><i data-lucide="folder"></i></div>
+									<div class="opt"><i data-lucide="camera"></i></div>
+									<div class="opt"><i data-lucide="palette"></i></div>
+									<div class="opt"><i data-lucide="map-pin"></i></div>
+									<div class="opt"><i data-lucide="book"></i></div>
+									<div class="opt"><i data-lucide="package"></i></div>
+									<div class="opt"><i data-lucide="heart"></i></div>
+									<div class="opt"><i data-lucide="globe"></i></div>
+									<div class="opt"><i data-lucide="brain"></i></div>
+									<div class="opt"><i data-lucide="target"></i></div>
+									<div class="opt"><i data-lucide="rocket"></i></div>
+									<div class="opt"><i data-lucide="calendar"></i></div>
+									<div class="opt"><i data-lucide="users"></i></div>
+									<div class="opt"><i data-lucide="wrench"></i></div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="step">
+						<div class="num"></div>
+						<div class="body">
+							<h3>Save — same policy as the rest of the tab</h3>
+							<p>
+								The icon id rides along in the existing General-tab <code>Save</code> (no new save
+								mechanism). It persists into the class <code>config</code> / type
+								<code>settings.json</code> next to <code>displayName</code>, then
+								<code>onchanged</code> refreshes the rail.
+							</p>
+							<div style="display: flex; gap: 10px; align-items: center">
+								<div class="btn">Close</div>
+								<div class="btn primary"><i data-lucide="check" style="width: 15px"></i> Save</div>
+								<span class="note">→ rail row, header, palette &amp; chips update</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- RENDER SURFACES -->
+			<section>
+				<h2><i data-lucide="sparkles"></i> Where the icon shows up</h2>
+				<div class="grid2">
+					<div class="card">
+						<h3 style="margin-bottom: 10px">① Rails — expanded</h3>
+						<div class="before-after">
+							<div>
+								<div class="lbl">Before</div>
+								<div class="mock">
+									<div class="mock-body">
+										<div class="row">
+											<i data-lucide="file-text"></i> <span>Photos</span
+											><span class="count">128</span>
+										</div>
+										<div class="row">
+											<i data-lucide="file-text"></i> <span>Clips</span
+											><span class="count">17</span>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="arrow"><i data-lucide="arrow-right"></i></div>
+							<div>
+								<div class="lbl">After</div>
+								<div class="mock">
+									<div class="mock-body">
+										<div class="row">
+											<i data-lucide="image"></i> <span>Photos</span><span class="count">128</span>
+										</div>
+										<div class="row">
+											<i data-lucide="film"></i> <span>Clips</span><span class="count">17</span>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="card">
+						<h3 style="margin-bottom: 10px">① Rails — collapsed glyph</h3>
+						<div class="before-after">
+							<div>
+								<div class="lbl">Before (initials)</div>
+								<div class="mock">
+									<div
+										class="mock-body"
+										style="display: flex; flex-direction: column; gap: 6px; align-items: center"
+									>
+										<div class="btn icon" style="font-weight: 700; font-size: 11px">PH</div>
+										<div class="btn icon" style="font-weight: 700; font-size: 11px">CL</div>
+									</div>
+								</div>
+							</div>
+							<div class="arrow"><i data-lucide="arrow-right"></i></div>
+							<div>
+								<div class="lbl">After (icon)</div>
+								<div class="mock">
+									<div
+										class="mock-body"
+										style="display: flex; flex-direction: column; gap: 6px; align-items: center"
+									>
+										<div class="btn icon">
+											<i data-lucide="image" style="width: 16px; color: var(--ink)"></i>
+										</div>
+										<div class="btn icon">
+											<i data-lucide="film" style="width: 16px; color: var(--ink)"></i>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<p class="note" style="margin-top: 10px">
+							Falls back to initials only when no icon is set.
+						</p>
+					</div>
+
+					<div class="card">
+						<h3 style="margin-bottom: 10px">② Header + breadcrumbs</h3>
+						<div class="mock">
+							<div class="mock-body">
+								<div class="crumbs">
+									<span>Home</span><span class="sep">›</span> <span>Files</span
+									><span class="sep">›</span>
+									<span class="cur"><i data-lucide="image"></i> Photos</span>
+								</div>
+							</div>
+						</div>
+						<p class="note" style="margin-top: 10px">
+							The active class/type icon prefixes the content-header title and the final breadcrumb
+							crumb.
+						</p>
+					</div>
+
+					<div class="card">
+						<h3 style="margin-bottom: 10px">③ Command palette (⌘K)</h3>
+						<div class="mock cmd">
+							<div class="mock-body">
+								<div class="input" style="margin-bottom: 6px; color: #94a3b8">Jump to…</div>
+								<div class="grouplabel">Classes</div>
+								<div class="ci on"><i data-lucide="image"></i> Photos</div>
+								<div class="ci"><i data-lucide="film"></i> Clips</div>
+								<div class="grouplabel">Record types</div>
+								<div class="ci"><i data-lucide="book"></i> Recipes</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="card" style="grid-column: 1 / -1">
+						<h3 style="margin-bottom: 10px">④ File grid class chips</h3>
+						<p class="note" style="margin-top: -2px; margin-bottom: 12px">
+							Each per-file class chip is prefixed with that class's icon.
+							<strong>Most involved surface</strong> — grid chips are currently plain strings, so
+							<code>GridItem.chips</code> grows from <code>string[]</code> to carry an optional icon
+							id (host maps class id → icon).
+						</p>
+						<div class="grid3">
+							<div class="tile">
+								<div class="thumb"><i data-lucide="image"></i></div>
+								<div class="meta">
+									<div class="nm">sunset.jpg</div>
+									<div class="chips">
+										<span class="chip"><i data-lucide="image"></i> Photos</span>
+									</div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="thumb"><i data-lucide="film"></i></div>
+								<div class="meta">
+									<div class="nm">intro.mp4</div>
+									<div class="chips">
+										<span class="chip"><i data-lucide="film"></i> Clips</span>
+									</div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="thumb"><i data-lucide="file-text"></i></div>
+								<div class="meta">
+									<div class="nm">brief.pdf</div>
+									<div class="chips">
+										<span class="chip"><i data-lucide="file-text"></i> Documents</span
+										><span class="chip"><i data-lucide="tag"></i> Archive</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- DATA MODEL -->
+			<section>
+				<h2><i data-lucide="database"></i> Data model — additive, no migration</h2>
+				<div class="card">
+					<p style="margin-top: 0">
+						One new optional field on each side, sitting beside the existing
+						<code>displayName</code>. Absent ⇒ generic fallback. A shared
+						<code>core/icons.ts</code> defines the curated id set, labels, and a
+						<code>resolveIcon(id)</code> helper used by every render surface.
+					</p>
+					<pre><span class="c">// src/lib/core/types.ts — ClassConfigSchema</span>
+<span class="k">export const</span> ClassConfigSchema = z.object({
+  displayName: z.string().default(<span class="s">''</span>),
+  gridGroupByField: z.string().optional(),
+  displayField: z.string().optional(),
+  icon: z.string().optional()      <span class="c">// ← new: lucide id, validated against ICON_SET</span>
+});
+
+<span class="c">// src/lib/storage/settingsFile.ts — MediaTypeSettingsFile</span>
+<span class="k">interface</span> MediaTypeSettingsFile {
+  displayName?: string;
+  displayField?: string;
+  subtitleField?: string;
+  icon?: string;                   <span class="c">// ← new</span>
+}
+
+<span class="c">// src/lib/core/icons.ts (new) — single source of truth</span>
+<span class="k">export const</span> ICON_SET = [<span class="s">'image'</span>, <span class="s">'film'</span>, <span class="s">'music'</span>, <span class="s">'file-text'</span>, <span class="s">'tag'</span>, …] <span class="k">as const</span>;
+<span class="k">export function</span> resolveIcon(id?: string): IconName  <span class="c">// fallback when missing/unknown</span></pre>
+					<div class="callout">
+						<strong>Why no migration:</strong> both <code>config</code> and
+						<code>settings.json</code> already carry <code>displayName</code> and are read through
+						Zod schemas with defaults — adding an optional key is read-compatible with every
+						existing data root. The <code>ClassSummary</code> and <code>MediaTypeSummary</code> DTOs
+						gain an <code>icon</code> passthrough so the rails get it in their existing list calls
+						(no extra fetch).
+					</div>
+				</div>
+			</section>
+
+			<!-- BUILD PLAN -->
+			<section>
+				<h2><i data-lucide="hammer"></i> Implementation checklist (once approved)</h2>
+				<div class="card">
+					<ul class="filelist">
+						<li>
+							<span class="badge new">new</span> <code>src/lib/core/icons.ts</code> — curated Lucide
+							id set + labels + <code>resolveIcon</code> fallback
+						</li>
+						<li>
+							<span class="badge new">new</span> <code>src/lib/components/IconPicker.svelte</code> —
+							searchable Lucide grid in a shadcn <code>Popover</code>, reused by both adapters
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>core/types.ts</code> +
+							<code>storage/settingsFile.ts</code> — add optional <code>icon</code> (+
+							<code>ClassSummary</code>/<code>MediaTypeSummary</code> passthrough)
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>storage/classRepo.ts</code> ·
+							<code>storage/mediaTypes.ts</code> — persist &amp; surface <code>icon</code> in
+							config/settings + summaries
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>entity-settings/types.ts</code> +
+							<code>adapters.ts</code> — carry <code>icon</code> through load/save for both adapters
+						</li>
+						<li>
+							<span class="badge edit">edit</span>
+							<code>entity-settings/EntitySettingsDialog.svelte</code> — avatar trigger beside
+							Display name (General tab)
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>records/RecordsRail.svelte</code> — replace
+							fixed <code>FileText</code> with the type icon (rows + collapsed)
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>routes/files/+page.svelte</code> — class
+							icon in the filter list rows + collapsed glyph; catalog header
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>Breadcrumbs.svelte</code> — optional
+							leading icon on a crumb
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>CommandPalette.svelte</code> — per
+							class/type icon instead of fixed <code>Tag</code>/<code>FileText</code>
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>data-grid/types.ts</code> +
+							<code>DataGrid.svelte</code> — chips carry an optional icon id; Files host maps
+							class→icon
+						</li>
+						<li>
+							<span class="badge edit">edit</span> <code>docs/FEATURES.md</code> +
+							<code>test-fixtures/</code> — record the new field; seed a couple of classes/types
+							with icons
+						</li>
+					</ul>
+					<p class="note" style="margin-top: 14px">
+						Verification: <code>npm run check</code> + <code>npm run test</code>, then the
+						<code>test-ui-feature</code> skill to screenshot the rail / header / palette / chips
+						against the fixture.
+					</p>
+				</div>
+			</section>
+
+			<footer style="text-align: center; color: var(--muted); font-size: 12px; margin-top: 48px">
+				media-manager · icon picker workflow mockup · all icons rendered live via Lucide
+			</footer>
+		</div>
+		<script>
+			lucide.createIcons();
+		</script>
+	</body>
+</html>

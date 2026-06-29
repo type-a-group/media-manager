@@ -7,3 +7,11 @@ bun.lockb
 
 # Miscellaneous
 static/
+
+# Plan artifacts (HTML/MD scratch plans — not source)
+plans/
+
+# App-owned data fixtures: media-manager writes JSON in its own style (2-space, expanded arrays).
+# These are committed exactly as the app writes them, so prettier must not reformat them to tabs
+# (that mismatch is what makes a committed workspace churn on first browse — see Item 32).
+test-fixtures/**/*.json

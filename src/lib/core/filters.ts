@@ -102,6 +102,7 @@ export function getOperatorsForFieldType(fieldType: FieldType): OperatorId[] {
 	switch (fieldType) {
 		case 'string':
 		case 'url':
+		case 'file':
 			return STRING_OPERATORS;
 		case 'number':
 			return NUMBER_OPERATORS;
@@ -121,3 +122,36 @@ export const VALUE_LESS_OPERATORS: Set<string> = new Set([
 	OPERATORS.is_empty,
 	OPERATORS.is_not_empty
 ]);
+
+/**
+ * The single "is this field value empty?" predicate, shared by the repo filter evaluators
+ * (`jsonRepo.evaluateClause` / `classRepo.evaluateClause`) and the "Incomplete only" filter
+ * (Item 10). A value is empty when it is the empty string, `null`/`undefined`, an empty list,
+ * or a `url`-type value object whose `url` is blank. This is the **one** definition of empty —
+ * the `is_empty` / `is_not_empty` operators and the incomplete check must agree, so both consume
+ * this rather than re-deriving it.
+ *
+ * @param v - A raw field value (post-normalization) from a record/member row.
+ * @returns `true` when the field should count as "has no value".
+ */
+export function isEmptyValue(v: unknown): boolean {
+	if (v === '' || v === undefined || v === null) return true;
+	if (Array.isArray(v) && v.length === 0) return true;
+	if (v != null && typeof v === 'object' && 'url' in (v as object))
+		return !((v as { url?: string }).url ?? '').trim();
+	return false;
+}
+
+/**
+ * "Incomplete" predicate (Item 10): does this record have **any** empty value among the given
+ * field keys? Used server-side for the `?incomplete=1` flag — the keys are the entity's user
+ * fields (`schemaUserFieldKeys` for json types, all schema keys for a Files class). Empty per
+ * {@link isEmptyValue}.
+ *
+ * @param rec - The record as a plain key→value map.
+ * @param keys - The field keys to check (the entity's user fields).
+ * @returns `true` when at least one of `keys` is empty in `rec`.
+ */
+export function recordHasEmptyField(rec: Record<string, unknown>, keys: string[]): boolean {
+	return keys.some((k) => isEmptyValue(rec[k]));
+}

@@ -1,144 +1,173 @@
 import * as fs from 'node:fs/promises';
 import * as fssync from 'node:fs';
 import path from 'node:path';
-import { getRootDir, listMediaTypeIds } from './paths.js';
+import {
+	getRootDir,
+	getMediaTypeBaseDir,
+	listMediaTypeIds,
+	MEDIA_DIR_NAME,
+	RECORDS_DIR_NAME,
+	GLOBALS_TYPE_ID
+} from './paths.js';
 import { readMediaTypeSettingsFileSync, writeMediaTypeSettingsFile } from './settingsFile.js';
 import type { MediaTypeKind } from './settingsFile.js';
 import { writeJsonFileAtomic } from './json.js';
-import { DEFAULT_FILES_SUBDIR } from './settingsFile.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
 
+/** Canonical globals singleton record id (must satisfy ImageIdSchema UUID validation). */
+export const GLOBALS_RECORD_ID = '00000000-0000-4000-8000-000000000001' as const;
+
 /**
- * Media type summary returned by listMediaTypes (id = folder name).
+ * Type ids that are auto-managed/protected on the records side. After the file-first redesign the
+ * `files` blob store is no longer a media type (it is the `media/` hub); only the `globals` json
+ * singleton remains reserved.
  */
+export const RESERVED_TYPE_IDS = new Set<string>([GLOBALS_TYPE_ID]);
+
+/**
+ * Folder names that can never be a user typeId — they collide with structural data-root folders
+ * (`media/`, `records/`) or are reserved. Enforced at creation (slug) time.
+ */
+const RESERVED_TYPE_FOLDER_NAMES = new Set<string>([
+	GLOBALS_TYPE_ID,
+	MEDIA_DIR_NAME,
+	RECORDS_DIR_NAME
+]);
+
+/** Media type summary (id = folder name). All top-level media types are now `json`. */
 export interface MediaTypeSummary {
 	id: string;
 	displayName: string;
 	kind: MediaTypeKind;
+	/** Per-type icon id (see `core/icons.ts`); absent ⇒ generic fallback in the rail/palette. */
+	icon?: string;
 }
 
-/**
- * List all valid media types under the root with display name and kind.
- *
- * @returns Array of { id, displayName, kind } in no guaranteed order
- */
+/** List all valid top-level (`json`) media types with display name and kind. */
 export function listMediaTypes(): MediaTypeSummary[] {
 	const ids = listMediaTypeIds();
-	const rootDir = getRootDir();
 	const result: MediaTypeSummary[] = [];
 	for (const id of ids) {
-		const baseDir = path.join(rootDir, id);
-		const settings = readMediaTypeSettingsFileSync(baseDir);
+		const settings = readMediaTypeSettingsFileSync(getMediaTypeBaseDir(id));
 		if (!settings) continue;
 		result.push({
 			id,
 			displayName: settings.displayName ?? id,
-			kind: settings.kind
+			kind: settings.kind,
+			icon: settings.icon
 		});
 	}
 	return result;
 }
 
-/**
- * Slugify a display name for use as folder name (typeId).
- * Lowercase, replace non-alphanumeric with hyphen, collapse hyphens, trim.
- */
+/** Slugify a display name for use as a folder name (typeId). */
 function slugify(displayName: string): string {
-	return displayName
-		.trim()
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-|-$/g, '') || 'media';
+	return (
+		displayName
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-|-$/g, '') || 'type'
+	);
 }
 
 /**
- * Create a new media type folder with settings.json and empty data file.
- * For kind 'images', also creates the files subdirectory.
+ * Create a new `json` media type folder with settings.json and an empty data file.
  *
- * @param displayName - Human-readable name (used to derive slug if unique)
- * @param kind - 'images' | 'json'
- * @returns The typeId (folder name) of the created media type
- * @throws If slug would be empty or folder already exists
+ * @param displayName - Human-readable name (used to derive slug)
+ * @returns The typeId (folder name)
  */
-export async function createMediaType(
-	displayName: string,
-	kind: MediaTypeKind
-): Promise<string> {
-	const rootDir = getRootDir();
+export async function createMediaType(displayName: string): Promise<string> {
 	let typeId = slugify(displayName);
-	if (!typeId) typeId = 'media';
-	const baseDir = path.join(rootDir, typeId);
-
-	// Ensure unique: if folder exists, append number
+	if (RESERVED_TYPE_FOLDER_NAMES.has(typeId)) {
+		throw new Error(`"${typeId}" is a reserved name and cannot be used for a media type`);
+	}
 	let candidate = typeId;
 	let n = 1;
-	while (fssync.existsSync(path.join(rootDir, candidate))) {
+	while (fssync.existsSync(getMediaTypeBaseDir(candidate))) {
 		candidate = `${typeId}-${n}`;
 		n++;
 	}
 	typeId = candidate;
-	const finalBaseDir = path.join(rootDir, typeId);
-
+	const finalBaseDir = getMediaTypeBaseDir(typeId);
 	await fs.mkdir(finalBaseDir, { recursive: true });
 
-	const dataFileName = kind === 'images' ? 'image-data.json' : 'data.json';
-	const dataPath = path.join(finalBaseDir, dataFileName);
-
-	/** Default schema: images get image_name; JSON gets name for list/grid display. */
-	const defaultSchema =
-		kind === 'images'
-			? {
-					image_name: {
-						type: 'string' as const,
-						removable: false,
-						defaultValue: ''
-					}
-				}
-			: {
-					name: {
-						type: 'string' as const,
-						removable: false,
-						defaultValue: ''
-					}
-				};
+	const defaultSchema: SchemaDefinition = {
+		name: { type: 'string', removable: false, defaultValue: '' }
+	} as unknown as SchemaDefinition;
 
 	await writeMediaTypeSettingsFile(finalBaseDir, {
 		displayName: displayName.trim() || typeId,
-		kind,
-		schema: defaultSchema as unknown as SchemaDefinition,
-		dataFileName,
-		...(kind === 'images' ? { filesSubdir: DEFAULT_FILES_SUBDIR } : {})
+		kind: 'json',
+		schema: defaultSchema
 	});
-
-	if (kind === 'images') {
-		await writeJsonFileAtomic(dataPath, { images: [] });
-		const filesDir = path.join(finalBaseDir, DEFAULT_FILES_SUBDIR);
-		await fs.mkdir(filesDir, { recursive: true });
-	} else {
-		await writeJsonFileAtomic(dataPath, { records: [] });
-	}
-
+	await writeJsonFileAtomic(path.join(finalBaseDir, 'data.json'), { records: [] });
 	return typeId;
 }
 
-/**
- * Delete a media type folder and all its contents.
- * Caller must ensure path is under root and looks like our structure (e.g. contains settings.json).
- *
- * @param typeId - Folder name under root
- * @throws If typeId is invalid or path is outside root
- */
+/** Delete a `json` media type folder and all its contents. */
 export async function deleteMediaType(typeId: string): Promise<void> {
+	if (RESERVED_TYPE_IDS.has(typeId)) {
+		throw new Error(`Cannot delete the protected "${typeId}" media type`);
+	}
 	const rootDir = getRootDir();
-	const baseDir = path.join(rootDir, typeId);
+	const baseDir = getMediaTypeBaseDir(typeId);
 	const resolvedBase = path.resolve(baseDir);
 	const resolvedRoot = path.resolve(rootDir);
 	if (!resolvedBase.startsWith(resolvedRoot) || resolvedBase === resolvedRoot) {
 		throw new Error('Invalid media type path');
 	}
-	const settingsPath = path.join(baseDir, 'settings.json');
-	if (!fssync.existsSync(settingsPath)) {
+	if (!fssync.existsSync(path.join(baseDir, 'settings.json'))) {
 		throw new Error('Not a media type folder');
 	}
 	await fs.rm(baseDir, { recursive: true, force: true });
+}
+
+/**
+ * Ensure the default "globals" json singleton exists and is healthy (exactly one record with the
+ * canonical id). Stays on the records side per the file-first redesign.
+ */
+export async function ensureGlobalsGroupExists(): Promise<void> {
+	const baseDir = getMediaTypeBaseDir(GLOBALS_TYPE_ID);
+	const settingsPath = path.join(baseDir, 'settings.json');
+
+	if (!fssync.existsSync(settingsPath)) {
+		await fs.mkdir(baseDir, { recursive: true });
+		await writeMediaTypeSettingsFile(baseDir, {
+			displayName: 'Globals',
+			kind: 'json',
+			schema: {}
+		});
+		await writeJsonFileAtomic(path.join(baseDir, 'data.json'), {
+			records: [{ id: GLOBALS_RECORD_ID }]
+		});
+		return;
+	}
+
+	const dataPath = path.join(baseDir, 'data.json');
+	let records: unknown[] = [];
+	try {
+		const raw = JSON.parse(await fs.readFile(dataPath, 'utf-8')) as { records?: unknown[] };
+		records = Array.isArray(raw.records) ? raw.records : [];
+	} catch {
+		records = [];
+	}
+
+	if (
+		records.length === 1 &&
+		!!records[0] &&
+		typeof records[0] === 'object' &&
+		(records[0] as Record<string, unknown>).id === GLOBALS_RECORD_ID
+	) {
+		return;
+	}
+
+	const canonical =
+		(records.find(
+			(r) => !!r && typeof r === 'object' && (r as Record<string, unknown>).id === GLOBALS_RECORD_ID
+		) as Record<string, unknown> | undefined) ??
+		(records[0] && typeof records[0] === 'object' ? (records[0] as Record<string, unknown>) : null);
+	const healed: Record<string, unknown> = { ...(canonical ?? {}), id: GLOBALS_RECORD_ID };
+	if (healed.name === 'Global Settings') delete healed.name;
+	await writeJsonFileAtomic(dataPath, { records: [healed] });
 }

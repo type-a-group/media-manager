@@ -1,49 +1,27 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-	import AppSidebar from '$lib/components/AppSidebar.svelte';
-	import * as Sidebar from "$lib/components/ui/sidebar/index.js";
 	import '../app.css';
 	import { ModeWatcher } from 'mode-watcher';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import { TOOLTIP_DELAY_MS } from '$lib/utils.js';
-	import { setSelectionContext } from '$lib/state/selection.svelte';
 	import { settingsStore } from '$lib/stores/settings.js';
-	import SidebarTriggerOverlay from '$lib/components/SidebarTriggerOverlay.svelte';
 
 	let { children } = $props();
 
-	// Initialize shared, in-memory selection state for the whole app.
-	const selection = setSelectionContext();
-
-	// Overview at / has no sidebar; editor at /media/[typeId] has sidebar + main.
-	const isEditor = $derived($page.url.pathname.startsWith('/media/'));
-
-	onMount(async () => {
-		await settingsStore.fetchSettings();
-		const s = settingsStore.getCurrentSettings();
-		selection.setGridSize(s.gridSize ?? 'medium');
+	// Every route brings its own chrome: the dashboard (/), the files hub (/files), and the record
+	// hub (/media/[typeId]) each own their sidebar/grid/panel layout. The layout only mounts global
+	// concerns (theme, toasts, tooltips, the ⌘K command palette) and warms the settings store.
+	onMount(() => {
+		settingsStore.fetchSettings();
 	});
 </script>
 
-{#if isEditor}
-	<Sidebar.Provider>
-		<ModeWatcher defaultMode="system" />
-		<AppSidebar />
-		<main class="w-full relative">
-			<SidebarTriggerOverlay />
-			<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
-				{@render children?.()}
-			</Tooltip.Provider>
-		</main>
-	</Sidebar.Provider>
-{:else}
-	<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
-		{@render children?.()}
-	</Tooltip.Provider>
-{/if}
+<!-- Mounted at the top level so the theme (.dark class on <html>) applies on every route. -->
+<ModeWatcher defaultMode="system" />
+<Tooltip.Provider delayDuration={TOOLTIP_DELAY_MS}>
+	{@render children?.()}
+</Tooltip.Provider>
+<CommandPalette />
 <Toaster />
-<style>
-
-</style>

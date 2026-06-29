@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>media-manager · UI unification mockup</title>
+		<style>
+			/* ── shadcn/zinc light palette (mirrors the app) ─────────────────── */
+			:root {
+				--bg: #ffffff;
+				--fg: #09090b;
+				--muted: #f4f4f5;
+				--muted-fg: #71717a;
+				--border: #e4e4e7;
+				--primary: #18181b;
+				--primary-fg: #fafafa;
+				--secondary: #f4f4f5;
+				--secondary-fg: #18181b;
+				--destructive: #ef4444;
+				--ring: #a1a1aa;
+				--amber: #f59e0b;
+				--radius: 8px;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font:
+					14px/1.5 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+				color: var(--fg);
+				background: #fafafa;
+			}
+			h1 {
+				font-size: 20px;
+				margin: 0 0 4px;
+			}
+			h2 {
+				font-size: 15px;
+				margin: 0;
+			}
+			.page {
+				max-width: 1180px;
+				margin: 0 auto;
+				padding: 28px 20px 80px;
+			}
+			.lede {
+				color: var(--muted-fg);
+				margin: 0 0 6px;
+			}
+			.legend {
+				display: flex;
+				gap: 16px;
+				flex-wrap: wrap;
+				margin: 14px 0 28px;
+				font-size: 12px;
+				color: var(--muted-fg);
+			}
+			.legend b {
+				color: var(--fg);
+			}
+			.dot {
+				display: inline-block;
+				width: 10px;
+				height: 10px;
+				border-radius: 3px;
+				vertical-align: middle;
+				margin-right: 5px;
+			}
+			.dot.new {
+				background: #dbeafe;
+				border: 1px solid #60a5fa;
+			}
+			.dot.move {
+				background: #dcfce7;
+				border: 1px solid #4ade80;
+			}
+			.dot.fix {
+				background: #fef3c7;
+				border: 1px solid var(--amber);
+			}
+
+			section.block {
+				margin-bottom: 40px;
+			}
+			.block > .head {
+				display: flex;
+				align-items: baseline;
+				gap: 10px;
+				margin-bottom: 10px;
+			}
+			.block > .head .tag {
+				font-size: 11px;
+				font-weight: 600;
+				padding: 2px 8px;
+				border-radius: 999px;
+				background: var(--muted);
+				color: var(--muted-fg);
+			}
+			.note {
+				font-size: 12.5px;
+				color: var(--muted-fg);
+				margin: 8px 2px 0;
+			}
+			.pill {
+				font-size: 11px;
+				padding: 1px 7px;
+				border-radius: 999px;
+				vertical-align: middle;
+				margin-left: 6px;
+			}
+			.pill.new {
+				background: #dbeafe;
+				color: #1d4ed8;
+			}
+			.pill.move {
+				background: #dcfce7;
+				color: #15803d;
+			}
+			.pill.fix {
+				background: #fef3c7;
+				color: #b45309;
+			}
+
+			/* ── primitives mimicking shadcn ─────────────────────────────────── */
+			.frame {
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				background: var(--bg);
+				overflow: hidden;
+				box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+			}
+			.btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				height: 32px;
+				padding: 0 12px;
+				border-radius: 6px;
+				border: 1px solid var(--border);
+				background: var(--bg);
+				font-size: 13px;
+				font-weight: 500;
+				cursor: default;
+				white-space: nowrap;
+			}
+			.btn.sm {
+				height: 28px;
+				padding: 0 9px;
+				font-size: 12px;
+			}
+			.btn.icon {
+				width: 32px;
+				padding: 0;
+				justify-content: center;
+			}
+			.btn.primary {
+				background: var(--primary);
+				color: var(--primary-fg);
+				border-color: var(--primary);
+			}
+			.btn.ghost {
+				border-color: transparent;
+				background: transparent;
+			}
+			.btn.destructive {
+				background: var(--destructive);
+				color: #fff;
+				border-color: var(--destructive);
+			}
+			.btn.outline {
+				background: var(--bg);
+			}
+			.input {
+				height: 32px;
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				padding: 0 10px;
+				font-size: 13px;
+				background: var(--bg);
+				color: var(--fg);
+				display: flex;
+				align-items: center;
+			}
+			.input.ph {
+				color: var(--muted-fg);
+			}
+			.select {
+				justify-content: space-between;
+				gap: 8px;
+			}
+			.chev::after {
+				content: '▾';
+				color: var(--muted-fg);
+				font-size: 11px;
+			}
+			.check {
+				width: 16px;
+				height: 16px;
+				border: 1px solid var(--ring);
+				border-radius: 4px;
+				flex: 0 0 auto;
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 11px;
+				color: #fff;
+			}
+			.check.on {
+				background: var(--primary);
+				border-color: var(--primary);
+			}
+			.sep {
+				height: 1px;
+				background: var(--border);
+				margin: 10px 0;
+			}
+			.label {
+				font-size: 12px;
+				color: var(--muted-fg);
+			}
+			.kbd {
+				font:
+					11px ui-monospace,
+					monospace;
+				border: 1px solid var(--border);
+				border-bottom-width: 2px;
+				border-radius: 4px;
+				padding: 0 5px;
+				background: var(--muted);
+			}
+
+			/* ── /files hub layout ───────────────────────────────────────────── */
+			.hub {
+				display: grid;
+				grid-template-columns: 230px 1fr 300px;
+				min-height: 460px;
+			}
+			.sidebar {
+				border-right: 1px solid var(--border);
+				display: flex;
+				flex-direction: column;
+				background: #fcfcfd;
+			}
+			.sb-pad {
+				padding: 12px;
+			}
+			.sb-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 5px 6px;
+				border-radius: 6px;
+			}
+			.sb-row:hover {
+				background: var(--muted);
+			}
+			.grow {
+				flex: 1;
+				min-width: 0;
+			}
+			.count {
+				font-size: 12px;
+				color: var(--muted-fg);
+			}
+			.dots {
+				color: var(--muted-fg);
+				font-weight: 700;
+				letter-spacing: 1px;
+			}
+			.group-label {
+				font-size: 11px;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.04em;
+				color: var(--muted-fg);
+			}
+
+			.main {
+				display: flex;
+				flex-direction: column;
+				min-width: 0;
+			}
+			.toolbar {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+				padding: 12px;
+				border-bottom: 1px solid var(--border);
+			}
+			.spacer {
+				flex: 1;
+			}
+			.grid {
+				flex: 1;
+				padding: 16px;
+				display: grid;
+				gap: 12px;
+				grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+				align-content: start;
+			}
+			.tile {
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				overflow: hidden;
+				position: relative;
+			}
+			.tile.active {
+				outline: 2px solid var(--primary);
+				outline-offset: -1px;
+			}
+			.thumb {
+				aspect-ratio: 1;
+				background: linear-gradient(135deg, #e4e4e7, #f4f4f5);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: #a1a1aa;
+				font-size: 22px;
+			}
+			.tile .meta {
+				padding: 6px 7px;
+			}
+			.tile .fn {
+				font-size: 11px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.tile .chips {
+				display: flex;
+				gap: 3px;
+				margin-top: 3px;
+				flex-wrap: wrap;
+			}
+			.chip {
+				font-size: 10px;
+				background: var(--secondary);
+				color: var(--secondary-fg);
+				padding: 0 5px;
+				border-radius: 4px;
+			}
+			.tile .tcheck {
+				position: absolute;
+				top: 4px;
+				left: 4px;
+				background: rgba(255, 255, 255, 0.85);
+				border-radius: 4px;
+				padding: 2px;
+			}
+			.tile .warn {
+				position: absolute;
+				top: 4px;
+				right: 4px;
+				color: var(--amber);
+				background: rgba(255, 255, 255, 0.85);
+				border-radius: 4px;
+				padding: 1px 3px;
+				font-size: 12px;
+			}
+
+			/* editor panel */
+			.panel {
+				border-left: 1px solid var(--border);
+				display: flex;
+				flex-direction: column;
+				background: var(--bg);
+			}
+			.panel .ph {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 10px;
+				border-bottom: 1px solid var(--border);
+			}
+			.panel .body {
+				padding: 12px;
+				overflow: auto;
+			}
+			.imgbox {
+				width: 100%;
+				height: 120px;
+				border-radius: 6px;
+				background: linear-gradient(135deg, #e4e4e7, #f4f4f5);
+				margin-bottom: 10px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: #a1a1aa;
+			}
+			.card {
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				margin-bottom: 10px;
+			}
+			.card .ch {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				padding: 6px 8px;
+				border-bottom: 1px solid var(--border);
+				background: var(--muted);
+				font-weight: 600;
+				font-size: 12.5px;
+			}
+			.card .cb {
+				padding: 8px;
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.field .label {
+				margin-bottom: 3px;
+				display: block;
+			}
+
+			/* dialog mock */
+			.dlgwrap {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 20px;
+			}
+			.dialog {
+				border: 1px solid var(--border);
+				border-radius: 12px;
+				box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+				background: var(--bg);
+				overflow: hidden;
+			}
+			.dlg-h {
+				padding: 14px 16px;
+				border-bottom: 1px solid var(--border);
+			}
+			.dlg-h .t {
+				font-weight: 600;
+			}
+			.dlg-h .d {
+				font-size: 12.5px;
+				color: var(--muted-fg);
+				margin-top: 2px;
+			}
+			.dlg-b {
+				padding: 14px 16px;
+				display: flex;
+				flex-direction: column;
+				gap: 12px;
+			}
+			.dlg-f {
+				padding: 12px 16px;
+				border-top: 1px solid var(--border);
+				display: flex;
+				justify-content: flex-end;
+				gap: 8px;
+			}
+			.field-row {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+			}
+			.opt {
+				display: inline-flex;
+				align-items: center;
+				gap: 4px;
+				background: var(--muted);
+				border-radius: 6px;
+				padding: 2px 8px;
+				font-size: 12px;
+			}
+
+			.pickgrid {
+				display: grid;
+				grid-template-columns: repeat(4, 1fr);
+				gap: 8px;
+			}
+			.pickcell {
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 6px;
+				text-align: center;
+			}
+			.pickcell.sel {
+				outline: 2px solid var(--primary);
+				outline-offset: -1px;
+			}
+			.pickcell .pt {
+				aspect-ratio: 1;
+				border-radius: 6px;
+				background: linear-gradient(135deg, #e4e4e7, #f4f4f5);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				color: #a1a1aa;
+				margin-bottom: 5px;
+			}
+			.pickcell .pn {
+				font-size: 10.5px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.grid2 {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 16px;
+			}
+			@media (max-width: 860px) {
+				.hub {
+					grid-template-columns: 1fr;
+				}
+				.dlgwrap,
+				.grid2 {
+					grid-template-columns: 1fr;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="page">
+			<h1>media-manager — UI unification</h1>
+			<p class="lede">
+				Target states for the shared <b>DataGrid</b>, <b>FieldInput</b>, <b>SchemaEditor</b>,
+				rebuilt <b>FilePicker</b>, sidebar filters, and restored prev/next nav. Static mockup —
+				review gate before any component code changes.
+			</p>
+			<div class="legend">
+				<span><span class="dot new"></span><b>new</b> shared component</span>
+				<span><span class="dot move"></span><b>moved</b> into sidebar</span>
+				<span><span class="dot fix"></span><b>bug fix</b> (broken today)</span>
+			</div>
+
+			<!-- ───────────────────────── /files hub ───────────────────────── -->
+			<section class="block">
+				<div class="head">
+					<span class="tag">Route</span>
+					<h2>/files — hub with consolidated filters + shared grid + editor panel</h2>
+				</div>
+				<div class="frame hub">
+					<!-- sidebar -->
+					<aside class="sidebar">
+						<div class="sb-pad" style="border-bottom: 1px solid var(--border)">
+							<div
+								style="
+									display: flex;
+									align-items: center;
+									justify-content: space-between;
+									margin-bottom: 8px;
+								"
+							>
+								<b>Files</b><span class="btn ghost icon sm">⌂</span>
+							</div>
+							<!-- MOVED: search now lives in the sidebar -->
+							<div class="input ph" style="width: 100%">
+								🔍&nbsp; Search filenames…<span class="pill move">moved</span>
+							</div>
+						</div>
+						<div class="sb-pad grow">
+							<div
+								style="
+									display: flex;
+									justify-content: space-between;
+									align-items: center;
+									margin-bottom: 6px;
+								"
+							>
+								<span class="group-label">Classes</span><span class="btn ghost sm">＋ New</span>
+							</div>
+							<div class="sb-row">
+								<span class="check on">✓</span><span class="grow">images</span
+								><span class="count">12</span><span class="dots">⋮</span>
+							</div>
+							<div class="sb-row">
+								<span class="check"></span><span class="grow">documents</span
+								><span class="count">3</span><span class="dots">⋮</span>
+							</div>
+							<!-- MOVED: match any/all toggle near the class checkboxes -->
+							<div class="sb-row" style="margin-top: 4px">
+								<span class="label">Match</span>
+								<span class="btn outline sm select chev" style="height: 26px">any of</span>
+								<span class="pill move">moved</span>
+							</div>
+							<div class="sep"></div>
+							<div class="sb-row">
+								<span class="check"></span><span class="grow">Unclassified</span>
+							</div>
+						</div>
+						<div
+							class="sb-pad"
+							style="
+								border-top: 1px solid var(--border);
+								background: #fffbeb;
+								color: #b45309;
+								font-size: 12px;
+							"
+						>
+							⚠ 1 file missing — review
+						</div>
+					</aside>
+
+					<!-- main -->
+					<div class="main">
+						<div class="toolbar">
+							<span class="label">Group by</span>
+							<span class="btn outline sm select chev" style="width: 120px">Category</span>
+							<span class="label">Size</span>
+							<span class="btn outline sm select chev" style="width: 96px">medium</span>
+							<span class="note" style="margin: 0">group-by &amp; size stay in the toolbar</span>
+							<span class="spacer"></span>
+							<span class="btn primary sm">⤴ Upload</span>
+						</div>
+						<div class="grid">
+							<!-- shared DataGrid tiles -->
+							<div class="tile active">
+								<div class="tcheck"><span class="check on">✓</span></div>
+								<div class="thumb">▦</div>
+								<div class="meta">
+									<div class="fn">sunset.jpg</div>
+									<div class="chips"><span class="chip">images</span></div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="tcheck"><span class="check"></span></div>
+								<div class="thumb">▦</div>
+								<div class="meta">
+									<div class="fn">forest.png</div>
+									<div class="chips"><span class="chip">images</span></div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="tcheck"><span class="check"></span></div>
+								<div class="warn">⚠</div>
+								<div class="thumb">▭</div>
+								<div class="meta">
+									<div class="fn">report.pdf</div>
+									<div class="chips"><span class="chip">documents</span></div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="tcheck"><span class="check"></span></div>
+								<div class="thumb">▦</div>
+								<div class="meta">
+									<div class="fn">river.jpg</div>
+									<div class="chips"><span class="chip">images</span></div>
+								</div>
+							</div>
+							<div class="tile">
+								<div class="tcheck"><span class="check"></span></div>
+								<div class="thumb">▭</div>
+								<div class="meta">
+									<div class="fn">notes.txt</div>
+									<div class="chips">
+										<span class="chip" style="color: var(--muted-fg); background: transparent"
+											>unclassified</span
+										>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- editor panel with restored prev/next -->
+					<aside class="panel">
+						<div class="ph">
+							<span class="btn outline icon sm" title="Previous">‹</span>
+							<span class="input grow" style="font-weight: 500">sunset.jpg</span>
+							<span class="btn outline icon sm" title="Next">›</span>
+							<span class="btn ghost icon sm" title="Info">ⓘ</span>
+							<span class="btn ghost icon sm" title="Close">✕</span>
+						</div>
+						<div class="body">
+							<div class="imgbox">▦</div>
+							<div class="card">
+								<div class="ch">
+									<span>images</span
+									><span style="color: var(--destructive); font-weight: 400; font-size: 12px"
+										>remove</span
+									>
+								</div>
+								<div class="cb">
+									<div class="field">
+										<span class="label">category</span
+										><span class="btn outline select chev" style="width: 100%">nature</span>
+									</div>
+									<div class="field">
+										<span class="label">rating</span><span class="input">4</span>
+									</div>
+									<span class="btn sm" style="align-self: flex-start; background: var(--secondary)"
+										>Save images</span
+									>
+								</div>
+							</div>
+							<div class="btn outline select chev" style="width: 100%">＋ Add to class…</div>
+						</div>
+					</aside>
+				</div>
+				<p class="note">
+					<span class="pill new">new</span> the grid is now one shared <b>DataGrid</b> (same tiles
+					on the records side). <span class="pill move">moved</span> filename search &amp; the
+					match-any/all toggle are in the sidebar. <span class="pill new">new</span> the editor
+					panel regains <span class="kbd">‹</span> <span class="kbd">›</span> chevrons and
+					<span class="kbd">←</span> <span class="kbd">→</span> keyboard nav across the filtered
+					order, with an autosave-on-advance toggle.
+				</p>
+			</section>
+
+			<!-- ───────────────── shared schema editor ───────────────── -->
+			<section class="block">
+				<div class="head">
+					<span class="tag">Dialog</span>
+					<h2>Shared schema editor — one body, injected API adapter</h2>
+				</div>
+				<div class="dlgwrap">
+					<div class="dialog">
+						<div class="dlg-h">
+							<div class="t">Schema — class “images”</div>
+							<div class="d">Add, edit, or remove fields.</div>
+						</div>
+						<div class="dlg-b">
+							<div class="field-row">
+								<span style="flex: 1"
+									><b>category</b>
+									<span class="label">— dropdown · nature, urban, abstract</span></span
+								><span class="btn ghost icon sm">✎</span><span class="btn ghost icon sm">🗑</span>
+							</div>
+							<div class="field-row">
+								<span style="flex: 1"><b>rating</b> <span class="label">— number</span></span
+								><span class="btn ghost icon sm">✎</span><span class="btn ghost icon sm">🗑</span>
+							</div>
+							<div class="sep"></div>
+							<span class="label">Add field</span>
+							<div class="field-row">
+								<span class="input ph" style="width: 150px">field_name</span>
+								<span class="btn outline sm select chev" style="width: 104px">string</span>
+								<span class="input ph" style="flex: 1">Default value</span>
+								<span class="btn primary sm">＋ Add</span>
+							</div>
+						</div>
+						<div class="dlg-f"><span class="btn sm">Done</span></div>
+					</div>
+
+					<div class="dialog">
+						<div class="dlg-h">
+							<div class="t">Schema — record type “notes”</div>
+							<div class="d">Identical body — same add/edit/delete fields.</div>
+						</div>
+						<div class="dlg-b">
+							<div class="field-row">
+								<span style="flex: 1"><b>title</b> <span class="label">— string</span></span
+								><span class="btn ghost icon sm">✎</span><span class="btn ghost icon sm">🗑</span>
+							</div>
+							<div class="field-row">
+								<span style="flex: 1"><b>tags</b> <span class="label">— list · string</span></span
+								><span class="btn ghost icon sm">✎</span><span class="btn ghost icon sm">🗑</span>
+							</div>
+							<div class="sep"></div>
+							<span class="label">Add field</span>
+							<div class="field-row">
+								<span class="input ph" style="width: 150px">field_name</span>
+								<span class="btn outline sm select chev" style="width: 104px">string</span>
+								<span class="btn primary sm">＋ Add</span>
+							</div>
+						</div>
+						<div class="dlg-f"><span class="btn sm">Done</span></div>
+					</div>
+				</div>
+				<p class="note">
+					<span class="pill new">new</span> <b>SchemaEditorBody</b> drives both — just
+					add/edit/delete fields. The optional extras (Export/Import/Clone/Validate&amp;Repair) are
+					dropped from both editors for now; the endpoints stay so they can return later behind an
+					optional slot. Replaces the ~95% duplicated <code>ClassSchemaDialog</code> ⇄
+					<code>SchemaEditorButton</code>.
+				</p>
+			</section>
+
+			<!-- ───────────────── file picker + field input ───────────────── -->
+			<section class="block">
+				<div class="grid2">
+					<div>
+						<div class="head">
+							<span class="tag">Dialog</span>
+							<h2>Rebuilt FilePicker <span class="pill fix">bug fix</span></h2>
+						</div>
+						<div class="dialog">
+							<div class="dlg-h">
+								<div class="t">Select file</div>
+								<div class="d">Search and pick a blob from /api/files.</div>
+							</div>
+							<div class="dlg-b">
+								<div class="input ph" style="width: 100%">🔍&nbsp; Search files…</div>
+								<div class="pickgrid">
+									<div class="pickcell sel">
+										<div class="pt">▦</div>
+										<div class="pn">sunset.jpg</div>
+									</div>
+									<div class="pickcell">
+										<div class="pt">▦</div>
+										<div class="pn">forest.png</div>
+									</div>
+									<div class="pickcell">
+										<div class="pt">▭</div>
+										<div class="pn">report.pdf</div>
+									</div>
+									<div class="pickcell">
+										<div class="pt">▦</div>
+										<div class="pn">river.jpg</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<p class="note">
+							Today this picker is broken on records — it hunts for a <code>blob_store</code> media
+							type that no longer exists and shows “No global files directory found.” Rebuilt on
+							<code>apiListFiles</code> + <code>apiBlobUrl</code> and shared by every
+							<code>file</code>-type field.
+						</p>
+					</div>
+
+					<div>
+						<div class="head">
+							<span class="tag">Component</span>
+							<h2>Shared FieldInput — all types <span class="pill new">new</span></h2>
+						</div>
+						<div
+							class="frame"
+							style="padding: 14px; display: flex; flex-direction: column; gap: 12px"
+						>
+							<div class="field">
+								<span class="label">string</span><span class="input">A short title</span>
+							</div>
+							<div class="field">
+								<span class="label">number</span><span class="input" style="width: 120px">42</span>
+							</div>
+							<div class="field">
+								<span class="label">boolean</span><span class="check on">✓</span>
+							</div>
+							<div class="field">
+								<span class="label">dropdown</span
+								><span class="btn outline select chev" style="width: 100%">nature</span>
+							</div>
+							<div class="field">
+								<span class="label">dropdown · multiselect</span>
+								<div style="display: flex; gap: 12px">
+									<span><span class="check on">✓</span> nature</span
+									><span><span class="check"></span> urban</span>
+								</div>
+							</div>
+							<div class="field">
+								<span class="label">list (per-item chips + add)</span>
+								<div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center">
+									<span class="opt">forest ✕</span><span class="opt">river ✕</span
+									><span class="input ph" style="flex: 1; min-width: 80px">add item…</span>
+								</div>
+							</div>
+							<div class="field">
+								<span class="label">url (display name + url)</span>
+								<div class="field-row">
+									<span class="input" style="width: 33%">Homepage</span
+									><span class="input" style="flex: 1">https://…</span>
+								</div>
+							</div>
+							<div class="field">
+								<span class="label">file</span>
+								<div class="field-row">
+									<span class="btn outline" style="flex: 1; justify-content: flex-start; gap: 8px"
+										>▦ sunset.jpg</span
+									><span class="btn ghost icon sm">↗</span><span class="btn ghost icon sm">✕</span>
+								</div>
+							</div>
+						</div>
+						<p class="note">
+							One component used by the files editor and the json/globals record editors — the lossy
+							comma-list path is gone; url-list items keep their shape.
+						</p>
+					</div>
+				</div>
+			</section>
+
+			<p class="note" style="margin-top: 8px">
+				<b>Next:</b> once you approve this layout, implementation proceeds Phase 2 → 8 (DataGrid →
+				file hub → FilePicker → FieldInput → SchemaEditor → prev/next → optional record-grid), with
+				<code>npm run check</code>/<code>test</code>/<code>build</code> + Playwright capture at each
+				step. Legacy <code>ImageViewGrid</code>/<code>ImageEditorPane</code> stay untouched.
+			</p>
+		</div>
+	</body>
+</html>

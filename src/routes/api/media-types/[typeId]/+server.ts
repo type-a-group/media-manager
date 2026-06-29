@@ -27,13 +27,13 @@ export const GET: RequestHandler = async ({ params }) => {
 			id: typeId,
 			displayName,
 			kind: paths.kind,
-			baseDir: paths.baseDir,
-			...(paths.kind === 'images' && paths.filesDir ? { filesDir: paths.filesDir } : {})
+			baseDir: paths.baseDir
 		});
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to get media type' });
 	}
 };
@@ -52,6 +52,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') throw error(403, 'Globals group cannot be renamed');
 		const repo = getMediaTypeRepo(typeId); // validate typeId and that folder exists
 		const paths = getMediaTypePaths(typeId);
 		const schema = await repo.getSchema();
@@ -64,7 +65,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to rename media type' });
 	}
 };
@@ -75,6 +77,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 export const DELETE: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') throw error(403, 'Globals group cannot be deleted');
 		getMediaTypeRepo(typeId); // validate typeId and that folder exists
 		await deleteMediaType(typeId);
 		return json({ success: true });

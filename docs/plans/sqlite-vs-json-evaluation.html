@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>media-manager: JSON-on-disk vs SQLite — Decision Brief</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --ink: #e6e9ef;
+    --ink-dim: #aab1c0;
+    --ink-faint: #7b8494;
+    --line: #2a2f3a;
+    --json: #4ea1ff;
+    --sqlite: #ffb347;
+    --hybrid: #57d9a3;
+    --warn: #ff6b6b;
+    --good: #57d9a3;
+    --accent: #b78bff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; font-size: 16px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px 120px; }
+  header.hero {
+    padding: 64px 24px 40px; text-align: center;
+    background: radial-gradient(1200px 400px at 50% -10%, #1c2030 0%, var(--bg) 70%);
+    border-bottom: 1px solid var(--line);
+  }
+  header.hero h1 { font-size: 2.2rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  header.hero .sub { color: var(--ink-dim); font-size: 1.05rem; max-width: 700px; margin: 0 auto; }
+  header.hero .meta { color: var(--ink-faint); font-size: 0.85rem; margin-top: 18px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem;
+    font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
+  .badge.plan { background: rgba(183,139,255,0.15); color: var(--accent); border: 1px solid rgba(183,139,255,0.3); }
+
+  h2 { font-size: 1.5rem; margin: 56px 0 8px; letter-spacing: -0.01em; padding-top: 8px; }
+  h2 .num { color: var(--ink-faint); font-family: var(--mono); font-size: 1rem; margin-right: 10px; }
+  h3 { font-size: 1.12rem; margin: 32px 0 6px; color: var(--ink); }
+  p { color: var(--ink-dim); }
+  a { color: var(--json); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2);
+    padding: 1px 6px; border-radius: 5px; color: #d7c3ff; border: 1px solid var(--line); }
+  .lead { font-size: 1.05rem; color: var(--ink); }
+
+  .tldr {
+    background: linear-gradient(180deg, #18211c, #15181f);
+    border: 1px solid #2c4538; border-left: 4px solid var(--hybrid);
+    border-radius: 14px; padding: 24px 28px; margin: 32px 0;
+  }
+  .tldr h2 { margin: 0 0 10px; font-size: 1.25rem; }
+  .tldr .verdict { font-size: 1.08rem; color: var(--ink); }
+  .tldr strong { color: var(--hybrid); }
+
+  .toc { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 28px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px 26px; margin: 28px 0; }
+  .toc a { color: var(--ink-dim); font-size: 0.94rem; display: block; padding: 3px 0; }
+  .toc a:hover { color: var(--json); }
+  .toc .n { color: var(--ink-faint); font-family: var(--mono); margin-right: 8px; }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 22px; margin: 18px 0; }
+  figure { margin: 24px 0; }
+  figure svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  figcaption { color: var(--ink-faint); font-size: 0.85rem; text-align: center; margin-top: 10px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--ink); font-weight: 600; background: var(--panel-2); }
+  thead th:first-child { border-top-left-radius: 10px; }
+  thead th:last-child { border-top-right-radius: 10px; }
+  td { color: var(--ink-dim); }
+  tr:last-child td { border-bottom: none; }
+  .yes { color: var(--good); font-weight: 600; }
+  .no { color: var(--warn); font-weight: 600; }
+  .meh { color: #e8c46a; font-weight: 600; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 20px 0; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } .toc { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; background: var(--panel); }
+  .card h4 { margin: 0 0 10px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+  .card ul { margin: 0; padding-left: 18px; }
+  .card li { color: var(--ink-dim); margin: 5px 0; font-size: 0.92rem; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .dot.json { background: var(--json); }
+  .dot.sqlite { background: var(--sqlite); }
+  .dot.hybrid { background: var(--hybrid); }
+  .pro::before { content: "✓ "; color: var(--good); font-weight: 700; }
+  .con::before { content: "✗ "; color: var(--warn); font-weight: 700; }
+
+  blockquote { margin: 18px 0; padding: 12px 20px; border-left: 3px solid var(--accent);
+    background: var(--panel-2); border-radius: 0 8px 8px 0; color: var(--ink-dim); }
+  .callout { border: 1px solid #4a3b22; background: #211a12; border-radius: 10px; padding: 14px 18px; margin: 20px 0; }
+  .callout.warn { border-color: #4a2626; background: #211414; }
+  .callout .t { font-weight: 700; color: var(--ink); }
+  .callout.warn .t { color: var(--warn); }
+
+  ul.refs { font-size: 0.85rem; columns: 2; column-gap: 36px; }
+  ul.refs li { margin: 4px 0; break-inside: avoid; }
+  @media (max-width: 720px) { ul.refs { columns: 1; } }
+  hr { border: none; border-top: 1px solid var(--line); margin: 48px 0; }
+  .filetag { font-family: var(--mono); font-size: 0.8rem; color: var(--ink-faint); }
+  footer { text-align: center; color: var(--ink-faint); font-size: 0.85rem; padding-top: 40px; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <span class="badge plan">Planning · Decision Brief</span>
+  <h1>JSON-on-disk vs SQLite</h1>
+  <p class="sub">An honest evaluation of whether <code>media-manager</code> should migrate its on-disk
+  data format from JSON files to SQLite — and a recommended middle path.</p>
+  <div class="meta">Prepared 2026-06-28 · branch <code>global-files</code> · for discussion, no code changes proposed yet</div>
+</header>
+
+<div class="wrap">
+
+  <div class="tldr">
+    <h2>TL;DR — the recommendation</h2>
+    <p class="verdict">
+      <strong>Don't make SQLite the source of truth.</strong> At this app's realistic scale
+      (hundreds to low-thousands of records per entity), plain JSON is the correct, simpler choice and
+      SQLite would be premature — it forfeits the git-diffable / human-readable story the npx-in-host-repos
+      vision prizes, imposes native-module distribution pain (worst exactly under <code>npx</code>), and
+      trades away the flexible heal-on-read behavior.
+    </p>
+    <p class="verdict" style="margin-bottom:0">
+      <strong>If and when scale or search demand it, adopt the hybrid the codebase already models:</strong>
+      JSON files stay canonical and git-tracked; add a <em>gitignored, rebuildable</em> SQLite + FTS5
+      index for the hot query paths, kept fresh by the same mtime-gated resync already used for
+      <code>manifest.classes[]</code>. The app <em>already thinks this way</em> — the manifest is a derived
+      cache over the class files.
+    </p>
+  </div>
+
+  <nav class="toc">
+    <a href="#how"><span class="n">1</span>How we use JSON today</a>
+    <a href="#hotpaths"><span class="n">2</span>Read &amp; write hot paths</a>
+    <a href="#risks"><span class="n">3</span>Where JSON breaks down</a>
+    <a href="#scale"><span class="n">4</span>The scale breakpoint</a>
+    <a href="#compare"><span class="n">5</span>Three options compared</a>
+    <a href="#proscons"><span class="n">6</span>Pros &amp; cons</a>
+    <a href="#diffability"><span class="n">7</span>The diffability tradeoff</a>
+    <a href="#hybrid"><span class="n">8</span>The hybrid (recommended)</a>
+    <a href="#ecosystem"><span class="n">9</span>What comparable apps do</a>
+    <a href="#migration"><span class="n">10</span>Migration surface</a>
+    <a href="#decision"><span class="n">11</span>Decision criteria</a>
+    <a href="#questions"><span class="n">12</span>Open questions for you</a>
+  </nav>
+
+  <!-- ============================================================ -->
+  <h2 id="how"><span class="num">01</span>How we use JSON today</h2>
+  <p class="lead">There is no database. Every entity is a pretty-printed JSON file under one data root.
+  Three things matter for this decision: <b>entity-sets are monolithic</b> (one file holds all records of a class),
+  <b>nothing is cached</b> (every read re-parses from disk), and <b>every write rewrites the whole file</b>.</p>
+
+  <figure>
+    <svg viewBox="0 0 920 470" role="img" aria-label="On-disk layout">
+      <style>
+        .lbl{fill:#e6e9ef;font:600 14px var(--sans, sans-serif);}
+        .sub{fill:#aab1c0;font:12px monospace;}
+        .note{fill:#7b8494;font:11px sans-serif;}
+        .box{fill:#1d212b;stroke:#2a2f3a;rx:8;}
+        .blob{fill:#161922;stroke:#2a2f3a;}
+      </style>
+      <text x="30" y="34" class="lbl" style="font-size:16px">&lt;root&gt;/ &nbsp;<tspan class="note">— one data root, all state lives here as files</tspan></text>
+
+      <!-- media hub -->
+      <rect x="30" y="56" width="430" height="270" rx="10" fill="#161c20" stroke="#2c4538"/>
+      <text x="48" y="82" class="lbl" style="fill:#57d9a3">media/ <tspan class="note">— the “All Files” hub (blobs are primary)</tspan></text>
+
+      <rect x="48" y="96" width="394" height="46" class="box" rx="8"/>
+      <text x="62" y="116" class="sub" style="fill:#4ea1ff">manifest.json</text>
+      <text x="62" y="133" class="note">one object, ALL blobs → {file_name, classes[], dims, missing}</text>
+
+      <rect x="48" y="150" width="394" height="40" class="box" rx="8"/>
+      <text x="62" y="170" class="sub">files/</text>
+      <text x="110" y="170" class="note">the raw blobs (binaries — stay on disk regardless)</text>
+
+      <rect x="48" y="198" width="394" height="76" class="box" rx="8"/>
+      <text x="62" y="218" class="sub" style="fill:#4ea1ff">classes/&lt;id&gt;.json</text>
+      <text x="62" y="235" class="note">ONE file per class = { schema, config, records }</text>
+      <text x="62" y="251" class="note">ALL member records inline, keyed by blob id</text>
+      <text x="62" y="267" class="note">↳ source of truth; manifest.classes[] is a cache of this</text>
+
+      <rect x="48" y="282" width="394" height="34" class="box" rx="8"/>
+      <text x="62" y="303" class="sub">settings.json</text>
+      <text x="180" y="303" class="note">media-wide prefs, class order</text>
+
+      <!-- json types -->
+      <rect x="490" y="56" width="400" height="160" rx="10" fill="#1b1820" stroke="#3a2c45"/>
+      <text x="508" y="82" class="lbl" style="fill:#b78bff">&lt;jsonType&gt;/ <tspan class="note">— top-level json record types</tspan></text>
+      <rect x="508" y="96" width="364" height="44" class="box" rx="8"/>
+      <text x="522" y="116" class="sub" style="fill:#4ea1ff">data.json</text>
+      <text x="522" y="133" class="note">{ records: [ … ] } — ALL records of the type, one array</text>
+      <rect x="508" y="148" width="364" height="44" class="box" rx="8"/>
+      <text x="522" y="168" class="sub">settings.json</text>
+      <text x="522" y="185" class="note">displayName + embedded schema + sort/title prefs</text>
+
+      <!-- globals -->
+      <rect x="490" y="232" width="400" height="94" rx="10" fill="#201a14" stroke="#4a3b22"/>
+      <text x="508" y="258" class="lbl" style="fill:#e8c46a">globals/ <tspan class="note">— reserved json singleton</tspan></text>
+      <text x="508" y="282" class="note">one record, fixed UUID; schemaless (synthetic schema</text>
+      <text x="508" y="298" class="note">rebuilt from __field_kinds / __field_meta on read)</text>
+
+      <!-- key facts -->
+      <rect x="30" y="346" width="860" height="104" rx="10" fill="#13161c" stroke="#2a2f3a"/>
+      <text x="48" y="372" class="lbl">Three structural facts that drive this decision</text>
+      <text x="48" y="398" class="note" style="font-size:12px">①  Monolithic sets — a class with 10k members is ONE multi-MB JSON document.</text>
+      <text x="48" y="420" class="note" style="font-size:12px">②  No caching — every list/search re-reads &amp; re-parses files from disk (no process cache anywhere).</text>
+      <text x="48" y="442" class="note" style="font-size:12px">③  Whole-file rewrites — editing one field re-serializes &amp; atomically replaces the entire file.</text>
+    </svg>
+    <figcaption>On-disk data model. Source: <span class="filetag">src/lib/storage/{paths,manifest,classRepo,jsonRepo}.ts</span></figcaption>
+  </figure>
+
+  <h3>The clever part the app already gets right</h3>
+  <p><code>manifest.classes[]</code> is a <b>derived membership cache</b>. The class files are the source of
+  truth; the manifest index is rebuilt from them via an <b>mtime-gated resync</b> (if any class file is newer
+  than the manifest, re-read and rebuild). This is exactly the "canonical files + derived index" pattern that
+  the recommended hybrid generalizes — the architecture is already shaped for it.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="hotpaths"><span class="num">02</span>Read &amp; write hot paths</h2>
+  <p>What actually happens on a typical request reveals the cost. Below: listing All Files (read) and
+  autosaving one field (write).</p>
+
+  <figure>
+    <svg viewBox="0 0 920 360" role="img" aria-label="Read and write paths">
+      <style>
+        .h{fill:#e6e9ef;font:600 14px sans-serif;}
+        .s{fill:#aab1c0;font:12px sans-serif;}
+        .m{fill:#7b8494;font:11px monospace;}
+        .stepbox{fill:#1d212b;stroke:#2a2f3a;}
+        .cost{fill:#ff6b6b;font:11px sans-serif;}
+      </style>
+      <!-- READ -->
+      <text x="30" y="30" class="h" style="font-size:15px;fill:#4ea1ff">GET /api/files  →  listAllFiles()  <tspan class="m" style="fill:#7b8494">(read path)</tspan></text>
+      <g>
+        <rect x="30" y="44" width="180" height="50" class="stepbox" rx="8"/>
+        <text x="42" y="64" class="s">1. reconcile()</text>
+        <text x="42" y="82" class="m">readdir + parse manifest</text>
+
+        <rect x="240" y="44" width="180" height="50" class="stepbox" rx="8"/>
+        <text x="252" y="64" class="s">2. mtime gate</text>
+        <text x="252" y="82" class="m">statSync EVERY class</text>
+
+        <rect x="450" y="44" width="200" height="50" class="stepbox" rx="8"/>
+        <text x="462" y="64" class="s">3. resync (if stale)</text>
+        <text x="462" y="82" class="m">parse EVERY class file</text>
+
+        <rect x="680" y="44" width="210" height="50" class="stepbox" rx="8"/>
+        <text x="692" y="64" class="s">4. backfillDimensions</text>
+        <text x="692" y="82" class="m">loop all entries</text>
+
+        <line x1="210" y1="69" x2="240" y2="69" stroke="#4ea1ff" stroke-width="2" marker-end="url(#a)"/>
+        <line x1="420" y1="69" x2="450" y2="69" stroke="#4ea1ff" stroke-width="2" marker-end="url(#a)"/>
+        <line x1="650" y1="69" x2="680" y2="69" stroke="#4ea1ff" stroke-width="2" marker-end="url(#a)"/>
+      </g>
+      <rect x="30" y="106" width="860" height="50" class="stepbox" rx="8"/>
+      <text x="42" y="126" class="s">5. linear filter + search over every manifest entry in JS  →  6. read media settings  →  7. sort</text>
+      <text x="42" y="144" class="cost">⚠ Every list parses the whole manifest at least once (twice if resync fires) + a statSync per class. Nothing cached between requests.</text>
+
+      <!-- WRITE -->
+      <text x="30" y="200" class="h" style="font-size:15px;fill:#ffb347">PATCH one field  →  updateRecord()  <tspan class="m" style="fill:#7b8494">(write path, fires on ~600ms autosave debounce)</tspan></text>
+      <g>
+        <rect x="30" y="214" width="220" height="50" class="stepbox" rx="8"/>
+        <text x="42" y="234" class="s">1. take class .lock</text>
+        <text x="42" y="252" class="m">coarse file mutex</text>
+
+        <rect x="280" y="214" width="240" height="50" class="stepbox" rx="8"/>
+        <text x="292" y="234" class="s">2. read + parse WHOLE class file</text>
+        <text x="292" y="252" class="m">all records into memory</text>
+
+        <rect x="550" y="214" width="160" height="50" class="stepbox" rx="8"/>
+        <text x="562" y="234" class="s">3. mutate 1 record</text>
+        <text x="562" y="252" class="m">in memory</text>
+
+        <rect x="740" y="214" width="150" height="50" class="stepbox" rx="8"/>
+        <text x="752" y="234" class="s">4. rewrite WHOLE</text>
+        <text x="752" y="252" class="m">file (atomic)</text>
+
+        <line x1="250" y1="239" x2="280" y2="239" stroke="#ffb347" stroke-width="2" marker-end="url(#b)"/>
+        <line x1="520" y1="239" x2="550" y2="239" stroke="#ffb347" stroke-width="2" marker-end="url(#b)"/>
+        <line x1="710" y1="239" x2="740" y2="239" stroke="#ffb347" stroke-width="2" marker-end="url(#b)"/>
+      </g>
+      <rect x="30" y="276" width="860" height="64" class="stepbox" rx="8"/>
+      <text x="42" y="298" class="s">Result: to change a few bytes, the entire class/data file is re-serialized and atomically replaced.</text>
+      <text x="42" y="318" class="cost">⚠ At 10k members that is a multi-MB rewrite per keystroke-burst. Bulk update = N full rewrites. The manifest lock is one global mutex for all blob writes.</text>
+
+      <defs>
+        <marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4ea1ff"/></marker>
+        <marker id="b" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#ffb347"/></marker>
+      </defs>
+    </svg>
+    <figcaption>Hot paths. Source: <span class="filetag">classRepo.ts (listAllFiles, reconcileAndResync, updateRecord), manifest.ts, lock.ts, json.ts</span></figcaption>
+  </figure>
+
+  <!-- ============================================================ -->
+  <h2 id="risks"><span class="num">03</span>Where JSON-on-disk breaks down</h2>
+  <p>The codebase analysis surfaced these specific degradation points as record counts climb. Each is a real
+  function, not a hypothetical.</p>
+
+  <table>
+    <thead><tr><th>Risk</th><th>Where</th><th>Why it hurts at scale</th></tr></thead>
+    <tbody>
+      <tr><td><b>Full manifest rewrite on every list</b></td><td><code>reconcile</code> → <code>reconcileAndResync</code></td><td>Multi-MB parse + stringify + fsync on the <em>read</em> path whenever anything drifts.</td></tr>
+      <tr><td><b>Full re-parse of every class file</b></td><td>mtime-gated resync</td><td>A <code>statSync</code> per class on every list; any membership write makes the next list re-parse <em>all</em> class files.</td></tr>
+      <tr><td><b>Whole-file rewrite on single-field autosave</b></td><td><code>updateRecord</code> / <code>updatePropertiesById</code></td><td>Most user-visible: ~600ms-debounced autosave rewrites the entire class/data file. The headline pain at 10k+ records.</td></tr>
+      <tr><td><b>Bulk update = N full rewrites</b></td><td><code>bulkUpdatePropertiesByIds</code>, <code>deleteFromDiskById</code></td><td>O(N · fileSize); delete loops every class taking a lock each.</td></tr>
+      <tr><td><b>Global lock contention</b></td><td><code>lock.ts</code></td><td>One manifest mutex serializes all blob/membership/dimension writes; 10s stale-steal can steal a still-held lock.</td></tr>
+      <tr><td><b>Linear search &amp; filter</b></td><td><code>matchesSearch</code>, <code>evaluateClause</code></td><td>Every search is a full scan + <code>String.includes</code>; no index, no ranking.</td></tr>
+      <tr><td><b>Whole-corpus parses</b></td><td><code>listMissingFileReferences</code>, <code>getUniqueFieldValues</code></td><td>Parse every class file + every data.json on each call.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="scale"><span class="num">04</span>The scale breakpoint — your key question</h2>
+  <p class="lead">You asked "where does JSON stop scaling well?" Here is the honest answer, anchored to
+  <code>JSON.parse</code> / serialize behavior and this app's whole-file-rewrite model.</p>
+
+  <figure>
+    <svg viewBox="0 0 920 340" role="img" aria-label="Scale breakpoint chart">
+      <style>
+        .ax{stroke:#2a2f3a;stroke-width:1;}
+        .zl{font:11px sans-serif;fill:#aab1c0;}
+        .zt{font:600 13px sans-serif;}
+        .zn{font:11px sans-serif;fill:#7b8494;}
+      </style>
+      <!-- zones -->
+      <rect x="40" y="60" width="260" height="150" rx="8" fill="#16241b" stroke="#2c4538"/>
+      <rect x="300" y="60" width="270" height="150" rx="8" fill="#23210f" stroke="#4a3b22"/>
+      <rect x="570" y="60" width="310" height="150" rx="8" fill="#231414" stroke="#4a2626"/>
+
+      <text x="60" y="50" class="zl">records per entity →</text>
+
+      <text x="60" y="86" class="zt" style="fill:#57d9a3">Hundreds</text>
+      <text x="60" y="106" class="zn">&lt; ~1 MB file</text>
+      <text x="60" y="126" class="zn">parse: sub-ms</text>
+      <text x="60" y="150" class="zl">JSON is completely fine.</text>
+      <text x="60" y="168" class="zl">SQLite gives no</text>
+      <text x="60" y="184" class="zl">measurable benefit.</text>
+      <text x="60" y="202" class="zt" style="fill:#57d9a3;font-size:12px">✓ Don't switch.</text>
+
+      <text x="320" y="86" class="zt" style="fill:#e8c46a">Low thousands</text>
+      <text x="320" y="106" class="zn">~1–10 MB file</text>
+      <text x="320" y="126" class="zn">parse: tens of ms</text>
+      <text x="320" y="150" class="zl">Still works. You start</text>
+      <text x="320" y="168" class="zl">to NOTICE autosave</text>
+      <text x="320" y="184" class="zl">rewrites &amp; unindexed</text>
+      <text x="320" y="202" class="zt" style="fill:#e8c46a;font-size:12px">~ The gray zone.</text>
+
+      <text x="590" y="86" class="zt" style="fill:#ff6b6b">Tens of thousands+</text>
+      <text x="590" y="106" class="zn">10–50+ MB file · 4–6× in RAM</text>
+      <text x="590" y="126" class="zn">parse: hundreds of ms</text>
+      <text x="590" y="150" class="zl">Real walls: autosave latency,</text>
+      <text x="590" y="168" class="zl">RAM, full-scan search.</text>
+      <text x="590" y="184" class="zl">SQLite (or a SQLite index)</text>
+      <text x="590" y="202" class="zt" style="fill:#ff6b6b;font-size:12px">✗ JSON-primary hurts here.</text>
+
+      <!-- gradient bar -->
+      <defs>
+        <linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#57d9a3"/>
+          <stop offset="50%" stop-color="#e8c46a"/>
+          <stop offset="100%" stop-color="#ff6b6b"/>
+        </linearGradient>
+      </defs>
+      <rect x="40" y="232" width="840" height="14" rx="7" fill="url(#grad)"/>
+      <text x="40" y="270" class="zn">10²</text>
+      <text x="300" y="270" class="zn">10³</text>
+      <text x="560" y="270" class="zn">10⁴</text>
+      <text x="845" y="270" class="zn">10⁵</text>
+
+      <text x="40" y="306" class="zl" style="fill:#e6e9ef">Trigger to revisit: instrument record counts + autosave serialize timings. While you're in the hundreds–low-thousands range</text>
+      <text x="40" y="324" class="zl" style="fill:#e6e9ef">with sub-50ms saves, plain JSON is the right call. The moment a single entity crosses ~10k, introduce a SQLite index — not a replacement.</text>
+    </svg>
+    <figcaption>Memory note: a parsed JSON file occupies ~4–6× its on-disk size in RAM. V8 hard-caps a single string at ~512 MB.</figcaption>
+  </figure>
+
+  <p>For a personal metadata tool over media files, realistic collections (a few thousand files, a handful
+  of classes) sit comfortably in JSON's sweet spot. <b>SQLite's performance case only becomes forcing if
+  collections reach tens of thousands of records, or if rich, ranked full-text search becomes a headline
+  feature.</b></p>
+
+  <!-- ============================================================ -->
+  <h2 id="compare"><span class="num">05</span>Three options on the table</h2>
+  <div class="cols">
+    <div class="card">
+      <h4><span class="dot json"></span>A · JSON-primary (today)</h4>
+      <p style="font-size:0.9rem;margin:0">Files are canonical. No DB. Keep refining within the current model.</p>
+    </div>
+    <div class="card">
+      <h4><span class="dot sqlite"></span>B · SQLite-primary</h4>
+      <p style="font-size:0.9rem;margin:0">A <code>.db</code> file becomes the source of truth. JSON files go away (except raw blobs).</p>
+    </div>
+  </div>
+  <div class="card" style="border-color:#2c4538">
+    <h4><span class="dot hybrid"></span>C · Hybrid — JSON canonical + derived SQLite index <span style="color:var(--hybrid);font-size:0.8rem">(recommended)</span></h4>
+    <p style="font-size:0.92rem;margin:0">JSON files stay the git-tracked source of truth. A <em>gitignored, rebuildable</em> SQLite + FTS5
+    database is a derived query index over them, kept fresh by the existing mtime-gated resync. Backup is
+    still "copy the folder"; a corrupt index is fixed by rebuilding from JSON; no user-facing migrations.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="proscons"><span class="num">06</span>Pros &amp; cons</h2>
+
+  <table>
+    <thead><tr><th>Dimension</th><th>JSON-primary (A)</th><th>SQLite-primary (B)</th><th>Hybrid (C)</th></tr></thead>
+    <tbody>
+      <tr><td>Git-diffable / hand-editable</td><td class="yes">Yes — core value</td><td class="no">No — opaque binary</td><td class="yes">Yes (JSON canonical)</td></tr>
+      <tr><td>Single-field write cost</td><td class="no">Rewrite whole file</td><td class="yes">UPDATE … WHERE id</td><td class="meh">Whole file*, fast index</td></tr>
+      <tr><td>Indexed / ranked search (FTS5)</td><td class="no">Linear scan</td><td class="yes">Yes</td><td class="yes">Yes</td></tr>
+      <tr><td>Concurrency</td><td class="no">Coarse global lock</td><td class="yes">WAL + busy_timeout</td><td class="meh">WAL on index; JSON via lock</td></tr>
+      <tr><td>Backup</td><td class="yes">Copy the folder</td><td class="meh">Consistent snapshot needed</td><td class="yes">Copy the folder</td></tr>
+      <tr><td>Corruption blast radius</td><td class="yes">Per-file, readable</td><td class="no">Whole store, opaque</td><td class="yes">Index rebuildable</td></tr>
+      <tr><td>Schema migrations</td><td class="yes">Heal-on-read, soft</td><td class="no">Versioned DDL scripts</td><td class="yes">Heal-on-read kept</td></tr>
+      <tr><td>npx distribution</td><td class="yes">Zero deps</td><td class="meh">Native module risk†</td><td class="meh">Native module risk†</td></tr>
+      <tr><td>Scale ceiling</td><td class="no">~10k/entity</td><td class="yes">High</td><td class="yes">High (queries hit index)</td></tr>
+      <tr><td>Implementation cost now</td><td class="yes">Zero (status quo)</td><td class="no">Rewrite all of storage/</td><td class="meh">Add index layer</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:0.85rem;color:var(--ink-faint)">* In the hybrid, writes still update the canonical JSON file (then re-index the touched rows). You buy fast
+  <em>reads/search</em>, not faster writes, unless you also shard the JSON. &nbsp; † Mitigated by <code>node:sqlite</code> (built into Node 22+/RC in 25.7) instead of <code>better-sqlite3</code>.</p>
+
+  <div class="cols">
+    <div class="card">
+      <h4>SQLite's genuine wins</h4>
+      <ul>
+        <li class="pro">Partial updates — no whole-file rewrite</li>
+        <li class="pro">Indexed filters / sort / group-by</li>
+        <li class="pro">FTS5 full-text search with BM25 ranking</li>
+        <li class="pro">Membership becomes a clean join table — the derived <code>classes[]</code> cache + resync code can disappear</li>
+        <li class="pro">ACID transactions replace the fragile stale-steal lock</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>What SQLite-primary would cost</h4>
+      <ul>
+        <li class="con">Git-diffability &amp; hand-editing — gone</li>
+        <li class="con">Heal-on-read / migrate-on-read flexibility — replaced by migration scripts</li>
+        <li class="con">"Drop a file in, edit a class by hand" — gone</li>
+        <li class="con">Native-module distribution pain under npx</li>
+        <li class="con">Does <b>not</b> lift the single-node ceiling (see below)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="t">Myth to retire:</span> SQLite does <b>not</b> solve "single-node only." Its locking is local-filesystem
+    only — it makes <em>intra-host</em> concurrency nicer and ACID-safe, but multi-machine sync is still a
+    CRDT / sync-engine problem (libSQL replicas, etc.), orthogonal to this choice. Don't adopt SQLite expecting multi-device sync.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2 id="diffability"><span class="num">07</span>The diffability tradeoff — the deciding factor for you</h2>
+  <p>You rated git-diffability "between very important and somewhat." That weighting is exactly why
+  SQLite-primary is the wrong end of the spectrum. SQLite is genuinely hostile to git:</p>
+  <ul>
+    <li>Byte-identical <em>content</em> can produce different binaries (VACUUM, page layout) — so even no-op commits churn.</li>
+    <li>Committed <code>.db</code> files give noisy, unmergeable binary diffs and bloat history.</li>
+    <li><b>Merge conflicts are unrecoverable</b> — you get a corrupt DB, not a conflict you can resolve. This is the direct enemy of the npx-in-a-git-repo vision.</li>
+  </ul>
+  <p>Mitigations exist (git <code>textconv</code> to show <code>sqlite3 .dump</code>, <code>sqldiff</code>,
+  committing a SQL dump instead of the binary), but they make diffs <em>readable</em> without making the
+  committed artifact mergeable — and once you're committing a text dump, you've reinvented "text is canonical,"
+  at which point JSON is simpler and already in place.</p>
+  <blockquote>The mainstream 2026 answer is not "git-diffable JSON <em>or</em> SQLite performance." It's
+  <b>canonical human-readable files + a gitignored, rebuildable SQLite index</b> — which is option C.</blockquote>
+
+  <!-- ============================================================ -->
+  <h2 id="hybrid"><span class="num">08</span>The hybrid — recommended shape</h2>
+  <p>JSON stays canonical and git-tracked. SQLite is a disposable index you can delete and rebuild at any time.
+  The sync mechanism is the one the app <em>already has</em>.</p>
+
+  <figure>
+    <svg viewBox="0 0 920 350" role="img" aria-label="Hybrid architecture">
+      <style>
+        .t1{fill:#e6e9ef;font:600 14px sans-serif;}
+        .t2{fill:#aab1c0;font:12px sans-serif;}
+        .t3{fill:#7b8494;font:11px monospace;}
+      </style>
+      <!-- canonical -->
+      <rect x="30" y="50" width="360" height="250" rx="12" fill="#161c20" stroke="#2c4538" stroke-width="1.5"/>
+      <text x="50" y="80" class="t1" style="fill:#57d9a3">CANONICAL · git-tracked</text>
+      <rect x="50" y="96" width="320" height="40" rx="7" fill="#1d212b" stroke="#2a2f3a"/>
+      <text x="64" y="121" class="t3" style="fill:#4ea1ff">media/classes/&lt;id&gt;.json</text>
+      <rect x="50" y="146" width="320" height="40" rx="7" fill="#1d212b" stroke="#2a2f3a"/>
+      <text x="64" y="171" class="t3" style="fill:#4ea1ff">&lt;jsonType&gt;/data.json</text>
+      <rect x="50" y="196" width="320" height="40" rx="7" fill="#1d212b" stroke="#2a2f3a"/>
+      <text x="64" y="221" class="t3" style="fill:#4ea1ff">media/manifest.json</text>
+      <text x="50" y="268" class="t2">✓ diffable  ✓ hand-editable  ✓ heal-on-read</text>
+      <text x="50" y="288" class="t2">✓ backup = copy the folder</text>
+
+      <!-- arrow -->
+      <line x1="395" y1="175" x2="525" y2="175" stroke="#57d9a3" stroke-width="2.5" marker-end="url(#h)"/>
+      <text x="410" y="160" class="t3" style="fill:#57d9a3">mtime / hash-gated</text>
+      <text x="410" y="196" class="t3" style="fill:#57d9a3">re-index (existing resync)</text>
+      <line x1="525" y1="205" x2="395" y2="205" stroke="#7b8494" stroke-width="1.5" stroke-dasharray="4 4" marker-end="url(#hg)"/>
+      <text x="408" y="226" class="t3">writes go to JSON first</text>
+
+      <!-- derived -->
+      <rect x="530" y="50" width="360" height="250" rx="12" fill="#1a1614" stroke="#4a3b22" stroke-width="1.5"/>
+      <text x="550" y="80" class="t1" style="fill:#e8c46a">DERIVED · gitignored, rebuildable</text>
+      <rect x="550" y="96" width="320" height="64" rx="7" fill="#1d212b" stroke="#2a2f3a"/>
+      <text x="564" y="121" class="t3" style="fill:#ffb347">media/.index.db  (SQLite, WAL)</text>
+      <text x="564" y="142" class="t2" style="font-size:11px">records · membership join · field values</text>
+      <rect x="550" y="170" width="320" height="44" rx="7" fill="#1d212b" stroke="#2a2f3a"/>
+      <text x="564" y="190" class="t3" style="fill:#ffb347">FTS5 virtual table</text>
+      <text x="564" y="207" class="t2" style="font-size:11px">ranked full-text search (BM25)</text>
+      <text x="550" y="244" class="t2">→ search, filter, sort, group-by, counts</text>
+      <text x="550" y="264" class="t2">→ hit the index, not a full JSON scan</text>
+      <text x="550" y="288" class="t2" style="fill:#e8c46a">delete it anytime → rebuilds from JSON</text>
+
+      <defs>
+        <marker id="h" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#57d9a3"/></marker>
+        <marker id="hg" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 Z" fill="#7b8494"/></marker>
+      </defs>
+      <text x="30" y="328" class="t2">Reads/search resolve against the index; writes land in canonical JSON, then re-index the touched rows.</text>
+    </svg>
+    <figcaption>Hybrid: the same "derived cache rebuilt from canonical files" pattern the manifest already uses, generalized to a full query index.</figcaption>
+  </figure>
+
+  <div class="callout">
+    <span class="t">Driver choice for the hybrid:</span> prefer <code>node:sqlite</code> (built into Node, RC as of v25.7)
+    over <code>better-sqlite3</code> to avoid native-module / prebuilt-binary pain — the single biggest risk for an
+    <code>npx</code>-distributed tool — at the cost of requiring a recent Node. Code against the synchronous
+    better-sqlite3-style API so the driver is swappable. Always set <code>PRAGMA journal_mode=WAL</code> and a
+    sane <code>busy_timeout</code>.
+  </div>
+
+  <p><b>What the hybrid keeps that SQLite-primary loses:</b> every operational advantage stays in the JSON
+  column — backup is still "copy the folder," index corruption is recoverable by rebuilding, and there are
+  <em>no user-facing migrations</em> because the index regenerates. That asymmetry is the whole argument.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="ecosystem"><span class="num">09</span>What comparable local-first apps do</h2>
+  <table>
+    <thead><tr><th>App</th><th>Store</th><th>Lesson</th></tr></thead>
+    <tbody>
+      <tr><td><b>Obsidian</b></td><td>Plain <code>.md</code> files</td><td>Whole value prop is "your data is plain text you own and can <code>git diff</code>." This is where media-manager lives philosophically.</td></tr>
+      <tr><td><b>Actual Budget</b></td><td>Per-budget SQLite file</td><td>Chose SQLite for offline + E2E encryption + simple backups. Accepts non-diffability because budgets aren't hand-edited or version-controlled.</td></tr>
+      <tr><td><b>Logseq</b></td><td>Markdown → SQLite (2024–25 migration)</td><td><b>Cautionary tale:</b> scaling features pushed them to a SQLite "DB version" — and they paid in lost direct-file editability, which they then had to partly buy back with export tooling.</td></tr>
+      <tr><td><b>Anytype</b></td><td>Embedded local store</td><td>Ownership via export, not on-disk readability — a different bargain than this app wants.</td></tr>
+    </tbody>
+  </table>
+  <p>Prevailing wisdom for "data the user owns and may want in git": keep the <b>canonical</b> form as
+  human-readable files and treat any database as a <b>derived index/cache</b>. Apps that go DB-primary either
+  don't expect hand-editing (Actual) or invest heavily to restore the ownership story (Logseq).</p>
+
+  <!-- ============================================================ -->
+  <h2 id="migration"><span class="num">10</span>Migration surface (if you ever did go SQLite)</h2>
+  <p>Good news: the storage layer is <b>well-isolated</b>. Routes never touch the filesystem directly (except
+  raw blob I/O and EXIF); they call repo functions. A SQLite backend could hide behind the same function
+  names — <code>listAllFiles</code>, <code>listClassMembers</code>, <code>updateRecord</code>,
+  <code>getMediaTypeRepo(...).listRecords</code> wouldn't change signatures.</p>
+  <p>What gets rewritten: essentially all of <span class="filetag">src/lib/storage/</span> —
+  <code>json.ts</code> + <code>lock.ts</code> (replaced by transactions), most of <code>manifest.ts</code>
+  (the <code>classes[]</code> cache + resync fold into a join table and largely disappear),
+  <code>classRepo.ts</code> and <code>jsonRepo.ts</code> (the bulk of the work; the two duplicated
+  <code>evaluateClause</code> implementations become one SQL <code>WHERE</code>-builder), and the
+  directory-scan discovery in <code>paths.ts</code> becomes table queries. Raw blobs in
+  <code>media/files/</code>, the filename guards, and EXIF handling stay untouched.</p>
+  <p>The leaks to fix are functions that return disk-shaped artifacts (<code>Manifest</code>,
+  <code>ClassFile</code>, <code>JsonDataFile</code>). For the <b>hybrid</b>, the surface is much smaller — you
+  add an index/query module and a re-index hook, without rewriting the canonical writers.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="decision"><span class="num">11</span>Decision criteria</h2>
+  <div class="cols">
+    <div class="card" style="border-color:#2c4538">
+      <h4><span class="dot json"></span>Keep JSON-primary when…</h4>
+      <ul>
+        <li>Entities are realistically hundreds–low-thousands of records (the likely reality)</li>
+        <li>Git-diffability / hand-editability stay top-tier values</li>
+        <li>Heal-on-read flexibility is worth keeping</li>
+        <li>You want the simplest npx distribution (no native module, no Node floor)</li>
+        <li>Search needs stay modest (substring / exact-field)</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color:#4a3b22">
+      <h4><span class="dot sqlite"></span>Reach for SQLite / the hybrid when…</h4>
+      <ul>
+        <li>A single entity heads toward tens of thousands of records</li>
+        <li>Autosave full-file-rewrite latency / RAM becomes user-visible</li>
+        <li>You want ranked FTS5 search as a real feature</li>
+        <li>You need fast aggregates / field-values / group-by without full scans</li>
+        <li>Concurrent-read-while-writing matters more than the coarse lock provides</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:24px">When those triggers fire, the answer is <b>the hybrid (introduce a
+  derived SQLite index), not SQLite-primary</b> — you get the indexed/ranked queries while keeping every
+  diffability and operational advantage.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="questions"><span class="num">12</span>Open questions for you (before any build phase)</h2>
+  <ol>
+    <li><b>Realistic ceiling.</b> What's the largest collection you actually expect — a few thousand files, or could a class plausibly hit tens of thousands? This single number decides whether the hybrid is "someday" or "soon."</li>
+    <li><b>Is search a headline feature?</b> If ranked full-text search across fields is something you want to <em>sell</em>, that pulls the SQLite/FTS5 index forward independent of scale.</li>
+    <li><b>Node version floor.</b> Are you willing to require Node 22+/24+ for the npx tool? That's what lets you use <code>node:sqlite</code> and dodge the native-module distribution risk entirely.</li>
+    <li><b>Instrument first?</b> The cheapest next step is to add timing around record counts and autosave serialize time, so the "~10k / sub-50ms" trigger is data-driven rather than guessed. Want that as a small first task?</li>
+  </ol>
+
+  <hr/>
+
+  <h3>Sources</h3>
+  <ul class="refs">
+    <li><a href="https://sqg.dev/blog/sqlite-driver-benchmark/">SQLite driver benchmark (better-sqlite3 vs node:sqlite vs libSQL)</a></li>
+    <li><a href="https://nodejs.org/api/sqlite.html">node:sqlite — Node.js docs</a></li>
+    <li><a href="https://github.com/nodejs/node/issues/57445">node:sqlite stabilization tracking</a></li>
+    <li><a href="https://www.npmjs.com/package/better-sqlite3">better-sqlite3 (npm)</a></li>
+    <li><a href="https://github.com/openchamber/openchamber/issues/1478">No prebuilt binaries / Node 24 install failure</a></li>
+    <li><a href="https://tenthousandmeters.com/blog/sqlite-concurrent-writes-and-database-is-locked-errors/">SQLite concurrent writes &amp; "database is locked"</a></li>
+    <li><a href="https://berthub.eu/articles/posts/a-brief-post-on-sqlite3-database-locked-despite-timeout/">busy_timeout pitfalls (Bert Hubert)</a></li>
+    <li><a href="https://www.sqlite.org/fts5.html">SQLite FTS5 extension</a></li>
+    <li><a href="https://superjson.ai/blog/2025-09-07-optimizing-large-json-files-production/">JSON parsing performance thresholds</a></li>
+    <li><a href="https://metafunctor.com/post/2026-03-20-the-mcp-pattern/">The MCP Pattern: SQLite as a queryable cache over canonical files</a></li>
+    <li><a href="https://towardsdatascience.com/memweave-zero-infra-ai-agent-memory-with-markdown-and-sqlite-no-vector-database-required/">memweave: Markdown + derived SQLite/FTS5 index</a></li>
+    <li><a href="https://github.com/cannadayr/git-sqlite">git-sqlite (diff/merge driver)</a></li>
+    <li><a href="https://news.ycombinator.com/item?id=25004913">"Is SQLite not diffable?" (HN)</a></li>
+    <li><a href="https://actualbudget.org/docs/contributing/project-details/database/">Actual Budget — per-budget SQLite</a></li>
+    <li><a href="https://github.com/logseq/docs/blob/master/db-version.md">Logseq DB (SQLite) version</a></li>
+    <li><a href="https://www.zylstra.org/blog/2024/05/logseq-goes-the-database-route/">Logseq goes the database route</a></li>
+    <li><a href="https://blog.logrocket.com/offline-first-frontend-apps-2025-indexeddb-sqlite/">Offline-first apps 2025: IndexedDB &amp; SQLite</a></li>
+  </ul>
+
+  <footer>
+    media-manager · JSON-vs-SQLite decision brief · planning artifact · 2026-06-28<br/>
+    Codebase findings cite real files under <span class="filetag">src/lib/storage/</span>. No code changes proposed.
+  </footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Unified Entity Settings — Final UI Plan</title>
+		<style>
+			:root {
+				--bg: #0b0d10;
+				--panel: #15181d;
+				--panel2: #1b1f26;
+				--border: #2a2f38;
+				--fg: #e8eaed;
+				--muted: #9aa3af;
+				--accent: #6aa6ff;
+				--danger: #ef6a6a;
+				--ok: #7fd18a;
+				--secondary: #2a3340;
+				--radius: 8px;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				font:
+					14px/1.5 ui-sans-serif,
+					system-ui,
+					-apple-system,
+					Segoe UI,
+					Roboto,
+					sans-serif;
+				background: var(--bg);
+				color: var(--fg);
+			}
+			.wrap {
+				max-width: 1180px;
+				margin: 0 auto;
+				padding: 32px 24px 80px;
+			}
+			h1 {
+				font-size: 24px;
+				margin: 0 0 4px;
+			}
+			h2 {
+				font-size: 18px;
+				margin: 42px 0 6px;
+				border-bottom: 1px solid var(--border);
+				padding-bottom: 8px;
+			}
+			h3 {
+				font-size: 15px;
+				margin: 0 0 8px;
+			}
+			p.lead {
+				color: var(--muted);
+				margin: 0 0 8px;
+				max-width: 780px;
+			}
+			.note {
+				color: var(--muted);
+				font-size: 13px;
+			}
+			code {
+				background: var(--panel2);
+				padding: 1px 6px;
+				border-radius: 5px;
+				font-size: 12.5px;
+			}
+			.pill {
+				display: inline-block;
+				font-size: 11px;
+				padding: 2px 8px;
+				border-radius: 999px;
+				background: var(--secondary);
+				color: var(--fg);
+				margin-left: 8px;
+				vertical-align: middle;
+			}
+			.pill.ok {
+				background: #18301d;
+				color: var(--ok);
+				border: 1px solid #2c5234;
+			}
+			.grid3 {
+				display: grid;
+				grid-template-columns: repeat(3, 1fr);
+				gap: 18px;
+				align-items: start;
+			}
+			.grid2 {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 18px;
+				align-items: start;
+			}
+			.card {
+				background: var(--panel);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				padding: 16px;
+			}
+			.card.sel {
+				border-color: #2c5234;
+				box-shadow: 0 0 0 1px #2c5234 inset;
+			}
+			.card .tag {
+				font-size: 11px;
+				color: var(--accent);
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+				font-weight: 600;
+			}
+			.pros {
+				font-size: 12.5px;
+				color: var(--muted);
+				margin: 10px 0 0;
+				padding-left: 16px;
+			}
+			.pros li {
+				margin: 3px 0;
+			}
+			.chosen {
+				color: var(--ok);
+				font-weight: 600;
+				font-size: 12px;
+			}
+
+			.mock {
+				background: var(--panel2);
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				overflow: hidden;
+			}
+			.mock .titlebar {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 8px 12px;
+				border-bottom: 1px solid var(--border);
+				background: #11141a;
+				font-size: 12.5px;
+				color: var(--muted);
+			}
+			.dot {
+				width: 9px;
+				height: 9px;
+				border-radius: 50%;
+				background: #3a3f49;
+			}
+			.mbody {
+				padding: 14px;
+			}
+			.row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+			.between {
+				justify-content: space-between;
+			}
+			.btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
+				border: 1px solid var(--border);
+				background: var(--panel);
+				color: var(--fg);
+				border-radius: 6px;
+				padding: 5px 10px;
+				font-size: 12.5px;
+				cursor: default;
+			}
+			.btn.primary {
+				background: var(--accent);
+				border-color: var(--accent);
+				color: #06101f;
+				font-weight: 600;
+			}
+			.btn.ghost {
+				border-color: transparent;
+				background: transparent;
+				color: var(--muted);
+			}
+			.btn.danger {
+				color: var(--danger);
+				border-color: transparent;
+			}
+			.btn.sm {
+				padding: 3px 7px;
+				font-size: 12px;
+			}
+			.input {
+				background: #0e1116;
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				padding: 6px 9px;
+				font-size: 12.5px;
+				color: var(--fg);
+				width: 100%;
+			}
+			.select {
+				background: #0e1116;
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				padding: 6px 9px;
+				font-size: 12.5px;
+				color: var(--fg);
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+			.label {
+				font-size: 12px;
+				color: var(--muted);
+				margin-bottom: 4px;
+				display: block;
+			}
+			.field {
+				margin-bottom: 12px;
+			}
+			.sep {
+				height: 1px;
+				background: var(--border);
+				margin: 14px -14px;
+			}
+			.kebab {
+				font-weight: 700;
+				letter-spacing: 1px;
+				color: var(--muted);
+				cursor: default;
+				padding: 0 6px;
+			}
+			.section-h {
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.06em;
+				color: var(--muted);
+				font-weight: 600;
+				margin: 4px 0 8px;
+			}
+			.checkbox {
+				width: 14px;
+				height: 14px;
+				border: 1px solid var(--muted);
+				border-radius: 3px;
+				display: inline-block;
+			}
+			.checkbox.on {
+				background: var(--accent);
+				border-color: var(--accent);
+			}
+
+			.tabs {
+				display: flex;
+				gap: 4px;
+				border-bottom: 1px solid var(--border);
+				margin: -2px -14px 14px;
+				padding: 0 14px;
+			}
+			.tab {
+				padding: 8px 12px;
+				font-size: 12.5px;
+				color: var(--muted);
+				border-bottom: 2px solid transparent;
+			}
+			.tab.active {
+				color: var(--fg);
+				border-bottom-color: var(--accent);
+			}
+			.danger-zone {
+				border: 1px solid #4a2222;
+				background: #1c1212;
+				border-radius: 6px;
+				padding: 10px 12px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+
+			.rail {
+				background: #11141a;
+				border: 1px solid var(--border);
+				border-radius: var(--radius);
+				padding: 8px;
+			}
+			.rail.exp {
+				width: 210px;
+			}
+			.rail.col {
+				width: 56px;
+			}
+			.rail .railhdr {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+				padding: 4px 6px 8px;
+				border-bottom: 1px solid var(--border);
+				margin-bottom: 8px;
+			}
+			.rail .railhdr .brand {
+				flex: 1;
+				font-weight: 600;
+				font-size: 13px;
+			}
+			.rail .navitem {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 8px;
+				border-radius: 6px;
+				font-size: 13px;
+			}
+			.rail .navitem.active {
+				background: var(--secondary);
+			}
+			.rail .navitem .kebab {
+				margin-left: auto;
+			}
+			.rail .navitem.center {
+				justify-content: center;
+			}
+			.rail .railftr {
+				display: flex;
+				gap: 6px;
+				border-top: 1px solid var(--border);
+				margin-top: 8px;
+				padding-top: 8px;
+			}
+			.rail.col .railftr {
+				flex-direction: column;
+				align-items: center;
+			}
+			.iconbox {
+				width: 26px;
+				height: 26px;
+				border-radius: 6px;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				background: transparent;
+			}
+			.iconbox.active {
+				background: var(--secondary);
+			}
+			.menu {
+				width: 190px;
+				background: var(--panel);
+				border: 1px solid var(--border);
+				border-radius: 8px;
+				padding: 5px;
+				box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+			}
+			.menu .mi {
+				padding: 7px 9px;
+				border-radius: 5px;
+				font-size: 12.5px;
+			}
+			.menu .mi.hov {
+				background: var(--secondary);
+			}
+			.menu .mi.danger {
+				color: var(--danger);
+			}
+			.menu .msep {
+				height: 1px;
+				background: var(--border);
+				margin: 5px 0;
+			}
+			.callout {
+				background: var(--panel);
+				border: 1px solid var(--border);
+				border-left: 3px solid var(--accent);
+				border-radius: 6px;
+				padding: 12px 14px;
+				margin: 10px 0;
+			}
+			.callout.warn {
+				border-left-color: var(--danger);
+			}
+			table.cmp {
+				width: 100%;
+				border-collapse: collapse;
+				margin-top: 8px;
+				font-size: 12.5px;
+			}
+			table.cmp th,
+			table.cmp td {
+				border: 1px solid var(--border);
+				padding: 8px 10px;
+				text-align: left;
+				vertical-align: top;
+			}
+			table.cmp th {
+				background: var(--panel);
+				color: var(--muted);
+				font-weight: 600;
+			}
+			.tagline {
+				font-size: 11px;
+				color: var(--muted);
+				margin-top: 6px;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<h1>Unified Entity Settings <span class="pill ok">FINAL · all options chosen</span></h1>
+			<p class="lead">
+				One shared “entity settings” surface for <strong>both</strong> a Files <em>class</em> and a
+				Records <em>type</em>. This doc reflects the locked decisions; implementation plan lives in
+				<code>docs/plans/entity-settings-implementation.md</code>.
+			</p>
+
+			<div class="callout">
+				<strong>Locked decisions</strong>
+				<ul class="pros" style="color: var(--fg)">
+					<li>
+						<strong>⋮ menu</strong>: <span class="chosen">Style 1</span> — one
+						<code>Settings…</code> entry + <code>Delete</code>.
+					</li>
+					<li>
+						<strong>Popup</strong>: <span class="chosen">Option A</span> — tabbed dialog (<code
+							>General</code
+						>
+						/ <code>Fields</code> / <code>Danger</code>).
+					</li>
+					<li>
+						<strong>Rail</strong>: <span class="chosen">shared shell, two modes</span> — Records
+						navigates, Files filters; Files becomes collapsible.
+					</li>
+					<li>
+						<strong>Collapsed access</strong>: <span class="chosen">content-header ⋮</span> (always
+						reachable) + row ⋮ when expanded.
+					</li>
+					<li>
+						<strong>Title&nbsp;by</strong>: persisted per-entity,
+						<strong>removed from the list header</strong>. <strong>Group&nbsp;by</strong> stays an
+						ephemeral header control.
+					</li>
+					<li>
+						<strong>Rename</strong> the type's display name is a field in the popup. Old
+						<code>ClassSettingsDialog</code> + <code>ClassSchemaDialog</code> are
+						<strong>retired</strong> into the shared dialog.
+					</li>
+				</ul>
+			</div>
+
+			<!-- ============================================================= -->
+			<h2>1 · The ⋮ menu — Style 1 <span class="pill ok">chosen</span></h2>
+			<p class="lead">
+				Expanded rail/sidebar rows get a trailing <strong>⋮</strong>. One destination for
+				everything, with delete split out so it's never an accident.
+			</p>
+			<div class="grid2">
+				<div class="card sel">
+					<span class="tag">Records rail (navigate)</span>
+					<div class="row" style="gap: 24px; align-items: flex-start; margin-top: 10px">
+						<div class="rail exp">
+							<div class="railhdr">
+								<span class="brand">Records</span><span class="kebab">⟨⟩</span>
+							</div>
+							<div class="section-h">Types</div>
+							<div class="navitem"><span>📄</span> Notes</div>
+							<div class="navitem active"><span>📄</span> Books <span class="kebab">⋮</span></div>
+							<div class="navitem"><span>📄</span> Movies</div>
+							<div class="navitem" style="color: var(--muted)"><span>＋</span> New record type</div>
+						</div>
+						<div class="menu" style="margin-top: 60px">
+							<div class="mi hov">⚙ Settings…</div>
+							<div class="msep"></div>
+							<div class="mi danger">🗑 Delete record type</div>
+						</div>
+					</div>
+				</div>
+				<div class="card sel">
+					<span class="tag">Files sidebar (filter)</span>
+					<div class="row" style="gap: 24px; align-items: flex-start; margin-top: 10px">
+						<div class="rail exp">
+							<div class="railhdr">
+								<span class="brand">Files</span><span class="kebab">⟨⟩</span>
+							</div>
+							<div class="section-h">Classes</div>
+							<div class="navitem">
+								<span class="checkbox on"></span> Images
+								<span class="note" style="margin-left: auto">12</span>
+							</div>
+							<div class="navitem active">
+								<span class="checkbox"></span> Documents <span class="kebab">⋮</span>
+							</div>
+							<div class="navitem">
+								<span class="checkbox"></span> Unclassified
+								<span class="note" style="margin-left: auto">3</span>
+							</div>
+						</div>
+						<div class="menu" style="margin-top: 60px">
+							<div class="mi hov">⚙ Settings…</div>
+							<div class="msep"></div>
+							<div class="mi danger">🗑 Delete class</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p class="note" style="margin-top: 8px">
+				Same menu, same shared component, both sides. Delete also exists in the dialog's Danger tab;
+				the row entry is just a shortcut.
+			</p>
+
+			<!-- ============================================================= -->
+			<h2>2 · The combined popup — Option A (tabbed) <span class="pill ok">chosen</span></h2>
+			<p class="lead">
+				Title is always <code>{name} — settings</code> with a scope subtitle. Three tabs:
+			</p>
+			<div class="grid3">
+				<div class="card sel">
+					<span class="tag">Tab · General</span>
+					<div class="mock">
+						<div class="titlebar">
+							<span class="dot"></span><span class="dot"></span><span class="dot"></span
+							><span style="margin-left: 6px">Books — settings</span>
+						</div>
+						<div class="mbody">
+							<div class="tabs">
+								<div class="tab active">General</div>
+								<div class="tab">Fields</div>
+								<div class="tab">Danger</div>
+							</div>
+							<div class="field">
+								<span class="label">Display name</span>
+								<div class="input">Books</div>
+							</div>
+							<div class="field">
+								<span class="label">Title rows by</span>
+								<div class="select"><span>title</span><span>▾</span></div>
+							</div>
+							<div class="note">
+								Which field labels each record in the list. <strong>Persisted.</strong>
+							</div>
+							<div class="sep"></div>
+							<div class="row between">
+								<span class="note">Settings for this <strong>record type</strong></span>
+								<div class="btn primary sm">Save</div>
+							</div>
+						</div>
+					</div>
+					<p class="tagline">
+						Files variant adds a “Group by” select here (it persists
+						<code>gridGroupByField</code> today); Records omits it.
+					</p>
+				</div>
+				<div class="card sel">
+					<span class="tag">Tab · Fields</span>
+					<div class="mock">
+						<div class="titlebar">
+							<span class="dot"></span><span class="dot"></span><span class="dot"></span
+							><span style="margin-left: 6px">Books — settings</span>
+						</div>
+						<div class="mbody">
+							<div class="tabs">
+								<div class="tab">General</div>
+								<div class="tab active">Fields</div>
+								<div class="tab">Danger</div>
+							</div>
+							<div class="row between" style="margin-bottom: 8px">
+								<span class="note">title · string</span><span class="kebab">⋮</span>
+							</div>
+							<div class="row between" style="margin-bottom: 8px">
+								<span class="note">author · string</span><span class="kebab">⋮</span>
+							</div>
+							<div class="row between" style="margin-bottom: 8px">
+								<span class="note">rating · number</span><span class="kebab">⋮</span>
+							</div>
+							<div class="btn ghost sm">＋ Add field</div>
+							<div class="note" style="margin-top: 10px">
+								The existing shared <code>SchemaEditorBody</code>, unchanged.
+							</div>
+						</div>
+					</div>
+					<p class="tagline">
+						Reached directly via the ⋮ menu too (Settings… → Fields), so schema is never more than a
+						tab away.
+					</p>
+				</div>
+				<div class="card sel">
+					<span class="tag">Tab · Danger</span>
+					<div class="mock">
+						<div class="titlebar">
+							<span class="dot"></span><span class="dot"></span><span class="dot"></span
+							><span style="margin-left: 6px">Books — settings</span>
+						</div>
+						<div class="mbody">
+							<div class="tabs">
+								<div class="tab">General</div>
+								<div class="tab">Fields</div>
+								<div class="tab active">Danger</div>
+							</div>
+							<div class="danger-zone">
+								<span class="note">Delete this record type and all its records.</span>
+								<div class="btn danger sm">Delete…</div>
+							</div>
+							<div class="note" style="margin-top: 10px">
+								Confirms via an <code>AlertDialog</code> before deleting.
+							</div>
+						</div>
+					</div>
+					<p class="tagline">
+						Isolated tab — destructive action is out of the way of everyday edits.
+					</p>
+				</div>
+			</div>
+
+			<!-- ============================================================= -->
+			<h2>3 · Shared rail shell — two modes <span class="pill ok">chosen</span></h2>
+			<p class="lead">
+				One <code>EntityRail</code> shell owns the chrome (collapse + header + footer + ⋮ menu +
+				“New” + tooltips); the row interaction differs by <code>mode</code>.
+				<strong>Files becomes collapsible</strong> (it isn't today).
+			</p>
+			<div class="grid2">
+				<div class="card">
+					<span class="tag">mode = navigate (Records)</span>
+					<p class="note" style="margin: 6px 0 10px">Single-select — click a type to open it.</p>
+					<div class="rail exp">
+						<div class="railhdr">
+							<span class="brand">Records</span><span class="kebab">⟨</span>
+						</div>
+						<div class="section-h">Types</div>
+						<div class="navitem active"><span>📄</span> Books <span class="kebab">⋮</span></div>
+						<div class="navitem"><span>📄</span> Movies</div>
+						<div class="navitem" style="color: var(--muted)"><span>＋</span> New record type</div>
+						<div class="railftr">
+							<span class="btn ghost sm">⌂ Home</span
+							><span class="btn ghost sm">⚙ App settings</span>
+						</div>
+					</div>
+				</div>
+				<div class="card">
+					<span class="tag">mode = filter (Files)</span>
+					<p class="note" style="margin: 6px 0 10px">
+						Multi-select — checkboxes union/intersect; extra controls injected via a snippet.
+					</p>
+					<div class="rail exp">
+						<div class="railhdr"><span class="brand">Files</span><span class="kebab">⟨</span></div>
+						<div class="section-h">Classes</div>
+						<div class="navitem">
+							<span class="checkbox on"></span> Images
+							<span class="note" style="margin-left: auto">12</span>
+						</div>
+						<div class="navitem active">
+							<span class="checkbox"></span> Documents <span class="kebab">⋮</span>
+						</div>
+						<div class="navitem"><span class="checkbox"></span> Unclassified</div>
+						<div class="row" style="gap: 6px; margin: 8px 2px">
+							<span class="note">Match</span><span class="btn sm">any of</span>
+						</div>
+						<div class="input" style="margin: 0 2px">filter classes…</div>
+						<div class="railftr">
+							<span class="btn ghost sm">⌂ Home</span
+							><span class="btn ghost sm">⚙ App settings</span>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p class="note" style="margin-top: 10px">
+				Why not one identical widget: Files <em>filters across many</em> classes, Records
+				<em>navigates one</em> type — an intentional difference (no “All Records” hub). The shell
+				unifies everything except the row.
+			</p>
+
+			<!-- ============================================================= -->
+			<h2>
+				4 · Collapsed rail — reaching settings <span class="pill ok">chosen: content-header ⋮</span>
+			</h2>
+			<p class="lead">
+				Collapsed to icons (no room for a row ⋮), the active entity's ⋮ lives next to the title in
+				the
+				<strong>content-column header</strong> — reachable whether collapsed or expanded.
+			</p>
+			<div class="row" style="gap: 18px; align-items: flex-start">
+				<div class="rail col">
+					<div class="navitem center"><span class="iconbox">⟩</span></div>
+					<div class="navitem center"><div class="iconbox active">📄</div></div>
+					<div class="navitem center"><div class="iconbox">📄</div></div>
+					<div class="navitem center"><div class="iconbox">＋</div></div>
+					<div class="railftr">
+						<div class="iconbox">⌂</div>
+						<div class="iconbox">⚙</div>
+					</div>
+				</div>
+				<div style="flex: 1">
+					<div class="mock">
+						<div class="titlebar">
+							<span class="dot"></span><span class="dot"></span><span class="dot"></span
+							><span style="margin-left: 6px">content header (active type)</span>
+						</div>
+						<div class="mbody">
+							<div class="row between">
+								<div class="row"><strong>Books</strong><span class="note">· 24 records</span></div>
+								<div class="row">
+									<div class="input" style="width: 140px">Search…</div>
+									<div class="btn sm">＋ New</div>
+									<span class="kebab" title="Settings / Delete">⋮</span>
+								</div>
+							</div>
+							<div class="sep"></div>
+							<div class="row" style="gap: 8px">
+								<span class="note">Group</span>
+								<div class="select" style="width: 90px"><span>None</span><span>▾</span></div>
+								<div class="btn sm">⛁ Filter</div>
+							</div>
+							<p class="note" style="margin-top: 8px">
+								Header ⋮ opens the same Style-1 menu → the tabbed dialog. Group-by stays here;
+								Title-by has moved into the dialog.
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="callout warn">
+				<strong>The wrinkle you flagged (“might not be good”).</strong> In Files'
+				<em>multi-select</em> mode there's no single active class, so the header ⋮ only appears when
+				a single class catalog is open; otherwise you expand the rail. Low-risk to try: the ⋮ is one
+				shared component, so if the header spot feels wrong we can drop in a collapsed-icon popover
+				later with no redesign.
+			</div>
+
+			<!-- ============================================================= -->
+			<h2>5 · App settings vs entity settings</h2>
+			<div class="grid2">
+				<div class="card">
+					<h3>Guardrails (every screen)</h3>
+					<ul class="pros" style="color: var(--fg)">
+						<li>
+							Per-entity dialog title is always <code>{Name} — settings</code>, never bare
+							“Settings”.
+						</li>
+						<li>Footer gear relabeled <strong>“App settings”</strong> (was “Settings”).</li>
+						<li>
+							Dialog subtitle:
+							<em>“Settings for this {noun} — global preferences live in App settings.”</em>
+						</li>
+						<li>
+							⋮ lives <em>on the row / in the content header</em>; the gear lives in the
+							<em>footer</em>.
+						</li>
+					</ul>
+				</div>
+				<div class="card">
+					<h3>What goes where</h3>
+					<table class="cmp">
+						<tr>
+							<th>App settings (gear)</th>
+							<th>Entity settings (⋮)</th>
+						</tr>
+						<tr>
+							<td>Grid / tile size</td>
+							<td>Display name (rename)</td>
+						</tr>
+						<tr>
+							<td>Rail collapsed, nav prefs</td>
+							<td>Title&nbsp;by (persisted)</td>
+						</tr>
+						<tr>
+							<td>Autosave-on-advance</td>
+							<td>Schema / fields</td>
+						</tr>
+						<tr>
+							<td>Global, cross-entity</td>
+							<td>Delete this entity</td>
+						</tr>
+					</table>
+					<p class="note" style="margin-top: 8px">
+						Group&nbsp;by stays a live header control — a momentary view, not a saved pref.
+					</p>
+				</div>
+			</div>
+
+			<!-- ============================================================= -->
+			<h2>6 · Records header — before / after</h2>
+			<div class="grid2">
+				<div class="card">
+					<span class="tag">before</span>
+					<div class="mock">
+						<div class="mbody">
+							<div class="row" style="gap: 8px">
+								<span class="note">Group</span>
+								<div class="select" style="width: 84px"><span>None</span><span>▾</span></div>
+								<span class="note">Title by</span>
+								<div class="select" style="width: 84px"><span>Default</span><span>▾</span></div>
+								<div class="btn sm">⛁ Filter</div>
+								<div class="btn sm">▤ Schema</div>
+							</div>
+						</div>
+					</div>
+					<p class="note">
+						Title-by reset on every type switch → felt broken. Schema was a separate button.
+					</p>
+				</div>
+				<div class="card sel">
+					<span class="tag">after</span>
+					<div class="mock">
+						<div class="mbody">
+							<div class="row" style="gap: 8px">
+								<span class="note">Group</span>
+								<div class="select" style="width: 84px"><span>None</span><span>▾</span></div>
+								<div class="btn sm">⛁ Filter</div>
+								<span style="flex: 1"></span><span class="kebab">⋮</span>
+							</div>
+						</div>
+					</div>
+					<p class="note">
+						Title-by + schema moved into ⋮ → Settings. Header keeps only the live controls.
+					</p>
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

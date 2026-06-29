@@ -34,3 +34,26 @@ export function assertSafeImageFilename(filename: string): string {
 	return base;
 }
 
+/**
+ * Validate a filename is a safe single-segment basename (no traversal). Does **not** require an image extension.
+ *
+ * Use case:
+ * - `generic` media types may store non-image files; use this instead of {@link assertSafeImageFilename} for those paths.
+ *
+ * @param filename - Proposed basename
+ * @returns The same basename if valid
+ *
+ * Concerns / future improvements:
+ * - Consider a max length and reserved-name denylist if users hit edge cases.
+ */
+export function assertSafeBasename(filename: string): string {
+	if (!filename || typeof filename !== 'string') {
+		throw error(400, 'Invalid filename');
+	}
+	if (filename.includes('\0')) throw error(400, 'Invalid filename');
+	if (filename.includes('/') || filename.includes('\\')) throw error(400, 'Invalid filename');
+	const base = path.basename(filename);
+	if (base !== filename) throw error(400, 'Invalid filename');
+	if (base === '.' || base === '..') throw error(400, 'Invalid filename');
+	return base;
+}

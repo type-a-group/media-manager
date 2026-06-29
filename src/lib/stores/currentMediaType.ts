@@ -6,7 +6,7 @@ import { writable } from 'svelte/store';
  */
 export interface CurrentMediaType {
 	typeId: string;
-	kind: 'images' | 'json';
+	kind: 'images' | 'json' | 'generic' | 'blob_store';
 	displayName?: string;
 }
 

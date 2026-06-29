@@ -12,14 +12,18 @@ import svelte from 'eslint-plugin-svelte';
  */
 export default [
 	{
-		ignores: [
-			'.svelte-kit/**',
-			'build/**',
-			'dist/**',
-			'node_modules/**'
-		]
+		ignores: ['.svelte-kit/**', 'build/**', 'dist/**', 'node_modules/**']
 	},
 	js.configs.recommended,
+	{
+		// Plain Node scripts (build/data tooling) run in Node, not the browser — they use `process`,
+		// `console`, etc. ESLint's recommended config has no Node globals, so relax `no-undef` here
+		// (same stance as the .ts/.svelte blocks below).
+		files: ['scripts/**/*.{js,mjs,cjs}', '*.{js,mjs,cjs}'],
+		rules: {
+			'no-undef': 'off'
+		}
+	},
 	{
 		files: ['**/*.ts'],
 		languageOptions: {
@@ -65,4 +69,3 @@ export default [
 		}
 	}
 ];
-

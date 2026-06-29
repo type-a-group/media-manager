@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>media-manager 1.0 — "Easier to Run" plan (Items 30 · 31 · 32)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1d212b; --ink: #e6e8ec; --muted: #9aa3b2;
+    --line: #2a2f3a; --accent: #6aa3ff; --good: #57c785; --warn: #e0b257; --bad: #e06b6b;
+    --code-bg: #0b0d11; --chip: #232836;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 96px; }
+  h1 { font-size: 28px; line-height: 1.25; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 44px 0 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 8px; color: #cdd3de; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); }
+  code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+    background: var(--chip); padding: 1px 6px; border-radius: 5px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.5; }
+  pre .c { color: var(--muted); } pre .g { color: var(--good); } pre .w { color: var(--warn); }
+  pre .b { color: var(--accent); } pre .r { color: var(--bad); } pre .d { color: #d9b3ff; }
+  .sub { color: var(--muted); margin-top: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .chip { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--chip); color: var(--muted); margin: 0 6px 6px 0; }
+  .chip.good { color: var(--good); border-color: #2c4a39; } .chip.warn { color: var(--warn); border-color: #4a3f25; }
+  .chip.acc { color: var(--accent); border-color: #2a3a55; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  ul, ol { margin: 8px 0 8px 0; padding-left: 22px; } li { margin: 5px 0; }
+  .kbd { font-size: 12px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--panel-2); }
+  .note { border-left: 3px solid var(--accent); background: var(--panel-2); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .note.warn { border-left-color: var(--warn); } .note.good { border-left-color: var(--good); }
+  .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .gate { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0; }
+  .gate .box { flex: none; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 4px; margin-top: 3px; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 30px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>1.0 — Making media-manager <em>easier to run</em></h1>
+<p class="sub">Combined plan for the npx run trio &middot; Items
+  <span class="chip acc">30 · root discovery + verbs</span>
+  <span class="chip acc">31 · ephemeral port</span>
+  <span class="chip acc">32 · quiet heal</span>
+</p>
+<p class="small">Sub-project: <code>docs/plans/v1.0/npx/</code> · Working agreement:
+  <code>docs/plans/v1.0/README.md</code> · Phase 2 deliverable (review &amp; approve before any code).</p>
+
+<div class="note">
+  <strong>Goal (scoped in the Phase-1 interview).</strong> One command, run from inside your repo, that finds your
+  data, grabs a free port, opens when actually ready, and <em>never dirties git while you browse</em>. Optimised
+  for <strong>Nicholas's own dev loop + a friend's</strong> — <em>not</em> the published-registry consumer story
+  (publishing / former Item 27 stays deferred out of 1.0). Distribution remains the local-dep / clone path.
+</div>
+
+<h2>The target experience</h2>
+<pre><span class="c"># from anywhere inside your project</span>
+$ <span class="b">npx media-manager</span>
+<span class="c">›</span> resolved root: ./src/assets/media_manager  <span class="c">(from media-manager.config.json)</span>
+<span class="c">›</span> build/ missing — building once…  <span class="g">done (8.2s)</span>
+<span class="c">›</span> <span class="g">ready</span> on <span class="b">http://localhost:54731</span>  <span class="c">(opening browser…)</span>
+</pre>
+<p>Compare today: you must <code>npm run build</code> first (hard error otherwise), pass an explicit root every
+  time, accept a hardcoded <code>:3000</code> that collides with your dev server, wait on a blind 2-second timer
+  for auto-open, and watch <code>git status</code> go dirty just from opening a committed workspace.</p>
+
+<h2>Decisions locked (Phase 1)</h2>
+<table>
+  <tr><th>Area</th><th>Decision</th></tr>
+  <tr><td>Discovery</td><td><code>media-manager.config.json</code> (walk up from cwd to the nearest one). Shape
+    <code>{ "root": "…" }</code>; <code>root</code> resolved <strong>relative to the config file</strong>, not cwd.
+    No magic dir-name sniffing.</td></tr>
+  <tr><td>Precedence</td><td><code>explicit arg → MEDIA_MANAGER_ROOT → config file → friendly error</code></td></tr>
+  <tr><td>Build</td><td>Build-on-demand when <code>build/</code> is missing; <code>--rebuild</code> forces. No
+    source-mtime staleness heuristic.</td></tr>
+  <tr><td>Port</td><td>Ephemeral — bind <code>0</code> (OS-assigned), open the bound URL on a real readiness signal.
+    Optional <code>--port N</code> to pin. The fixed <code>3000</code> default is gone.</td></tr>
+  <tr><td>Verbs</td><td><code>serve</code> (default) · <code>init</code> (scaffold empty workspace via the app's
+    own first-launch healing) · <code>doctor</code> (<strong>first-class</strong> — diagnose root/config/build).</td></tr>
+  <tr><td>Safety</td><td>Quiet heal — browsing committed data writes nothing unless something genuinely changed.</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2>Item 30 — Config discovery + CLI verbs</h2>
+<p class="tag">files: bin/media-manager.js · src/lib/storage/paths.ts</p>
+
+<h3>The config file</h3>
+<pre><span class="c">// &lt;repo&gt;/media-manager.config.json</span>
+{
+  <span class="d">"root"</span>: <span class="g">"./src/assets/media_manager"</span>
+}</pre>
+<ul>
+  <li>Single required field <code>root</code>. Validated on load — a missing/empty <code>root</code>, or a path that
+    doesn't exist, produces a clear message (not a stack trace), routed through the same copy as <code>doctor</code>.</li>
+  <li><code>root</code> is resolved <strong>relative to the config file's directory</strong>, so running from a subdir
+    still finds the right data. Room to add <code>port</code> / <code>open</code> defaults later; out of scope now.</li>
+</ul>
+
+<h3>Resolution precedence</h3>
+<pre><span class="b">1.</span> explicit positional arg      <span class="c">media-manager ./some/root</span>
+<span class="b">2.</span> MEDIA_MANAGER_ROOT env       <span class="c">(test:serve, muscle memory)</span>
+<span class="b">3.</span> media-manager.config.json    <span class="c">walk up from cwd; root relative to the file</span>
+<span class="b">4.</span> &rarr; friendly doctor-style error
+</pre>
+<p class="small">Arg and env keep winning so the existing <code>node bin/media-manager.js &lt;root&gt;</code> and
+  <code>npm run test:serve</code> flows are untouched.</p>
+
+<h3>Verbs</h3>
+<div class="grid2">
+  <div class="panel">
+    <strong><code>serve</code></strong> <span class="chip">default</span>
+    <p class="small">Current behaviour + the new discovery/build/port logic. Bare <code>media-manager</code> ⇒ <code>serve</code>.</p>
+  </div>
+  <div class="panel">
+    <strong><code>init</code></strong>
+    <p class="small">Scaffold an empty workspace by reusing the app's first-launch healing (don't hand-roll the seed).
+      Writes a starter <code>media-manager.config.json</code> if absent.</p>
+  </div>
+</div>
+<div class="panel">
+  <strong><code>doctor</code></strong> <span class="chip good">first-class</span>
+  <p class="small">Diagnoses the launch without starting the server — what an unfamiliar user (your friend) hits first.</p>
+<pre>$ <span class="b">media-manager doctor</span>
+<span class="g">✔</span> config        ./media-manager.config.json
+<span class="g">✔</span> root          ./src/assets/media_manager  <span class="c">(exists, writable)</span>
+<span class="g">✔</span> workspace     media/ hub + 2 classes, 3 record types
+<span class="w">!</span> build         build/ missing — will build on first serve (or run --rebuild)
+<span class="g">✔</span> port          ephemeral (OS-assigned)
+</pre>
+  <p class="small">Failure mode mock — the friendly error path (precedence step 4) shares this renderer:</p>
+<pre>$ <span class="b">media-manager</span>
+<span class="r">✘ Could not find a workspace.</span>
+  Tried: no path arg · MEDIA_MANAGER_ROOT unset · no media-manager.config.json found
+  (searched . up to /home/you)
+
+  Fix one of:
+    • run <span class="b">media-manager ./path/to/data</span>
+    • drop a <span class="b">media-manager.config.json</span> with { "root": "…" }
+    • run <span class="b">media-manager init</span> to scaffold a fresh workspace
+</pre>
+</div>
+
+<!-- ============================================================= -->
+<h2>Item 31 — Ephemeral port + accurate auto-open</h2>
+<p class="tag">files: bin/media-manager.js</p>
+
+<div class="note warn">
+  <strong>Spike result (adapter-node 5.5.2).</strong> <code>PORT=0</code> <em>is</em> accepted — it's passed straight
+  to <code>server.listen({ port })</code>, so the OS assigns a free port. <strong>But</strong> the adapter's
+  "Listening on" log echoes the <em>requested</em> value (prints <code>:0</code>), and our <code>bin</code> runs the
+  server as a <em>child process</em> (<code>spawn(node, [build])</code>) — so the real bound port is reachable
+  neither from stdout nor from the JS exports. The brief's assumed "parse stdout" fallback <strong>doesn't work as-is.</strong>
+</div>
+
+<h3>Chosen approach — parent-side probe</h3>
+<ol>
+  <li>In the bin, open a throwaway listener on <code>:0</code>, read <code>server.address().port</code>, close it.</li>
+  <li>Spawn <code>node build</code> with <code>PORT=&lt;probed&gt;</code> (still a child, minimal change).</li>
+  <li>Now the child logs the <em>real</em> port — so <strong>readiness = watch child stdout for the "Listening on"
+    line</strong>, replacing today's blind <code>setTimeout(…, 2000)</code>. Open <code>http://localhost:&lt;probed&gt;</code> the instant it appears.</li>
+  <li>Keep <code>--port N</code> to pin; <code>--no-open</code> still suppresses the browser.</li>
+</ol>
+<p class="small"><strong>Caveat:</strong> a tiny TOCTOU window between closing the probe and the child binding —
+  negligible for a local single-user tool, standard practice. <strong>Race-free alternative</strong> (deferred): stop
+  spawning, run the server in-process via <code>import('./build/handler.js')</code> →
+  <code>http.createServer(handler).listen(0)</code> and read <code>address().port</code> directly. Bigger lifecycle
+  refactor; revisit only if the race ever bites.</p>
+
+<!-- ============================================================= -->
+<h2>Item 32 — Quiet heal (browse without dirtying git)</h2>
+<p class="tag">files: src/lib/storage/manifest.ts · src/lib/storage/classRepo.ts (+ manifest.test.ts)</p>
+
+<div class="note good">
+  <strong>Spike result — smaller than the brief assumed.</strong> The no-op write guards <em>already exist</em>:
+  <code>reconcile</code> (manifest.ts:307), <code>applyMembershipIndex</code> (manifest.ts:188) and
+  <code>setEntryDimensions</code> (manifest.ts:213) each write only inside an <code>if (changed)</code>. So a
+  <em>fully-consistent</em> committed workspace very likely already browses git-clean. Item 32 is targeted fixes, not a rewrite.
+</div>
+
+<div class="note warn">
+  <strong>Build-time finding (2026-06-28) — the content-hash trigger is reclassified as deferred perf, not a 1.0 fix.</strong>
+  Key fact: <strong>git tracks content, not mtime.</strong> So the mtime-resync re-firing after a
+  <code>git checkout</code> writes nothing (the <code>applyMembershipIndex</code> guard holds) and, even if it
+  rewrote identical bytes, git would still show clean. ⇒ The <strong>git-clean goal is already met by the existing
+  guards</strong>; the content-hash trigger would only save some class-file re-parsing (CPU), at the cost of fragile
+  signature-sync across every membership write path. <strong>Decision:</strong> ship Item 32 as the
+  <em>test guarantee</em> (added — <code>manifest.test.ts</code> "quiet heal" block: no-change ⇒ no-write,
+  real-change ⇒ write + report, stays-missing ⇒ no further write) plus the empirical <code>git status</code>-clean
+  gate; <strong>defer the content-hash trigger to a small post-1.0 perf item.</strong>
+</div>
+
+<h3>Remaining churn vectors &amp; the fixes</h3>
+<table>
+  <tr><th>Vector</th><th>What happens</th><th>Fix</th></tr>
+  <tr>
+    <td><strong>mtime trigger</strong> (load-bearing)</td>
+    <td><code>reconcileAndResync</code> (classRepo.ts:738) marks the index "stale" when any class-file mtime &gt;
+      manifest mtime. <code>git checkout</code> <em>doesn't preserve mtimes</em> — it stamps all files at checkout —
+      so a class file often reads as "newer," firing the resync on every browse. It won't <em>write</em> (the guard
+      holds) so it's CPU churn, not git churn — but it means we can't rely on mtime once writes are fully conditional.</td>
+    <td>Replace the mtime gate with a <strong>content-hash trigger</strong>: store a hash of the class-membership
+      inputs in the manifest; resync only when the hash differs. Stable across checkout.</td>
+  </tr>
+  <tr>
+    <td><strong>Dims backfill</strong></td>
+    <td><code>backfillDimensions</code> (classRepo.ts:782) measures &amp; persists <code>width/height</code> on the
+      first browse of any workspace whose committed manifest lacks them — real new data, but it dirties git on first open.</td>
+    <td><strong>Decision (default in this plan):</strong> accept it — it's genuine healing and quiesces after one
+      browse. If we want zero first-open churn, gate persistence behind a future read-only flag. (Flagging for your call.)</td>
+  </tr>
+  <tr>
+    <td><strong>Equivalence (OQ3)</strong></td>
+    <td>Guards compare <em>structured fields</em>, while writes serialise the Zod-<em>normalised</em> object — fine
+      today, but a future guard that compared serialised bytes could rewrite on pure formatting drift.</td>
+    <td>Keep <strong>structural</strong> equivalence; add one belt-and-suspenders check — compare the next manifest
+      against the <em>on-disk parsed</em> manifest before writing, so normalize-on-read can never trigger a write.</td>
+  </tr>
+</table>
+
+<div class="note warn">
+  <strong>Still owed: the empirical gate.</strong> "Browse a git-committed workspace ⇒ <code>git status</code> clean"
+  needs <code>build</code> + <code>test:serve</code> against a committed copy of <code>test-fixtures/</code> — the
+  headline acceptance for Item 32. Not run yet (kept clear of the tree while another agent was editing). It may
+  already pass for a consistent fixture; if it does, Item 32 collapses to the content-hash trigger + the structural belt.
+</div>
+
+<!-- ============================================================= -->
+<h2>On-disk / surface changes (summary)</h2>
+<ul>
+  <li><strong>New file consumers read:</strong> <code>media-manager.config.json</code> at/above cwd (optional; never written by serve, written by <code>init</code>).</li>
+  <li><strong>Manifest schema:</strong> add a small membership-hash field (Item 32 content-hash trigger). Backward-compatible default; absent ⇒ treated as stale once, then written.</li>
+  <li><strong>No HTTP API changes.</strong> Purely launcher + storage-internal.</li>
+  <li><strong>Docs:</strong> CLAUDE.md "Commands"/launch section (verbs + discovery + ephemeral port; <code>PORT</code> no longer the contract); <code>FEATURES.md</code> note on quiet-heal; fixtures only if the manifest gains the hash field (regenerate seed).</li>
+</ul>
+
+<h2>Build order — vertical slices</h2>
+<ol>
+  <li><strong>32a — content-hash trigger + structural belt</strong> (manifest.ts, classRepo.ts) with unit tests:
+    "no change ⇒ no write", "real change ⇒ write + report", "checkout-reset mtimes ⇒ no write". <em>Foundational, first.</em></li>
+  <li><strong>32b — empirical gate:</strong> <code>test:serve</code> on a committed fixture, <code>git status</code> clean; settle the dims-backfill decision against reality.</li>
+  <li><strong>31 — probe port + stdout-readiness auto-open</strong> (bin). Manual: two concurrent instances, dummy server on 3000, <code>--port</code>, <code>--no-open</code>.</li>
+  <li><strong>30a — config loader + precedence + friendly error</strong> (bin, paths.ts) with unit coverage for every precedence combination.</li>
+  <li><strong>30b — verbs</strong> <code>serve</code>/<code>init</code>/<code>doctor</code> + <strong>build-on-demand</strong> &amp; <code>--rebuild</code>.</li>
+  <li><strong>Docs</strong> in the same changes as each slice.</li>
+</ol>
+<p class="small">Each slice is a thin end-to-end path; adjust this plan as reality diverges and say so.</p>
+
+<h2>Verification gates</h2>
+<div class="panel">
+  <div class="gate"><span class="box"></span><div><code>npm run check</code> + <code>npm run lint</code> clean for touched files.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>32:</strong> unit — "no change ⇒ no write", "real change ⇒ write + correct <code>healed</code> report", "checkout-reset mtimes ⇒ no write", lock order (manifest before class) preserved, resync still fires on a real membership edit.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>32:</strong> <code>test:serve</code> on a <em>git-committed</em> fixture copy — browse every view ⇒ <code>git status</code> <strong>clean</strong>; then add/remove a blob on disk ⇒ heal + toast fire.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>31:</strong> two instances concurrently ⇒ distinct OS-assigned ports, each auto-opens its own URL; with a dummy server on 3000 it still starts; <code>--port</code> pins; <code>--no-open</code> suppresses.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>30:</strong> unit — precedence resolves for arg / env / config / none→error; <code>root</code> relative to the config file. Manual — bare <code>media-manager</code> from a subdir finds the workspace; <code>init</code> scaffolds then serves; <code>doctor</code> reports a misconfig clearly; build-on-demand builds once, <code>--rebuild</code> forces.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Docs in the same change:</strong> CLAUDE.md, FEATURES.md; fixtures if the manifest schema changes; move Items 30/31/32 → <em>Shipped &amp; folded</em> and sync <code>FUTURE_CHANGES_TRIAGE.html</code>.</div></div>
+</div>
+
+<h2>Cut line (explicitly out of 1.0)</h2>
+<ul>
+  <li><strong>Publishing</strong> (npm <code>bin</code>/<code>files</code>/<code>engines</code>, prepublish build, scoped name, native-dep cross-platform audit — former Item 27). Local-dep / clone only for now.
+    <div class="note good" style="margin-top:8px">
+      <strong>Forward note — consumers won't build.</strong> When this <em>is</em> published, a
+      <code>prepublishOnly</code> build runs once at publish time and <code>build/</code> ships in the tarball
+      (via the <code>files</code> whitelist), so <code>npx media-manager</code> runs the pre-built server with
+      <strong>no build on the user's machine</strong>. The <strong>build-on-demand we add now is the bridge for the
+      un-published (git-clone / local-dep) era</strong> — once <code>build/</code> ships in the package it's simply
+      present and the on-demand path goes dormant. The real "works for someone else" risk is <em>install-time</em>,
+      not build: <code>exiftool-vendored</code> / <code>heic-convert</code> resolve platform binaries on
+      <code>npm install</code> — hence the deferred cross-platform native-dep audit.
+    </div>
+  </li>
+  <li><strong>Reader / Mode B</strong> (Item 33) — separate brief, lands after this trio.</li>
+  <li><strong>Config schema beyond <code>root</code></strong> (<code>port</code>/<code>open</code> defaults) — easy to add later.</li>
+  <li><strong>In-process server</strong> (the race-free port alternative) — only if the probe's TOCTOU ever bites.</li>
+  <li><strong>Read-only mode</strong> for suppressing dims-backfill persistence — only if we reject the "accept first-open dims write" default above.</li>
+</ul>
+
+<hr />
+<p class="small">Plan owner: this thread · Phase 2 of the working agreement · Awaiting approval before Phase 3 (build in slices).</p>
+
+</div>
+</body>
+</html>

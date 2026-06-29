@@ -8,11 +8,13 @@ import { writable } from 'svelte/store';
  *   automatically navigate to the next unlinked image in the current list
  * @param autoSaveOnAdvance - When true, save current edits before navigating to prev/next image
  * @param gridSize - Grid cell size: small | medium | large
+ * @param railCollapsed - When true, the Records Explorer type rail starts collapsed
  */
 export interface AppSettings {
 	autoAdvanceToNextUnlinked: boolean;
 	autoSaveOnAdvance: boolean;
 	gridSize: 'small' | 'medium' | 'large';
+	railCollapsed: boolean;
 }
 
 /**
@@ -21,7 +23,8 @@ export interface AppSettings {
 const defaultSettings: AppSettings = {
 	autoAdvanceToNextUnlinked: false,
 	autoSaveOnAdvance: false,
-	gridSize: 'medium'
+	gridSize: 'medium',
+	railCollapsed: false
 };
 
 /**
@@ -39,13 +42,14 @@ function createSettingsStore() {
 	 */
 	async function fetchSettings(): Promise<void> {
 		try {
-			const res = await fetch('/api/config/settings');
+			const res = await fetch('/api/settings');
 			if (res.ok) {
 				const data = await res.json();
 				set({
 					autoAdvanceToNextUnlinked: data.autoAdvanceToNextUnlinked ?? false,
 					autoSaveOnAdvance: data.autoSaveOnAdvance ?? false,
-					gridSize: ['small', 'medium', 'large'].includes(data.gridSize) ? data.gridSize : 'medium'
+					gridSize: ['small', 'medium', 'large'].includes(data.gridSize) ? data.gridSize : 'medium',
+					railCollapsed: data.railCollapsed ?? false
 				});
 			}
 		} catch (err) {
@@ -62,7 +66,7 @@ function createSettingsStore() {
 	): Promise<void> {
 		update((s) => ({ ...s, [key]: value }));
 		try {
-			await fetch('/api/config/settings', {
+			await fetch('/api/settings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ [key]: value })
@@ -78,7 +82,7 @@ function createSettingsStore() {
 	async function resetToDefaults(): Promise<void> {
 		set(defaultSettings);
 		try {
-			await fetch('/api/config/settings', {
+			await fetch('/api/settings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(defaultSettings)

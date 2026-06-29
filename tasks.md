@@ -1,26 +1,8 @@
-# Cursor Specific
-- figure out if using `$bindable` is ok, it seems weird?
-- make a plan on what svelte features it should and shouldn't use
-- come up with a systems design plan that it can reference - ideals for how the site should be organized, and future plans
-- im thinking we can try to get it to comment on code that might be confusing AS its making it
+# Tasks (migrated)
 
-# General
-- when you save and link a previously unlinked image, move onto the next unlinked image
-- optionally organize by timestamp
-- filtering - filter for images with missing fields
-- templating - apply a change to many images - some sort of menu to mass select images?
-    - do we only do this for unlinked images?
-- view image metadata
-    - optionally delete or modify image metadata
--  Verbose mode: like not compact at all, images are displayed as the sidebar, so you can visually search through the data
-    - Option to look at the images in a larger grid view (like lightroom) and select one in case you REALLY need to search for something visually
+This informal backlog has been consolidated into the maintained backlog at
+[`docs/FUTURE_CHANGES.md`](docs/FUTURE_CHANGES.md). Add new ideas there.
 
-# Things to think about
-- is having default values important? other than like false for bools and 0 for ints - maybe we can just filter for empty values?
-
-
-# Specific to other applications (not-important for now)
-- add an option to fill out some fields based on Google Vision API (food web thing)
-    - offline semantic search using the vision api-filled fields
-    - vector database the fields for a fast fully local search also? (can maybe even work on exif data)
-- experiment with an image grid renderer
+Items that were already shipped are documented in [`docs/FEATURES.md`](docs/FEATURES.md):
+auto-advance to next unlinked, mass-select + bulk "Set field", view/strip image
+metadata, the feature registry itself, and the comment-as-you-code rule.

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>media-manager 1.0 — Reader Package plan (Item 33)</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel-2: #1d212b; --ink: #e6e8ec; --muted: #9aa3b2;
+    --line: #2a2f3a; --accent: #6aa3ff; --good: #57c785; --warn: #e0b257; --bad: #e06b6b;
+    --code-bg: #0b0d11; --chip: #232836;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 40px 24px 96px; }
+  h1 { font-size: 28px; line-height: 1.25; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 44px 0 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 26px 0 8px; color: #cdd3de; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); }
+  code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
+    background: var(--chip); padding: 1px 6px; border-radius: 5px; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; overflow-x: auto; font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.5; }
+  pre .c { color: var(--muted); } pre .g { color: var(--good); } pre .w { color: var(--warn); }
+  pre .b { color: var(--accent); } pre .r { color: var(--bad); } pre .d { color: #d9b3ff; }
+  .sub { color: var(--muted); margin-top: 0; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 16px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .chip { display: inline-block; font-size: 12px; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--chip); color: var(--muted); margin: 0 6px 6px 0; }
+  .chip.good { color: var(--good); border-color: #2c4a39; } .chip.warn { color: var(--warn); border-color: #4a3f25; }
+  .chip.acc { color: var(--accent); border-color: #2a3a55; } .chip.bad { color: var(--bad); border-color: #4a2a2a; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  ul, ol { margin: 8px 0 8px 0; padding-left: 22px; } li { margin: 5px 0; }
+  .note { border-left: 3px solid var(--accent); background: var(--panel-2); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .note.warn { border-left-color: var(--warn); } .note.good { border-left-color: var(--good); } .note.bad { border-left-color: var(--bad); }
+  .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .gate { display: flex; gap: 10px; align-items: flex-start; margin: 6px 0; }
+  .gate .box { flex: none; width: 16px; height: 16px; border: 1px solid var(--line); border-radius: 4px; margin-top: 3px; }
+  hr { border: none; border-top: 1px solid var(--line); margin: 30px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>1.0 — The <em>Reader Package</em></h1>
+<p class="sub">Read-only host integration &middot;
+  <span class="chip acc">Item 33</span>
+  <span class="chip good">v1: build-time / static · data layer only · monorepo subpath</span>
+</p>
+<p class="small">Sub-project: <code>docs/plans/v1.0/npx/</code> · Working agreement:
+  <code>docs/plans/v1.0/README.md</code> · Phase 2 deliverable (review &amp; approve before any code).</p>
+
+<div class="note">
+  <strong>Goal (scoped in the Phase-1 interview).</strong> Let a host build (e.g. <code>nicb.at</code>) consume a
+  media-manager workspace's on-disk format to render galleries and record lists <em>without booting the editor</em> —
+  pure, read-only, and <strong>layout-aware so the host never hand-codes a path that rots when media-manager's
+  on-disk format moves.</strong> v1 ships a <strong>data layer only</strong> (no components), for the
+  <strong>build-time / static</strong> consumption mode, as a <strong>subpath export of this monorepo</strong>.
+</div>
+
+<div class="note bad">
+  <strong>Why this is urgent, not speculative.</strong> <code>nicb.at</code>'s readers
+  (<code>src/lib/index.ts</code>: <code>fetchImageList</code> / <code>fetchProjects</code> / <code>fetchQuotes</code>)
+  still import the <em>pre-Item-18</em> paths — <code>photos/image-data.json</code>, <code>files/*</code>,
+  <code>projects/data.json</code>, <code>quotes/data.json</code> — but the workspace on disk was migrated to the
+  <strong>file-first layout</strong> (<code>media/manifest.json</code> + <code>media/classes/photos.json</code> +
+  <code>media/files/*</code>, <code>records/projects/data.json</code>). <strong>Photos / Projects / Quotes are reading
+  nothing right now.</strong> This is exactly the silent breakage the reader exists to prevent.
+</div>
+
+<!-- ============================================================= -->
+<h2>The framing correction (vs. the old Item 33 stub)</h2>
+<p>The pre-existing stub centred on a <strong>"root-threading refactor"</strong> — making <code>paths.ts</code> take an
+  explicit <code>root</code> so a Node API can <code>fs</code>-read the workspace. Investigating
+  <code>nicb.at</code> showed that's <strong>not how the target host consumes data.</strong> A static build reads JSON
+  via Vite's <code>import.meta.glob</code>/<code>import()</code> and resolves image URLs through <strong>Vite's asset
+  pipeline</strong> (hashed, content-addressed, bundled). There is no <code>fs</code>, no <code>root</code> path, no
+  <code>process.env</code> at runtime. An <code>fs</code>-based <code>openWorkspace(root)</code> literally
+  <em>cannot</em> emit the hashed asset URLs a static build needs.</p>
+
+<p>So the old plan conflated <strong>three</strong> reader shapes:</p>
+<table>
+  <tr><th>Shape</th><th>How it reads</th><th>Assets</th><th>Fits</th></tr>
+  <tr>
+    <td><strong>(a) fs <code>openWorkspace(root)</code></strong></td>
+    <td>Node <code>fs</code> reads the root</td>
+    <td>Can't produce bundled URLs</td>
+    <td>Static-export CLI (Item 7), a live server. Needs root-threading.</td>
+  </tr>
+  <tr>
+    <td><strong>(b) Vite-bundle library</strong> <span class="chip good">v1</span></td>
+    <td>Host hands in <code>import.meta.glob</code> results; reader does pure-data joins</td>
+    <td>Host's bundler hashes them; reader maps <code>filename → url</code></td>
+    <td><strong>nicb.at &amp; the reference repo.</strong> No <code>fs</code>, no root-threading.</td>
+  </tr>
+  <tr>
+    <td><strong>(c) runtime HTTP client</strong></td>
+    <td><code>fetch</code> a live <code>/api/*</code></td>
+    <td>Server streams <code>[id]/blob</code></td>
+    <td>A host running MM live in prod — <span class="chip">deferred (Mode 2)</span></td>
+  </tr>
+</table>
+<p>Our v1 decision (build-time / static, data-only, host resolves assets) is squarely <strong>(b)</strong>. The
+  root-threading refactor demotes to a later concern shared by (a)/Item 7 — <em>not</em> the heart of this.</p>
+
+<!-- ============================================================= -->
+<h2>Decisions locked (Phase 1)</h2>
+<table>
+  <tr><th>Area</th><th>Decision</th></tr>
+  <tr><td>Scope</td><td><strong>Data layer only.</strong> Typed loaders + class⨝manifest join + asset-resolution
+    contract. The host keeps rendering with its own components. No <code>&lt;Gallery&gt;</code>/lightbox/cards in v1.</td></tr>
+  <tr><td>Mode</td><td><strong>Build-time / static only.</strong> Vite glob + bundled JSON, host-resolved assets. The
+    runtime HTTP-client mode (c) is deferred — nicb.at deploys static, so there is no MM server to talk to.</td></tr>
+  <tr><td>Packaging</td><td><strong>Subpath export of this monorepo</strong> (<code>media-manager/reader</code>),
+    sharing <code>src/lib/core/</code> so the reader can't drift from the editor's DTOs / normalization.</td></tr>
+  <tr><td>Purity</td><td>The reader core is <strong>environment-agnostic pure functions</strong> over already-parsed
+    JSON — no <code>fs</code>, no <code>process.env</code>, no network, no writes/heal/lock.</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2>The hard problem: asset resolution</h2>
+<div class="note warn">
+  <strong>JSON is trivial; assets are the whole game.</strong> A class record gives you a <code>file_id</code>; the
+  manifest maps it to <code>file_name</code> + intrinsic dims. But <code>media/files/superpuff.jpg</code> must become a
+  <strong>hashed URL Vite serves</strong> — and <em>only the host's own Vite instance can do that</em>.
+  <code>import.meta.glob</code> paths must be string-literal and relative to the calling module, so a library buried in
+  <code>node_modules</code> cannot glob the host's asset tree. <strong>The reader API must be designed around the host
+  passing in its own glob result.</strong>
+</div>
+<p>nicb.at already wrestles with the secondary gotcha: filename extension case. Its
+  <code>filenameWithLowercaseExt()</code> patch exists because a manifest <code>file_name</code> of
+  <code>olympic_river.jpeg</code> must still match a glob key of <code>olympic_river.JPEG</code>. The reader bakes this
+  tolerance in so every host doesn't reinvent it.</p>
+
+<!-- ============================================================= -->
+<h2>Architecture — a facade over a pure core</h2>
+<p>The public surface is <strong>one object</strong> with a handful of obvious methods. Everything below it — the
+  manifest join, url/list normalization, ext-case asset matching, version guard — is <strong>private internals</strong>
+  the developer never sees. Three layers, only the first is public:</p>
+<div class="grid3">
+  <div class="panel">
+    <strong>1 · <code>MediaManager</code> facade</strong> <span class="chip good">the whole public API</span>
+    <p class="small">Loaded once; exposes <code>.media()</code> / <code>.records()</code> / <code>.globals()</code> /
+      <code>.file()</code> and returns ergonomic <code>Collection</code>s of flat items. This is all a developer learns.</p>
+  </div>
+  <div class="panel">
+    <strong>2 · Pure core</strong> <span class="chip acc">private, env-agnostic</span>
+    <p class="small">The transform functions (join, normalize, resolve, filter) — now <em>internals</em> of the facade.
+      Reuse <code>src/lib/core/</code> Zod DTOs + normalization so semantics match the editor exactly.</p>
+  </div>
+  <div class="panel">
+    <strong>3 · Version guard</strong>
+    <p class="small">Read <code>manifest.version</code> (currently <code>2</code>); reject an unsupported workspace
+      <strong>loudly</strong> at <code>load()</code> — clear error, not a silent empty render.</p>
+  </div>
+</div>
+
+<h3>Load once — the only glue the developer writes</h3>
+<pre><span class="b">import</span> { MediaManager } <span class="b">from</span> <span class="g">'media-manager/reader/vite'</span>;
+
+<span class="c">// two globs in; not async — eager globs are already resolved by Vite.</span>
+<span class="b">const</span> mm = MediaManager.<span class="b">load</span>({
+  data:  <span class="b">import.meta.glob</span>(<span class="g">'$assets/media_manager/**/*.json'</span>, { eager: <span class="b">true</span>, import: <span class="g">'default'</span> }),
+  files: <span class="b">import.meta.glob</span>(<span class="g">'$assets/media_manager/media/files/*'</span>, { eager: <span class="b">true</span>, query: <span class="g">'?url'</span>, import: <span class="g">'default'</span> }),
+});</pre>
+<p class="small">Two globs (not four): JSON must be parsed, images must be <code>?url</code>'d — Vite needs those as
+  separate calls, and the paths must be string-literal (Vite's hard constraint). The reader infers what each entry is
+  — manifest vs. class vs. record vs. asset — <strong>from its path</strong>, so this snippet is identical for every
+  host; only the workspace prefix changes.</p>
+
+<h3>Methods on the object</h3>
+<pre><span class="b">mm.media</span>()              <span class="c">// every blob in the workspace        → Collection&lt;MediaItem&gt;</span>
+<span class="b">mm.media</span>(<span class="g">'photos'</span>)      <span class="c">// members of the "photos" class       → Collection&lt;MediaItem&gt;</span>
+<span class="b">mm.records</span>(<span class="g">'projects'</span>)  <span class="c">// records of a type                   → Collection&lt;Record&gt;</span>
+<span class="b">mm.globals</span>()            <span class="c">// the globals singleton                → Record</span>
+<span class="b">mm.file</span>(id)             <span class="c">// look up one blob by manifest id      → MediaItem | null</span>
+<span class="b">mm.classes</span>()            <span class="c">// [{ id, name, icon, count }]</span>
+<span class="b">mm.types</span>()              <span class="c">// [{ id, name, count }]</span></pre>
+
+<h3>Flat item shapes — no plumbing leaks out</h3>
+<pre><span class="d">MediaItem</span> {
+  id, src, filename, width, height,   <span class="c">// src = resolved hashed URL, or null if the blob is missing</span>
+  classes: <span class="d">string[]</span>,                  <span class="c">// membership</span>
+  missing: <span class="d">boolean</span>,
+  fields: { … },                      <span class="c">// the class metadata, normalized</span>
+  field(key),                         <span class="c">// convenience getter (handles url / list values)</span>
+  file(key), files(key),              <span class="c">// follow a file-type field → MediaItem(s)</span>
+}
+<span class="d">Record</span> { id, lastModified, fields, field(key), file(key), files(key) }</pre>
+
+<h3>Filtering — a tiny fluent <code>Collection</code> (five methods, not a DSL)</h3>
+<pre>mm.media(<span class="g">'photos'</span>)
+  .<span class="b">where</span>({ hidden: <span class="b">false</span> })       <span class="c">// field equality (looks in fields first, then top-level)</span>
+  .<span class="b">where</span>(<span class="g">'Year'</span>, <span class="g">'2024'</span>)
+  .<span class="b">sortBy</span>(<span class="g">'Year'</span>, <span class="g">'desc'</span>)         <span class="c">// also .filter(fn) · .find(fn) · .first()</span>
+  <span class="c">// a Collection is iterable + has .length + .all — use it straight in {#each}</span></pre>
+<p class="small"><code>.map()</code> returns a plain array (you're leaving for your own shape); <code>.where</code> /
+  <code>.filter</code> / <code>.sortBy</code> return a <code>Collection</code> so they chain.</p>
+
+<h3>Following file references — never juggle an id</h3>
+<p>A <code>file</code>-type field stores a raw manifest id on disk. <code>.field(key)</code> returns that stored value;
+  <code>.file(key)</code> resolves it the rest of the way:</p>
+<pre><span class="b">const</span> p = mm.records(<span class="g">'projects'</span>).first();
+p.<span class="b">field</span>(<span class="g">'thumbnail'</span>)   <span class="c">// → "8e6973f2-…"  (the stored id)</span>
+p.<span class="b">file</span>(<span class="g">'thumbnail'</span>)    <span class="c">// → MediaItem { id, src, width, height, … }  ← same shape as mm.media()</span>
+p.<span class="b">file</span>(<span class="g">'thumbnail'</span>)?.src
+p.<span class="b">files</span>(<span class="g">'gallery'</span>)    <span class="c">// list-of-files field → Collection&lt;MediaItem&gt;</span></pre>
+<p class="small">File references resolve to the <strong>same MediaItem objects</strong> as <code>mm.media()</code>
+  (identity by id) — one consistent file shape whether reached via class membership, <code>mm.file(id)</code>, or a
+  <code>file</code> field. A dangling id yields <code>null</code> / <code>missing: true</code>, never a throw or a
+  broken <code>&lt;img&gt;</code>.</p>
+
+<!-- ============================================================= -->
+<h2>Proof: nicb.at migration (the acceptance target)</h2>
+<p>v1 is "done" when <code>nicb.at</code>'s three hand-rolled readers collapse onto the facade and render again — the
+  ~40 lines of glob-juggling + ext-lowercasing + manifest-joining in <code>src/lib/index.ts</code> become:</p>
+<pre><span class="c">// photos</span>
+<span class="b">const</span> photos = mm.media(<span class="g">'photos'</span>)
+  .<span class="b">where</span>({ hidden: <span class="b">false</span> })
+  .<span class="b">map</span>((m) =&gt; ({ src: m.src, width: m.width, height: m.height,
+                 alt: [m.field(<span class="g">'name'</span>), m.field(<span class="g">'Location'</span>), m.field(<span class="g">'Year'</span>)].filter(Boolean).join(<span class="g">', '</span>) }));
+
+<span class="c">// projects</span>
+<span class="b">const</span> projects = mm.records(<span class="g">'projects'</span>).sortBy(<span class="g">'date'</span>, <span class="g">'desc'</span>);
+
+<span class="c">// quotes</span>
+<span class="b">const</span> quotes = mm.records(<span class="g">'quotes'</span>).where({ show_on_homepage: <span class="b">true</span> });</pre>
+<p class="small">The host keeps its domain mapping + its own components (Gallery, ProjectCard) — that's the "data layer
+  only" line. The reader stops at clean, typed, asset-resolved items.</p>
+
+<!-- ============================================================= -->
+<h2>On-disk / surface changes</h2>
+<ul>
+  <li><strong>No on-disk format change.</strong> The reader only <em>reads</em> the existing v2 layout.</li>
+  <li><strong>New package surface:</strong> a <code>media-manager/reader</code> (+ <code>/reader/vite</code>) subpath in
+    <code>package.json</code> <code>exports</code>; the reader source under <code>src/lib/reader/</code>, reusing
+    <code>src/lib/core/</code>. <strong>No new top-level dependency</strong> (pure TS + the host's Svelte/Vite).</li>
+  <li><strong>No HTTP API changes</strong> and <strong>no editor changes</strong> — additive only.</li>
+  <li><strong>Docs:</strong> <code>FEATURES.md</code> gains a "Reader (read-only host integration)" entry; the reader
+    ships its <em>own</em> README (see below). Item 33 → <em>Shipped &amp; folded</em> on completion; triage synced.</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2>Documentation — a first-class deliverable</h2>
+<div class="note good">
+  <strong>The library is only as good as a developer's first 10 minutes with it.</strong> Documentation is part of the
+  acceptance criteria, not an afterthought — a host developer (your friend, future-you) should go from zero to a
+  rendered gallery without reading the source.
+</div>
+<ul>
+  <li><strong>Reader README</strong> (<code>src/lib/reader/README.md</code>, shipped in the package): the copy-paste
+    <code>MediaManager.load()</code> snippet, the full method table, item shapes, the five <code>Collection</code>
+    methods, the file-reference story, and the version-guard error — each with a runnable example. Leads with a
+    <strong>complete "photos gallery in 15 lines" walkthrough</strong>.</li>
+  <li><strong>Exhaustive JSDoc</strong> on every public symbol (<code>MediaManager</code>, <code>load</code>,
+    <code>media</code>/<code>records</code>/<code>globals</code>/<code>file</code>, <code>Collection</code>,
+    <code>MediaItem</code>, <code>Record</code>) — matching this repo's rich-JSDoc convention (<code>@param</code>,
+    use-case, "Concerns / future improvements"). This drives editor IntelliSense, which is the real docs surface.</li>
+  <li><strong>Fully-typed surface</strong> — <code>.d.ts</code> for the subpath so hosts get autocomplete on
+    <code>mm.</code>, item fields, and <code>Collection</code> chains. Types <em>are</em> documentation here.</li>
+  <li><strong>A worked recipe per shape</strong> in the README: a class gallery, a record list, following a
+    <code>file</code> field, and handling missing assets — mirroring the nicb.at proof so the canonical example is
+    real, not toy.</li>
+  <li><strong>Migration note</strong>: "replacing a hand-rolled reader" — the before/after from
+    <code>nicb.at</code>'s <code>index.ts</code>, so the next host with stale readers has a map.</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2>Build order — vertical slices</h2>
+<ol>
+  <li><strong>33a — pure core + facade + types.</strong> <code>src/lib/reader/</code>: the private core (parse +
+    version guard reusing <code>core/</code> DTOs, manifest join, normalization, ext-case asset resolve, filter) and
+    the <code>MediaManager</code> facade + <code>Collection</code> + <code>MediaItem</code>/<code>Record</code> over
+    it. Unit tests against a parsed fixture — <strong>no <code>fs</code>, no env.</strong> JSDoc as it's written.
+    <em>Foundational, first.</em></li>
+  <li><strong>33b — Vite adapter + subpath export.</strong> <code>MediaManager.load()</code> accepting the two glob
+    maps + path-based classification; <code>package.json</code> <code>exports</code> for
+    <code>media-manager/reader</code> + <code>/reader/vite</code> with <code>.d.ts</code>;
+    <code>npm run check</code>/<code>lint</code> clean.</li>
+  <li><strong>33c — documentation.</strong> The reader README (walkthrough + recipes + migration note) and the
+    completed JSDoc pass. Treated as its own slice so it can't be skipped.</li>
+  <li><strong>33d — nicb.at migration (proof).</strong> Replace <code>fetchImageList</code>/<code>fetchProjects</code>/
+    <code>fetchQuotes</code> with the facade (local-dep / <code>file:</code> link); Photos/Projects/Quotes render from
+    the current file-first data. <em>This is the real acceptance gate.</em></li>
+</ol>
+<p class="small">Each slice is a thin end-to-end path; adjust this plan as reality diverges and say so.</p>
+
+<!-- ============================================================= -->
+<h2>Verification gates</h2>
+<div class="panel">
+  <div class="gate"><span class="box"></span><div><code>npm run check</code> + <code>npm run lint</code> clean for touched files.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Purity:</strong> the reader core runs with <strong>no <code>MEDIA_MANAGER_ROOT</code></strong>, performs <strong>no <code>fs</code> / network / writes</strong> (assert a fixture workspace is byte-identical before/after a full read sweep — the read-only guarantee).</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Join correctness:</strong> a member missing from the manifest is flagged <code>missing</code> (not crash); a manifest entry with no class membership is omitted from a class view; url/list values normalize identically to the editor's read path.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Asset resolution:</strong> <code>file_name</code> <code>foo.JPEG</code> resolves against a glob key <code>foo.jpeg</code> and vice-versa; an asset with no glob entry yields <code>src: null</code> + <code>missing: true</code>, never a broken <code>&lt;img&gt;</code>.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Version guard:</strong> a non-v2 / unrecognized workspace throws a clear, actionable error (names the expected layout), not an empty result.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>The nicb.at proof:</strong> with the reader wired in, Photos renders the <code>photos</code> class (hidden filtered, dims correct), Projects + Quotes render from <code>records/*</code> — from the <em>current</em> file-first data, no manual paths.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Documentation:</strong> reader README present with the load snippet + per-shape recipes + migration note; every public symbol has JSDoc; the subpath ships <code>.d.ts</code> so <code>mm.</code> autocompletes in a host editor. A dev can reach a rendered gallery from the README alone.</div></div>
+  <div class="gate"><span class="box"></span><div><strong>Docs in the same change:</strong> <code>FEATURES.md</code> reader entry + README section; Item 33 → <em>Shipped &amp; folded</em>; <code>FUTURE_CHANGES_TRIAGE.html</code> synced.</div></div>
+</div>
+
+<!-- ============================================================= -->
+<h2>Cut line (explicitly out of v1)</h2>
+<ul>
+  <li><strong>Components</strong> — read-only <code>&lt;Gallery&gt;</code>/lightbox/record cards/field renderers over
+    the in-house <code>Masonry.svelte</code>. The natural v2 of the reader; the host renders for now.</li>
+  <li><strong>Runtime HTTP-client mode (c)</strong> — for a host running MM live. Shares only <code>core/</code> DTOs;
+    addable later with zero rework to the v1 core. Capture as a follow-up backlog item.</li>
+  <li><strong>fs <code>openWorkspace(root)</code> + the root-threading refactor</strong> — belongs to the static-export
+    CLI (Item 7) and a live server, not the static-build face. Same pure core feeds it when built.</li>
+  <li><strong>Responsive / multi-resolution assets</strong> (the Photos page's "load lower quality by default" TODO) —
+    an asset-pipeline concern shared with Items 7 / 15; design once, later.</li>
+  <li><strong>Registry publishing</strong> of the subpath (Item 43) — local-dep / <code>file:</code> link for now.</li>
+</ul>
+
+<hr />
+<p class="small">Plan owner: this thread · Phase 2 of the working agreement · Awaiting approval before Phase 3 (build in slices).</p>
+
+</div>
+</body>
+</html>

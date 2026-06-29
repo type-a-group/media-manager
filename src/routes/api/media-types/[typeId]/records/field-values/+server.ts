@@ -18,7 +18,8 @@ export const GET: RequestHandler = async ({ params, url }) => {
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to fetch field values' });
 	}
 };

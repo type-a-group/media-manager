@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — Sub-app restructure (Globals split · Switcher · Breadcrumbs/Deep-links · ⌘K)</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --accent-dim: #8a7416;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 120px; }
+      header.hero { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 70ch; }
+      .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+      .toc a {
+        font: 600 12px/1 var(--mono); text-decoration: none; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 12px; transition: 0.15s;
+      }
+      .toc a:hover { border-color: var(--accent); color: var(--accent); }
+      section { margin-top: 44px; scroll-margin-top: 20px; }
+      h2 { font-size: 21px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+      h2 .n { font: 700 13px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 6px; padding: 5px 8px; }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      p { margin: 8px 0; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      ul { margin: 8px 0; padding-left: 20px; }
+      li { margin: 5px 0; }
+      .tag { font: 600 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; }
+      .tag.fe { color: var(--blue); background: #14233f; }
+      .tag.doc { color: var(--green); background: #11291c; }
+      .tag.dep { color: var(--pink); background: #341823; }
+      .tag.api { color: var(--accent); background: #2c2608; }
+      pre.mock {
+        font-family: var(--mono); font-size: 12.5px; line-height: 1.45; color: var(--ink);
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+        padding: 16px; overflow: auto; margin: 10px 0;
+      }
+      .files { list-style: none; padding: 0; margin: 10px 0; }
+      .files li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; background: var(--panel-2); }
+      .files code { background: transparent; border: 0; padding: 0; color: var(--ink); }
+      .pill { font: 600 10px/1 var(--mono); padding: 3px 6px; border-radius: 4px; }
+      .pill.new { color: var(--bg); background: var(--green); }
+      .pill.edit { color: var(--bg); background: var(--accent); }
+      .pill.del { color: var(--bg); background: var(--pink); }
+      .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 600 13px var(--mono); }
+      .flow .box { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: var(--panel-2); }
+      .flow .arrow { color: var(--accent); }
+      .phase { border-left: 3px solid var(--accent-dim); padding-left: 16px; margin: 14px 0; }
+      .phase b { color: var(--accent); }
+      table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13.5px; }
+      th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+      .note { border: 1px dashed var(--accent-dim); border-radius: 10px; padding: 12px 14px; background: #1a1707; color: #f0e4b8; font-size: 13.5px; }
+      .scope-yes { color: var(--green); }
+      .scope-no { color: var(--pink); }
+      footer { margin-top: 60px; border-top: 1px solid var(--line); padding-top: 18px; color: var(--muted); font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="kicker">media-manager · implementation plan</div>
+        <h1>Sub-app restructure: split Globals, add a switcher, breadcrumbs &amp; ⌘K</h1>
+        <p class="sub">
+          Promote <b>Globals</b> to a true peer route, make hopping between the three sub-apps a
+          header dropdown, give every screen breadcrumbs + deep-linkable URLs, and add a global
+          command palette. Backend/on-disk model is untouched — this is almost entirely a
+          frontend &amp; routing change.
+        </p>
+        <nav class="toc">
+          <a href="#overview">Overview</a>
+          <a href="#g1">1 · Globals → /globals</a>
+          <a href="#g2">2 · Sub-app switcher</a>
+          <a href="#g3">3 · Breadcrumbs + deep links</a>
+          <a href="#g4">4 · ⌘K command palette</a>
+          <a href="#g5">5 · Relation field (deferred)</a>
+          <a href="#phases">Phasing</a>
+          <a href="#risks">Risks &amp; docs</a>
+        </nav>
+      </header>
+
+      <section id="overview">
+        <h2><span class="n">◆</span> The shape today vs. after</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3>Now</h3>
+            <pre class="mock">/             dashboard (3 cards)
+/files        Files hub      rail title: "Media"
+/media        Records hub    rail title: "Records"
+                └─ ?type=globals  ← Globals lives INSIDE
+                                    records, listed in its rail
+
+Rail header = a static text label.
+Selection (open record/file) is NOT in the URL.
+No global search. No breadcrumbs.</pre>
+          </div>
+          <div class="card">
+            <h3>After</h3>
+            <pre class="mock">/             dashboard (3 cards, unchanged)
+/files        Files hub      [ Files ▾ ]
+/media        Records hub    [ Records ▾ ]   (no globals)
+/globals      Globals editor [ Globals ▾ ]   ← NEW peer
+
+Rail header = sub-app switcher dropdown.
+?record= / ?file= deep-link the open item.
+⌘K command palette. Breadcrumbs everywhere.</pre>
+          </div>
+        </div>
+        <p class="note">
+          <b>Zero on-disk change.</b> Globals stays a reserved <code>json</code> singleton at
+          <code>&lt;root&gt;/globals/</code> with the same <code>/api/media-types/globals/record</code>
+          API. We're only moving where its <em>editor</em> renders in the UI — so
+          <code>test-fixtures/</code> needs <span class="scope-no">no</span> regeneration.
+        </p>
+      </section>
+
+      <section id="g1">
+        <h2><span class="n">1</span> Globals → its own <code>/globals</code> route</h2>
+        <p>
+          Decision: <b>Own top-level route</b>. Globals becomes a peer of Files/Records, not a row in
+          the Records rail.
+        </p>
+        <ul class="files">
+          <li><span class="pill new">NEW</span> <code>src/routes/globals/+page.svelte</code> — thin page: <code>EntityRail</code> shell (switcher header, optional section-jump body) + <code>GlobalsEditorPane</code> in the content area.</li>
+          <li><span class="pill edit">EDIT</span> <code>src/routes/media/+page.svelte</code> — drop the <code>isGlobals</code> branch &amp; <code>GlobalsEditorPane</code> import; filter <code>globals</code> out of <code>types</code>; if <code>?type=globals</code> arrives, <code>goto('/globals')</code> (back-compat redirect).</li>
+          <li><span class="pill edit">EDIT</span> <code>src/lib/components/records/RecordsRail.svelte</code> — list already excludes the <code>globals</code> ⋮; now it won't receive globals at all (parent filters it).</li>
+          <li><span class="pill edit">EDIT</span> <code>src/routes/+page.svelte</code> — dashboard Globals card link <code>/media?type=globals</code> → <code>/globals</code>.</li>
+        </ul>
+        <p class="muted">
+          <code>GlobalsEditorPane</code> is reused as-is (it already owns its sections, autosave, and
+          settings dialog). The new page just wraps it in the rail shell so the switcher is present.
+        </p>
+        <h3>Optional polish</h3>
+        <p class="muted">The <code>/globals</code> rail body can list the editor's sections as jump links (Globals has no entity list to fill the rail otherwise). Nice-to-have, not required for the split.</p>
+      </section>
+
+      <section id="g2">
+        <h2><span class="n">2</span> Sub-app switcher in the rail header</h2>
+        <p>Decision: <b>3 sub-apps + Home</b>. The static title becomes a <code>DropdownMenu</code>.</p>
+        <pre class="mock">┌─────────────────┐        collapsed rail:
+│ Files       ▾   │ ◀ trigger    ┌────┐
+├─────────────────┤              │ ▾  │ ← same menu,
+│ ▸ Files      ✓  │              └────┘   icon-only trigger
+│   Records       │
+│   Globals       │
+│ ─────────────── │
+│   Home          │
+└─────────────────┘</pre>
+        <ul class="files">
+          <li><span class="pill new">NEW</span> <code>src/lib/components/rail/SubAppSwitcher.svelte</code> — <code>DropdownMenu</code> over Files (<code>/files</code>), Records (<code>/media</code>), Globals (<code>/globals</code>), separator, Home (<code>/</code>). Current item checked; navigates via <code>goto</code>.</li>
+          <li><span class="pill edit">EDIT</span> <code>src/lib/components/rail/EntityRail.svelte</code> — replace the <code>title</code> span with the switcher. Add a <code>current: 'files' | 'records' | 'globals'</code> prop; keep <code>title</code> optional for back-compat. Render an icon-only trigger when <code>collapsed</code>.</li>
+          <li><span class="pill edit">EDIT</span> the 3 hosts (<code>files</code>, <code>media</code>, <code>globals</code> pages / their rails) — pass <code>current=…</code> instead of <code>title="…"</code>.</li>
+        </ul>
+        <p class="note">Files rail title is currently the string <code>"Media"</code>; Records is <code>"Records"</code>. The switcher label comes from <code>current</code>, so we standardize the wording (Files / Records / Globals) in one place.</p>
+      </section>
+
+      <section id="g3">
+        <h2><span class="n">3</span> Breadcrumbs + deep links</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3>Breadcrumbs <span class="tag dep">+dep</span></h3>
+            <p class="muted">Install the shadcn-svelte breadcrumb primitive, render a consistent trail in each content header.</p>
+            <div class="flow">
+              <span class="box">Home</span><span class="arrow">›</span>
+              <span class="box">Records</span><span class="arrow">›</span>
+              <span class="box">Notes</span><span class="arrow">›</span>
+              <span class="box">“Trip ideas”</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Deep links <span class="tag fe">routing</span></h3>
+            <p class="muted">Put the open item in the URL so back/forward &amp; sharing work.</p>
+            <pre class="mock">/media?type=notes&record=<id>
+/files?class=images&file=<id>
+/globals#section-<id>   (optional)</pre>
+          </div>
+        </div>
+        <ul class="files">
+          <li><span class="pill new">NEW</span> <code>npx shadcn-svelte@latest add breadcrumb</code> → <code>src/lib/components/ui/breadcrumb/</code>.</li>
+          <li><span class="pill new">NEW</span> <code>src/lib/components/Breadcrumbs.svelte</code> — small wrapper taking a typed trail; reused by all three hosts.</li>
+          <li><span class="pill edit">EDIT</span> <code>src/routes/media/+page.svelte</code> — write <code>?record=</code> on open (<code>replaceState</code>), restore <code>selectedRecordId</code> from it on load; clear on close.</li>
+          <li><span class="pill edit">EDIT</span> <code>src/routes/files/+page.svelte</code> — same with <code>?file=</code> alongside the existing <code>?class=</code>.</li>
+        </ul>
+        <p class="muted">This is the largest behavioral change: today selection is in-page only. We keep <code>replaceState</code> (no history spam on every click) but make the URL the source of truth on load.</p>
+      </section>
+
+      <section id="g4">
+        <h2><span class="n">4</span> ⌘K command palette</h2>
+        <p>Decision: use the <b>shadcn-svelte <code>command</code></b> component (not installed yet).</p>
+        <pre class="mock">┌──────────────────────────────────────────┐
+│ ⌕  Jump to…                                │
+├──────────────────────────────────────────┤
+│  SUB-APPS                                  │
+│   ▸ Files                                  │
+│   ▸ Records                                │
+│   ▸ Globals                                │
+│  CLASSES                                   │
+│   ▸ Images          ▸ Documents           │
+│  RECORD TYPES                              │
+│   ▸ Notes           ▸ Books               │
+│  ─────────────                            │
+│   ⚙ Settings        ⌂ Home                │
+└──────────────────────────────────────────┘
+        ⌘K / Ctrl-K to open · ↑↓ to move · ↵ to go</pre>
+        <ul class="files">
+          <li><span class="pill new">NEW</span> <code>npx shadcn-svelte@latest add command</code> → <code>src/lib/components/ui/command/</code>.</li>
+          <li><span class="pill new">NEW</span> <code>src/lib/components/CommandPalette.svelte</code> — <code>Command.Dialog</code>; loads classes (<code>apiListClasses</code>) + record types (<code>apiListMediaTypes</code>, minus globals) + static entries; selecting <code>goto</code>s the deep link.</li>
+          <li><span class="pill edit">EDIT</span> <code>src/routes/+layout.svelte</code> — mount <code>&lt;CommandPalette/&gt;</code> globally + a window <code>keydown</code> listener for ⌘K/Ctrl-K.</li>
+        </ul>
+        <p class="note"><b>v1 is navigation-only</b> (jump to sub-apps + classes + record types). Searching individual files/records (server-side) is a clean follow-up once the shell exists.</p>
+      </section>
+
+      <section id="g5">
+        <h2><span class="n">5</span> Relation / reference field — deferred to backlog</h2>
+        <p>
+          Decision: <b>don't build now</b>, but record the idea. A <code>relation</code> field points at a
+          <em>record</em> in another type (e.g. Movie → Director), complementing the existing
+          <code>file</code> field (which points at a blob). This turns the three islands into a graph.
+        </p>
+        <ul class="files">
+          <li><span class="pill edit">EDIT</span> <code>docs/FUTURE_CHANGES.md</code> — new item: relation field, contrasted with <code>file</code>; sub-choices (single vs. multi target; reverse “referenced by”).</li>
+        </ul>
+        <table>
+          <tr><th>Field</th><th>References</th><th>Picker source</th><th>Status</th></tr>
+          <tr><td><code>file</code></td><td>a blob</td><td><code>/api/files</code></td><td class="scope-yes">have</td></tr>
+          <tr><td><code>relation</code></td><td>a record in another type</td><td>that type's record list</td><td class="scope-no">backlog</td></tr>
+        </table>
+      </section>
+
+      <section id="phases">
+        <h2><span class="n">▶</span> Phasing &amp; verification</h2>
+        <div class="phase"><b>Phase A — Globals split.</b> New <code>/globals</code> route, strip from Records rail, dashboard + redirect. Verify globals editor loads &amp; autosaves at the new URL; <code>/media?type=globals</code> redirects.</div>
+        <div class="phase"><b>Phase B — Switcher.</b> <code>SubAppSwitcher</code> + <code>EntityRail</code> header rework; wire all three hosts (incl. collapsed). Verify hopping Files↔Records↔Globals + active checkmark.</div>
+        <div class="phase"><b>Phase C — Breadcrumbs + deep links.</b> breadcrumb dep, <code>Breadcrumbs</code> wrapper, <code>?record=</code>/<code>?file=</code> URL sync on both hubs. Verify reload/share/back-forward restores the open item.</div>
+        <div class="phase"><b>Phase D — ⌘K palette.</b> command dep, <code>CommandPalette</code>, global key handler in layout. Verify ⌘K opens and jumps to a class/type/sub-app.</div>
+        <div class="phase"><b>Phase E — Docs.</b> <code>FEATURES.md</code> (route, switcher, deep-link params, palette), <code>CLAUDE.md</code> (frontend section), <code>FUTURE_CHANGES.md</code> (relation field).</div>
+        <p class="muted">Each phase ends with <code>npm run check</code> + <code>npm run lint</code>; end-to-end via the <code>test-ui-feature</code> skill (build → serve <code>test-fixtures/</code> → drive with Playwright).</p>
+      </section>
+
+      <section id="risks">
+        <h2><span class="n">!</span> Risks, scope guards &amp; docs</h2>
+        <ul>
+          <li><span class="scope-no">Watch:</span> deep-link sync vs. autosave — URL writes must use <code>replaceState</code> and must <b>not</b> trigger list refetches (the established “patch row in place, never refetch on autosave” rule).</li>
+          <li><span class="scope-no">Watch:</span> ⌘K key handler must not fire while typing in inputs/the palette itself; respect platform (⌘ vs Ctrl).</li>
+          <li><span class="scope-yes">Guard:</span> all new UI composes shadcn primitives (DropdownMenu, Command, Breadcrumb) — no hand-rolled markup (CLAUDE.md non-negotiable).</li>
+          <li><span class="scope-yes">Guard:</span> no storage/API/media-kind change → <code>test-fixtures/</code> untouched; only doc updates required alongside.</li>
+        </ul>
+        <p class="muted">Docs to touch: <code>docs/FEATURES.md</code>, <code>CLAUDE.md</code>, <code>docs/FUTURE_CHANGES.md</code>.</p>
+      </section>
+
+      <footer>
+        Plan artifact · review this, then I'll write the companion
+        <code>plans/subapp-restructure.md</code> and execute phase by phase.
+      </footer>
+    </div>
+  </body>
+</html>

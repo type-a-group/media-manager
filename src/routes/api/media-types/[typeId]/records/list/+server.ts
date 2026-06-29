@@ -1,55 +1,62 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
-import { getMediaTypePaths } from '$lib/storage/paths.js';
 import { FilterClauseSchema } from '$lib/core/filters.js';
 import { z } from 'zod';
 
 const FiltersParamSchema = z.array(FilterClauseSchema);
 
-/**
- * GET: List records for this media type.
- * For kind 'images': returns { linked, unlinked, missing_files } (ImageListResponse).
- * For kind 'json': returns { records } (JsonListResponse).
- */
+/** GET: List records for this `json` media type → { records } (JsonListResponse). */
 export const GET: RequestHandler = async ({ params, url }) => {
 	try {
-		const typeId = params.typeId;
-		const repo = getMediaTypeRepo(typeId);
-		const paths = getMediaTypePaths(typeId);
+		const repo = getMediaTypeRepo(params.typeId);
 		const groupBy = url.searchParams.get('groupBy') || undefined;
+		const titleField = url.searchParams.get('titleField') || undefined;
+		const subtitleField = url.searchParams.get('subtitleField') || undefined;
+		const searchQuery = url.searchParams.get('searchQuery') || undefined;
+		const searchField = url.searchParams.get('searchField') || undefined;
+		const sortField = url.searchParams.get('sort') || undefined;
+		const sortDirRaw = url.searchParams.get('dir');
+		const sortDir = sortDirRaw === 'asc' || sortDirRaw === 'desc' ? sortDirRaw : undefined;
+		// Incomplete filter (Item 10): `?incomplete=1` → only records with ≥1 empty user field.
+		const incomplete = url.searchParams.get('incomplete') === '1';
+		// Verbose grid (Item 8): `?fields=a,b,c` → inline those field values on each row as `field_values`.
+		const fieldsRaw = url.searchParams.get('fields');
+		const fields = fieldsRaw
+			? fieldsRaw
+					.split(',')
+					.map((f) => f.trim())
+					.filter(Boolean)
+			: undefined;
 
 		const filtersRaw = url.searchParams.get('filters');
-		let filters: z.infer<typeof FiltersParamSchema> | null = null;
+		let filters: z.infer<typeof FiltersParamSchema> | undefined;
 		if (filtersRaw) {
 			try {
-				const parsed = JSON.parse(filtersRaw);
-				filters = FiltersParamSchema.parse(Array.isArray(parsed) ? parsed : []);
+				filters = FiltersParamSchema.parse(JSON.parse(filtersRaw));
 			} catch {
-				// invalid filters: ignore
+				/* invalid filters: ignore */
 			}
 		}
-
-		if (paths.kind === 'images') {
-			const imageRepo = repo as import('$lib/storage/repo.js').ImageRepo;
-			if (filters != null && filters.length > 0) {
-				const data = await imageRepo.listImages({ filters, groupBy });
-				return json(data);
-			}
-			const query = url.searchParams.get('query');
-			const field = url.searchParams.get('field');
-			const empty = url.searchParams.get('empty') === 'true';
-			const data = await imageRepo.listImages({ query, field, empty, groupBy });
-			return json(data);
-		}
-
-		const jsonRepo = repo as import('$lib/storage/jsonRepo.js').JsonRepo;
-		const data = await jsonRepo.listRecords({ filters: filters ?? undefined, groupBy });
-		return json(data);
+		return json(
+			await repo.listRecords({
+				filters,
+				groupBy,
+				titleField,
+				subtitleField,
+				searchQuery,
+				searchField,
+				sortField,
+				sortDir,
+				incomplete,
+				fields
+			})
+		);
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to list records' });
 	}
 };

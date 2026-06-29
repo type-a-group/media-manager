@@ -4,7 +4,8 @@ import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import {
 	AddFieldRequestSchema,
 	DeleteFieldRequestSchema,
-	UpdateFieldRequestSchema
+	UpdateFieldRequestSchema,
+	SchemaDefinitionSchema
 } from '$lib/core/types.js';
 import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 
@@ -14,14 +15,44 @@ import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 export const GET: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
+		if (typeId === 'globals') return json({});
 		const repo = getMediaTypeRepo(typeId);
 		const schema = await repo.getSchema();
 		return json(schema);
 	} catch (err) {
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to read schema' });
+	}
+};
+
+/**
+ * PUT: Replace the entire schema for this media type (import / clone-from-type).
+ * Body is a full schema definition (map of fieldKey -> field definition).
+ */
+export const PUT: RequestHandler = async ({ params, request }) => {
+	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
+		const body = await request.json();
+		const parsed = SchemaDefinitionSchema.safeParse(body);
+		if (!parsed.success) throw error(400, 'Invalid schema definition');
+
+		const typeId = params.typeId;
+		const repo = getMediaTypeRepo(typeId);
+		if (!('importSchema' in repo))
+			throw error(400, 'Schema import not supported for this media type');
+		const result = await repo.importSchema(parsed.data);
+		return json({ success: true, schema: result.schema });
+	} catch (err) {
+		if (err && typeof err === 'object' && 'status' in err) throw err as never;
+		const e = err as Error;
+		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
+		if (e.message?.includes('not editable')) throw error(400, e.message);
+		throw error(500, { message: 'Failed to import schema' });
 	}
 };
 
@@ -30,6 +61,7 @@ export const GET: RequestHandler = async ({ params }) => {
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = AddFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid schema field payload');
@@ -42,15 +74,15 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			parsed.data.defaultValue,
 			parsed.data.options,
 			parsed.data.itemTypes,
-			parsed.data.multiselect,
-			parsed.data.long
+			parsed.data.multiselect
 		);
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;
 		if (e.message?.includes('Invalid media type id')) throw error(400, e.message);
-		if (e.message?.includes('Not a valid media-type folder')) throw error(404, 'Media type not found');
+		if (e.message?.includes('Not a valid media-type folder'))
+			throw error(404, 'Media type not found');
 		throw error(500, { message: 'Failed to add schema field' });
 	}
 };
@@ -60,6 +92,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = UpdateFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid update payload');
@@ -75,8 +108,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			defaultValue: parsed.data.defaultValue,
 			options: parsed.data.options,
 			itemTypes: parsed.data.itemTypes,
-			multiselect: parsed.data.multiselect,
-			long: parsed.data.long
+			multiselect: parsed.data.multiselect
 		});
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
@@ -96,6 +128,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
  */
 export const DELETE: RequestHandler = async ({ params, request }) => {
 	try {
+		if (params.typeId === 'globals') throw error(403, 'Schema is not editable for globals');
 		const body = await request.json();
 		const parsed = DeleteFieldRequestSchema.safeParse(body);
 		if (!parsed.success) throw error(400, 'Invalid delete payload');

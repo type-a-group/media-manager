@@ -1,0 +1,16 @@
+{
+	"schema": {
+		"description": { "type": "string", "removable": true, "defaultValue": "" }
+	},
+	"config": {
+		"displayName": "Documents",
+		"displayField": "description",
+		"icon": "file-text"
+	},
+	"records": {
+		"57ac8e2e-20f8-4a7f-acf4-394e48c6ad75": {
+			"id": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75",
+			"description": "A linked non-image file, now a member of the Documents class."
+		}
+	}
+}
