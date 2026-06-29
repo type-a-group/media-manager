@@ -1,49 +1,76 @@
-# Item 33 — Reader Package: Read-Only Host Integration (Mode B)
+# Item 33 — Reader Package: Read-Only Host Integration (build-time / static)
 
-> 1.0 npx sub-project. Backlog: [Item 33](../../../FUTURE_CHANGES.md#33--reader-package--read-only-host-integration-mode-b). Build process: [working agreement](../README.md#how-we-build-each-feature-the-working-agreement). **Status: discussion** — the consumption face is genuinely open. **Decide the shape before building; this lands last.**
+> 1.0 npx sub-project. Backlog: [Item 33](../../../FUTURE_CHANGES.md#33--reader-package--read-only-host-integration-build-time--static). Working agreement: [README](../README.md#how-we-build-each-feature-the-working-agreement). **Status: ready** — scope locked in the Phase-1 interview (2026-06-29). Full plan: [`reader-package-plan.html`](reader-package-plan.html).
 
 ## Backlog snapshot
 
 ```yaml
-status: discussion
+status: ready
 size: L
-usefulness: 2
-priority: low
-files: [src/lib/storage/paths.ts, src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts, src/lib/storage/jsonRepo.ts, src/lib/core/types.ts]
+usefulness: 3
+priority: medium
+files: [src/lib/reader/ (new), src/lib/core/types.ts, src/lib/core/fieldKeys.ts, package.json (exports), ~/Projects/nicb.at/src/lib/index.ts (proof, external)]
 depends_on: []
-open_questions: 3
-acceptance:
-  - (Decide library-vs-export face first — do not pre-build)
-  - Read functions take an explicit root (no process.env mutation) and never write/heal/lock
+open_questions: 0
 ```
 
 ## What & why
 
-The **reader** half (Mode B): let a host build (e.g. nicb.at) **consume the on-disk format** to render galleries **without booting the editor** — pure read-only. **Deferred** until nicb.at's build needs are concrete, so the consumption *shape* stays open. Overlaps the deferred static-export (Item 7) — both are the read face of the same logic.
+Let a host build (e.g. **nicb.at**) **consume the on-disk format** to render galleries / record lists **without booting the editor** — pure, read-only, layout-aware so the host never hand-codes a path that rots when the format moves. **Concrete motivation:** nicb.at's readers (`fetchImageList`/`fetchProjects`/`fetchQuotes`) still import pre-Item-18 paths while the data is now file-first — Photos/Projects/Quotes read nothing. The reader kills exactly that silent breakage.
 
-## The one piece worth scoping early (Phase 1/2)
+## The framing correction (vs. the original stub)
 
-The **root-threading refactor** — today the storage layer reads the root from `process.env.MEDIA_MANAGER_ROOT` ([`paths.ts`](../../../../src/lib/storage/paths.ts)); a library/read API must take an **explicit root** instead, and must **never write/heal/lock**. This refactor is shared with Item 7 and is the safe, high-value thing to do even before the face is decided. Item 32 (quiet heal) reduces the heal-on-read surface this has to avoid.
+The old stub centred on an **`fs`-based "root-threading refactor"** (`openWorkspace(root)`). Investigating nicb.at showed the target host consumes via **Vite bundle**, not `fs`: it reads JSON through `import.meta.glob`/`import()` and resolves image URLs through **Vite's asset pipeline** (hashed). There is no `fs`/root/`process.env` at runtime. So the reader core is **pure functions over already-parsed JSON**, and root-threading demotes to Item 7's separate `fs`/export-CLI face.
 
-## Open questions to resolve in the interview (Phase 1) — REQUIRED before building the face
+Three reader shapes the old plan conflated: **(a)** `fs` `openWorkspace(root)` → Item 7 / live server; **(b)** Vite-bundle library → **this item (v1)**; **(c)** runtime HTTP client → deferred (a host running MM live).
 
-1. **Library vs. export face** — a subpath export `media-manager/fs` with `openWorkspace(root)` etc. (host imports + reads live), **or** an export CLI that emits a denormalized JSON snapshot? (Don't pre-build either; this is *the* decision.)
-2. **Blob-serving strategy** — point a static dir at `media/files/` vs. copy/hardlink only referenced blobs.
-3. **On-disk format versioning** — how the reader tolerates older/newer roots.
+## Scope locked (Phase 1, 2026-06-29)
 
-If nicb.at's needs still aren't concrete at interview time, the right 1.0 outcome is: **ship the root-threading refactor only** (it's pure upside), and keep the consumption face deferred. Record that explicitly.
+- **Mode:** build-time / static only (Vite glob + bundled JSON, host-resolved hashed assets).
+- **Scope:** data layer only — **no components** in v1 (Gallery/lightbox/cards deferred).
+- **Packaging:** monorepo subpath export `media-manager/reader` (+ `/reader/vite`), sharing `src/lib/core/` so it can't drift from the editor's DTOs.
+- **Purity:** environment-agnostic pure functions; no `fs`, no `process.env`, no network, no writes/heal/lock.
 
-## Build notes (Phase 3)
+## The public API (facade)
 
-- **Step 1 (do regardless):** thread an explicit `root` through `paths.ts` and the repos, so read paths don't depend on `process.env` mutation and never write/heal/lock. Keep the existing env-based path working for the editor (Mode A) — add the explicit-root entry points alongside.
-- **Step 2 (only after the face is decided):** build either the subpath library export or the snapshot export CLI per the interview; reuse the read layer (no duplicated read logic — same rule as Item 7's export).
-- Coordinate with Item 7 (static export) and Item 20 (routing) — design the read/asset pipeline once.
+```js
+import { MediaManager } from 'media-manager/reader/vite';
+
+const mm = MediaManager.load({
+  data:  import.meta.glob('$assets/media_manager/**/*.json', { eager: true, import: 'default' }),
+  files: import.meta.glob('$assets/media_manager/media/files/*', { eager: true, query: '?url', import: 'default' }),
+});
+
+mm.media()             // Collection<MediaItem> — every blob
+mm.media('photos')     // Collection<MediaItem> — members of a class
+mm.records('projects') // Collection<Record>
+mm.globals()           // Record
+mm.file(id)            // MediaItem | null
+mm.classes(); mm.types();
+
+mm.media('photos').where({ hidden: false }).sortBy('Year', 'desc'); // Collection: where/filter/sortBy/find/first
+
+// items: MediaItem { id, src, filename, width, height, classes, missing, fields, field(k), file(k), files(k) }
+//        Record    { id, lastModified, fields, field(k), file(k), files(k) }
+```
+
+Everything below the facade — manifest join, url/list normalization (reuse `core/`), ext-case asset matching, missing-asset handling, version guard — is **private internals**.
+
+## Build order (Phase 3) — vertical slices
+
+1. **33a — pure core + facade + types.** `src/lib/reader/`: private core (parse + version guard reusing `core/`, join, normalize, ext-case resolve, filter) + `MediaManager`/`Collection`/`MediaItem`/`Record`. Unit tests against a parsed fixture (no `fs`, no env). JSDoc as written.
+2. **33b — Vite adapter + subpath export.** `MediaManager.load()` (two glob maps + path-based classification); `package.json` `exports` + `.d.ts`; `check`/`lint` clean.
+3. **33c — documentation.** Reader README (walkthrough + per-shape recipes + migration note) + completed JSDoc — its own slice so it can't be skipped.
+4. **33d — nicb.at migration (proof).** Replace the three readers via a `file:` local-dep; Photos/Projects/Quotes render from current data.
 
 ## Verification stages (Phase 4)
 
-- [ ] Decision recorded: library-vs-export face, or explicit **defer-the-face / ship-refactor-only**.
 - [ ] `npm run check` + `npm run lint` clean.
-- [ ] `npm run test` — read functions work against an **explicit root** with **no `process.env.MEDIA_MANAGER_ROOT` set**, and provably perform **no writes** (assert the data root is byte-identical before/after a full read sweep — the read-only guarantee).
-- [ ] If a face shipped: a host-side smoke test (import the library / consume the snapshot) renders a gallery from a fixture root without booting the editor.
-- [ ] Editor (Mode A) still works unchanged through the refactor (regression).
-- [ ] `FEATURES.md` updated (new read API/export surface); Item 33 → **Shipped & folded** (or note the partial: refactor-only); triage HTML synced.
+- [ ] **Purity:** runs with no `MEDIA_MANAGER_ROOT`; no `fs`/network/writes (fixture byte-identical before/after a full read sweep).
+- [ ] **Join correctness:** member missing from manifest → flagged `missing` (no crash); url/list values normalize identically to the editor.
+- [ ] **Asset resolution:** `foo.JPEG` ⇄ glob key `foo.jpeg`; no glob entry → `src: null` + `missing: true`, never a broken `<img>`.
+- [ ] **Version guard:** non-v2 workspace → clear actionable error (names the expected layout), not an empty result.
+- [ ] **File references:** `.file(key)`/`mm.file(id)` resolve to the same MediaItem identity; dangling id → `null`.
+- [ ] **Docs:** reader README + JSDoc + `.d.ts` so `mm.` autocompletes; a dev reaches a rendered gallery from the README alone.
+- [ ] **nicb.at proof** renders all three views from the current file-first data, no manual paths.
+- [ ] `FEATURES.md` updated; Item 33 → **Shipped & folded**; triage HTML synced.

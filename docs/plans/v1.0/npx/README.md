@@ -2,11 +2,11 @@
 
 > Part of [media-manager 1.0](../README.md). The biggest piece of the release: make media-manager runnable as an **npx package inside a host repo**, plus the read-only **reader** face. Items **30 · 31 · 32 · 33**.
 
-> **✅ Mode A shipped 2026-06-28 — Items 30 · 31 · 32** (the editor "easier to run" experience). See the combined [run-experience plan](run-experience-plan.html). Remaining: **33** (reader / Mode B) + carved-out follow-ups **42** (quiet-heal content-hash perf) and **43** (registry publishing) — all post-1.0.
+> **✅ Mode A shipped 2026-06-28 — Items 30 · 31 · 32** (the editor "easier to run" experience; combined [run-experience plan](run-experience-plan.html)). **✅ Mode B shipped 2026-06-29 — Item 33** (the read-only **reader** data layer; [reader plan](reader-package-plan.html)). Remaining: carved-out follow-ups **42** (quiet-heal content-hash perf), **43** (editor registry publishing), **44** (thin standalone reader package) — all post-1.0.
 
 - **Full design (existing):** [`../../npx-package-vision.md`](../../npx-package-vision.md) + diagram [`../../npx-package-vision.html`](../../npx-package-vision.html).
 - **Decisions locked (2026-06-20):** **editor-first**; distribute as a **local dep** for now (`file:../media-manager` / git URL), publish in a later phase.
-- **Two modes:** **Mode A** = the editor server that *mutates* the root (Items 30/31/32). **Mode B** = the read-only reader a host build consumes (Item 33).
+- **Two modes:** **Mode A** = the editor server that *mutates* the root (Items 30/31/32). **Mode B** = the read-only reader a host build consumes (Item 33) — **build-time/static, data-layer-only**; a `MediaManager.load` facade over two Vite globs, **not** the `fs`/root-threading shape originally assumed (that stays with Item 7's export CLI).
 
 ## Why these four, and the order
 
@@ -15,7 +15,7 @@
 1. **32 · Quiet heal** — today *just browsing* a git-committed workspace rewrites `media/manifest.json` (lazy-heal churn) and dirties the tree. That's unacceptable for an npx tool run inside someone's repo. Foundational — do it first.
 2. **31 · Ephemeral port** — a fixed `PORT=3000` collides with the host's dev server. Bind port 0, auto-open the bound URL. Needs an `adapter-node` spike (can we read back the bound port?).
 3. **30 · Zero-config root discovery** — bare `npx media-manager` finds the workspace with no args; adds `serve`/`init`/`doctor` verbs; folds in the **publishing** mechanics (former Item 27) as a later phase.
-4. **33 · Reader (Mode B)** — read-only host integration. Shares the **root-threading refactor** (storage reads an explicit root instead of `process.env.MEDIA_MANAGER_ROOT`) with the deferred static-export (Item 7). Lands last; partly `discussion`.
+4. **33 · Reader (Mode B)** ✅ — read-only host integration, **shipped 2026-06-29**. The Phase-1 interview corrected the shape: the target host (nicb.at) consumes via **Vite bundle**, not `fs`, so the reader is **pure functions over already-parsed JSON** (the `fs`/root-threading refactor stays with Item 7's export CLI, not here). Build-time/static, data-layer-only; `media-manager/reader` subpath. See [reader plan](reader-package-plan.html).
 
 Items 30/31/32 are the "safe to open committed data" trio — they're what makes running inside a host repo non-destructive.
 
@@ -24,7 +24,7 @@ Items 30/31/32 are the "safe to open committed data" trio — they're what makes
 - [`30-root-discovery.md`](30-root-discovery.md) — Editor npx setup, zero-config root discovery (+ publishing)
 - [`31-ephemeral-port.md`](31-ephemeral-port.md) — Ephemeral port + auto-open
 - [`32-quiet-heal.md`](32-quiet-heal.md) — Persist manifest reconcile only on real change
-- [`33-reader-package.md`](33-reader-package.md) — Read-only host integration (Mode B)
+- [`33-reader-package.md`](33-reader-package.md) — Read-only host integration (Mode B) ✅ · full [reader plan](reader-package-plan.html)
 
 ## Working agreement
 

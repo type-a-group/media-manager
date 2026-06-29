@@ -6,19 +6,32 @@
 	"bin": {
 		"media-manager": "bin/media-manager.js"
 	},
+	"exports": {
+		".": null,
+		"./reader": {
+			"types": "./dist/reader/index.d.ts",
+			"import": "./dist/reader/index.js"
+		},
+		"./reader/vite": {
+			"types": "./dist/reader/vite.d.ts",
+			"import": "./dist/reader/vite.js"
+		}
+	},
 	"files": [
 		"build",
 		"bin",
+		"dist",
 		"README.md",
 		"package.json"
 	],
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
+		"build:reader": "tsc -p tsconfig.reader.json",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"start": "node build",
-		"prepublishOnly": "npm run build",
+		"prepublishOnly": "npm run build && npm run build:reader",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",

@@ -8,6 +8,9 @@ node_modules
 /.svelte-kit
 /build
 
+# Reader library build (media-manager/reader) — built on demand / at publish (prepublishOnly)
+/dist
+
 # OS
 .DS_Store
 Thumbs.db

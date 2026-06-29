@@ -1,0 +1,21 @@
+{
+	"// note": "Standalone library build for the read-only reader subpath (media-manager/reader). Compiles the self-contained src/lib/reader/ to dist/reader/ with .d.ts, independent of the SvelteKit app build. See docs/plans/v1.0/npx/reader-package-plan.html (Item 33).",
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"lib": ["ES2022"],
+		"types": [],
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true,
+		"outDir": "dist/reader",
+		"rootDir": "src/lib/reader",
+		"strict": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"verbatimModuleSyntax": true
+	},
+	"include": ["src/lib/reader/**/*.ts"],
+	"exclude": ["src/lib/reader/**/*.test.ts"]
+}
