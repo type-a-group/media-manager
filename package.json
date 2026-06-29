@@ -29,7 +29,7 @@
 		"build": "vite build",
 		"build:reader": "tsc -p tsconfig.reader.json",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync && npm run build:reader",
 		"start": "node build",
 		"prepublishOnly": "npm run build && npm run build:reader",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
