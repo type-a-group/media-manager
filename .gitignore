@@ -32,6 +32,10 @@ vite.config.ts.timestamp-*
 # The pristine seed lives in test-fixtures/ (tracked); this copy is mutated at runtime.
 /test-data
 
+# Google Photos integration secret (Item 37): per-workspace OAuth creds + refresh token.
+# Never commit, never seed into test-fixtures/.
+google.json
+
 # UI screenshots/videos captured by the Playwright UI-capture helper (scripts/ui-capture.mjs).
 # Dev artifacts for eyeballing a feature; not source. Includes throwaway capture scripts (_*.mjs).
 /.screenshots

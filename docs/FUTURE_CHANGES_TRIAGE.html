@@ -226,6 +226,12 @@
 			.card.s-discussion::before {
 				background: var(--discussion);
 			}
+			.card.inprog::before {
+				background: var(--accent);
+			}
+			.card.inprog {
+				border-color: var(--accent-dim);
+			}
 
 			.card .ttl {
 				display: flex;
@@ -303,6 +309,12 @@
 			}
 			.b.status.s-discussion {
 				color: var(--discussion);
+			}
+			.b.inprog {
+				color: var(--accent);
+				border-color: var(--accent-dim);
+				background: #2a1722;
+				font-weight: 600;
 			}
 			.b.dep {
 				color: #cdd3df;
@@ -399,8 +411,8 @@
 		<header class="top">
 			<h1><span class="pink">Future Changes</span> — Triage Board</h1>
 			<p class="sub">
-				Live read of <code>docs/FUTURE_CHANGES.md</code> · 44 items classified by status, size,
-				cluster, and open-question load · generated 2026-06-28
+				Live read of <code>docs/FUTURE_CHANGES.md</code> · 45 items classified by status, size,
+				cluster, and open-question load · generated 2026-06-29
 			</p>
 			<div class="stats" id="stats"></div>
 		</header>
@@ -557,11 +569,11 @@
 				{
 					n: 0,
 					name: 'Make URL fields editable',
-					status: 'verify',
+					status: 'done',
 					size: 'S',
 					use: 0,
 					group: 'fields',
-					note: '<b>Already shipped.</b> FieldInput.svelte has a full url {display_name,url} editor. Recommend delete.'
+					note: '✅ <b>Shipped</b> — FieldInput.svelte has a full url {display_name,url} editor. Tombstone in FUTURE_CHANGES (status: shipped); safe to delete on the next pass.'
 				},
 				{
 					n: 3,
@@ -794,13 +806,14 @@
 				{
 					n: 37,
 					name: 'Import from Google Photos (Picker API)',
-					status: 'active',
+					status: 'ready',
+					inProgress: true,
 					size: 'L',
 					prio: 'med',
 					use: 3,
 					group: 'integrations',
-					oq: 4,
-					note: 'User-requested but explicitly a rare-use feature. Full design doc + mockup exist. Collapses onto the upload path. Loopback port overlaps Item 31.'
+					oq: 0,
+					note: '🛠 <b>In progress (agent building now, 2026-06-29)</b> — server module, googleConfig storage, /api/google-photos/* routes + GooglePhotosDialog scaffolded. Rare-use but user-requested. Full design + mockup exist; collapses onto the upload path. Research closed all 4 OQs (2026-06-29): scope is sensitive not restricted (no CASA); BYO-creds+Testing sidesteps verification; loopback+PKCE w/ dynamic port is Google-recommended (needs own in-server findFreePort); { imported, failed } per-item loop; recommend In-production status + status pill. Caveat: baseUrl=d strips GPS EXIF.'
 				},
 
 				{
@@ -873,6 +886,15 @@
 					group: 'npx',
 					oq: 2,
 					note: 'Depends on 33. Publish the reader as its own zero-runtime-dep package (svelte/vite as peers) so a friend installs only the thin reader, not the heavy editor (exiftool/heic/sharp). Sibling to 43, parallels the Masonry extraction (39). Build in-monorepo first; later lift-and-shift.'
+				},
+				{
+					n: 34,
+					name: 'Reimplement masonry grid layout',
+					status: 'done',
+					size: 'M',
+					use: 4,
+					group: 'assets',
+					note: 'Shipped — replaced @masonry-grid/svelte with an in-house, dependency-free, order-preserving balanced packer (src/lib/components/masonry/Masonry.svelte), wired into DataGrid thumbnail variant behind the existing GridSize; native aspect ratio (height estimated for column-balancing only — no fixed-height frames). Old library removed. Publishable-extraction follow-up → Item 39.'
 				},
 				{
 					n: 39,
@@ -1005,13 +1027,14 @@
 				const badges = [];
 				badges.push(useBadge(it.use));
 				badges.push(`<span class="b status s-${it.status}">${statusLabel(it)}</span>`);
+				if (it.inProgress) badges.push(`<span class="b inprog">🛠 building now</span>`);
 				if (it.size) badges.push(`<span class="b size-${it.size}">${it.size}</span>`);
 				if (it.prio === 'high') badges.push(`<span class="b prio-high">High prio</span>`);
 				if (it.oq) badges.push(`<span class="b oq">${it.oq} open Q</span>`);
 				if (it.stale) badges.push(`<span class="b stale">stale refs</span>`);
 				if (it.deps) it.deps.forEach((d) => badges.push(`<span class="b dep">needs #${d}</span>`));
 				const rankTag = rank ? `<span class="rank" title="usefulness rank">#${rank}</span>` : '';
-				return `<div class="card s-${it.status}" data-status="${it.status}" data-size="${it.size || ''}"
+				return `<div class="card s-${it.status}${it.inProgress ? ' inprog' : ''}" data-status="${it.status}" data-size="${it.size || ''}"
        data-oq="${it.oq ? 1 : 0}" data-stale="${it.stale ? 1 : 0}" data-high="${it.prio === 'high' ? 1 : 0}"
        data-text="${(it.name + ' ' + (it.note || '')).toLowerCase().replace(/"/g, '')}">
     <div class="ttl">${rankTag}<span class="num">${it.n}</span><span class="name">${it.name}</span></div>

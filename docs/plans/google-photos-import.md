@@ -1,8 +1,12 @@
 # Plan — Google Photos import (Picker API)
 
-> **Status:** design / feasibility (not started). **Verdict: feasible.** Maps
-> cleanly onto the existing upload → manifest path. The hard parts are all on
-> Google's side (OAuth verification + the picker-only access model), not ours.
+> **Status:** design complete — **`ready` to build** (not started). All four
+> open questions were closed by research on **2026-06-29** (see §4). **Verdict:
+> feasible.** Maps cleanly onto the existing upload → manifest path. The hard
+> parts are all on Google's side (the picker-only access model + the 7-day
+> Testing-mode token expiry), not ours — and BYO-credentials sidesteps Google's
+> verification entirely (the Picker scope is *sensitive*, not *restricted*, so no
+> CASA audit; Testing/Personal-use exemptions apply).
 >
 > **UI mockup:** [`docs/google-photos-import.html`](../google-photos-import.html)
 > — 6-step interactive walkthrough (entry menu → setup → connect → Google picker
@@ -32,6 +36,9 @@ around — they shape the whole UX:
 3. **~60-minute download window.** Picked items expose a `baseUrl` that expires
    in ~1 hour and **requires the OAuth bearer header** to download. So we must
    download the bytes immediately after the user finishes picking — no deferring.
+   **The `=d` download retains full resolution and all EXIF _except_ GPS/location**,
+   which Google strips server-side — it cannot be recovered through the Picker path
+   (`=dv` for video).
 4. **7-day re-login in "Testing" mode.** Because each user runs their own
    unverified OAuth app (Testing publishing status), Google expires refresh
    tokens after **7 days**. Practically: the user re-connects ~weekly. (They can
@@ -43,8 +50,9 @@ around — they shape the whole UX:
    Home Assistant, gphotos-sync) but it is real friction.
 
 What we **get** in return: a free, official, supported API; full-resolution
-downloads with EXIF intact (feeds the existing EXIF tooling); and a flow that
-reuses our blob/manifest plumbing almost entirely.
+downloads with EXIF intact **except GPS/location** (Google strips location on
+`=d`; everything else feeds the existing EXIF tooling); and a flow that reuses
+our blob/manifest plumbing almost entirely.
 
 ---
 
@@ -215,16 +223,36 @@ piece because of the multi-state wizard. Everything server-side is additive.
 
 ---
 
-## 4. Open risks / things to confirm at build time
+## 4. Resolved decisions (research 2026-06-29)
 
-- **CASA / scope tier.** Google's docs don't clearly state whether
-  `photospicker.mediaitems.readonly` is *sensitive* (brand verification only) or
-  *restricted* (annual CASA security audit). Bring-your-own-credentials sidesteps
-  this for us, but confirm in the Cloud Console before assuming.
-- **Loopback port.** Pick a free ephemeral port at `auth/start` time and pass it
-  as the registered redirect; Desktop clients allow any `127.0.0.1` port.
-- **Token refresh UX.** Surface "connected, expires in N days" from
-  `tokenObtainedAt` so the weekly re-login isn't a surprise.
-- **Partial import failures.** Download loop should be resilient per-item (one
-  bad/expired baseUrl shouldn't abort the batch); report `{ imported, failed }`.
+All four pre-build open questions are closed. Sources are Google's official docs
+(OAuth native-app, OAuth2 expiration, restricted-scopes list, sensitive-scope
+verification, Picker media-items guides).
+
+- **CASA / scope tier — RESOLVED: sensitive, not restricted → no CASA, ever.**
+  `photospicker.mediaitems.readonly` is **absent** from Google's published
+  restricted-scopes list (Gmail / Drive / Photos *Ambient* only); CASA applies
+  only to restricted scopes. And **BYO-credentials + Testing publishing status**
+  sidesteps even the lighter sensitive-scope brand review (Google's explicit
+  "Development/Testing" + "Personal use" exemptions; up to 100 test users click
+  through the unverified-app screen).
+- **Loopback port — RESOLVED: build as designed.** Loopback `127.0.0.1` + PKCE
+  with a **dynamic ephemeral port and no port pre-registration** is Google's
+  *recommended* Desktop-client pattern (the OOB deprecation doesn't touch
+  loopback for Desktop clients). Add a small `findFreePort()` in
+  `src/lib/server/` (the CLI's `bin/media-manager.js` copy isn't reusable — it's
+  a separate process); an adapter-node route handler can open its own
+  `http`/`net` listener. Bind on `127.0.0.1` (IPv4) explicitly and validate a
+  strict `state`.
+- **Token refresh UX — RESOLVED.** The 7-day refresh-token expiry is real in
+  **Testing** for this scope (the name/email-only exemption doesn't apply).
+  **Recommended setup:** the user flips their consent screen to **"In
+  production"** (no verification submission) for long-lived tokens — they accept
+  the unverified-app warning once at consent. **Persist and reuse a single
+  refresh token** (100-tokens-per-client cap; 6-month idle expiry). Surface
+  "connected · expires in N days" from `tokenObtainedAt` (model the dialog on
+  `MetadataButton.svelte`; client wrapper shaped like `apiGetMissingFiles`).
+- **Partial import failures — RESOLVED.** Per-item try/catch; `/import` returns
+  `{ imported, failed, fileIds, failures[] }` (mirrors the `/api/files/missing`
+  summary shape) so one bad/expired `baseUrl` can't abort the batch.
 ```

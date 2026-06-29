@@ -62,6 +62,16 @@ export function getManifestPath(): string {
 	return path.join(getMediaDir(), 'manifest.json');
 }
 
+/**
+ * Absolute path to the Google Photos integration config (`<root>/media/google.json`).
+ *
+ * Holds the user's bring-your-own OAuth client id/secret + refresh token (Item 37). Written `0600`,
+ * **never committed, never seeded into `test-fixtures/`** — it is a per-workspace secret.
+ */
+export function getGoogleConfigPath(): string {
+	return path.join(getMediaDir(), 'google.json');
+}
+
 /** Absolute path to the classes directory (`<root>/media/classes`). */
 export function getClassesDir(): string {
 	return path.join(getMediaDir(), CLASSES_DIR_NAME);

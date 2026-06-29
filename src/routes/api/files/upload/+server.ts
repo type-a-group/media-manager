@@ -5,18 +5,7 @@ import * as fs from 'node:fs';
 import { getGlobalFilesDir } from '$lib/storage/paths.js';
 import { assertSafeBasename } from '$lib/storage/filenames.js';
 import { registerBlob } from '$lib/storage/classRepo.js';
-import convert from 'heic-convert';
-
-/** HEIC/HEIF MIME types that require conversion (browsers can't render them). */
-const HEIC_MIME_TYPES = ['image/heic', 'image/heif'];
-
-function isHeicMime(mime: string): boolean {
-	return HEIC_MIME_TYPES.includes(mime.toLowerCase());
-}
-function isHeicExtension(filename: string): boolean {
-	const ext = path.extname(filename).toLowerCase();
-	return ext === '.heic' || ext === '.heif';
-}
+import { maybeConvertHeic } from '$lib/server/heicConvert.js';
 
 /** Append (1), (2)… to a basename until it is unique within `dir`. */
 function uniqueName(baseFilename: string, dir: string): string {
@@ -46,18 +35,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const conflictResolution = formData.get('conflict_resolution') as string | null;
 		const arrayBuffer = await upload.arrayBuffer();
-		let buffer = Buffer.from(arrayBuffer);
+		const { buffer, filename, converted } = await maybeConvertHeic(
+			Buffer.from(arrayBuffer),
+			upload.name,
+			upload.type
+		);
 		let safeFileName: string;
 
-		if (isHeicMime(upload.type) || isHeicExtension(upload.name)) {
-			const converted = await convert({
-				buffer: buffer as unknown as ArrayBufferLike,
-				format: 'JPEG',
-				quality: 0.92
-			});
-			buffer = Buffer.from(converted instanceof Uint8Array ? converted : new Uint8Array(converted));
-			const baseName = path.basename(upload.name, path.extname(upload.name));
-			safeFileName = assertSafeBasename(`${baseName}.jpg`);
+		if (converted) {
+			safeFileName = assertSafeBasename(filename);
 		} else {
 			safeFileName = assertSafeBasename(
 				path.basename(upload.name).replace(/[^a-zA-Z0-9.\-_ ]/g, '_')

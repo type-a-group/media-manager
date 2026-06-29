@@ -20,7 +20,9 @@ try {
 	console.log('REQUESTS after checking Images:');
 	for (const r of reqs) console.log('  ' + r);
 	// Count tiles shown.
-	const tiles = await page.locator('[data-grid-item], .grid-item, figure, [role="gridcell"]').count();
+	const tiles = await page
+		.locator('[data-grid-item], .grid-item, figure, [role="gridcell"]')
+		.count();
 	console.log('tile-ish count (heuristic):', tiles);
 	const headerText = await page.locator('body').innerText();
 	const m = headerText.match(/(\d+)\s+files?/);

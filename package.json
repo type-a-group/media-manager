@@ -79,6 +79,7 @@
 	},
 	"dependencies": {
 		"exiftool-vendored": "^25.0.0",
+		"google-auth-library": "^10.9.0",
 		"heic-convert": "^2.1.0",
 		"lucide-svelte": "^0.525.0",
 		"mode-watcher": "^1.1.0",

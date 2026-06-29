@@ -39,11 +39,13 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { ListChecks, Plus, Upload, X } from 'lucide-svelte';
+	import GooglePhotosDialog from '$lib/components/google-photos/GooglePhotosDialog.svelte';
+	import { ListChecks, MoreHorizontal, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { SortDir } from '$lib/core/sort.js';
@@ -128,6 +130,8 @@
 	let editorFileId = $state<string | null>($page.url.searchParams.get('file'));
 	let urlReady = $state(false);
 	let missing = $state<MissingFilesResponse>({ count: 0, files: [] });
+	/** Google Photos import dialog (Item 37). */
+	let googlePhotosOpen = $state(false);
 	let showMissing = $state(false);
 
 	let newClassName = $state('');
@@ -1086,6 +1090,21 @@
 				<Upload class="size-4" /> Upload
 			</Button>
 			<input bind:this={fileInput} type="file" multiple class="hidden" onchange={onUpload} />
+			<!-- "⋮ More" overflow for rare ingest actions (Item 37: Google Photos import). -->
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} variant="ghost" size="icon" class="size-8" title="More…">
+							<MoreHorizontal class="size-4" />
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<DropdownMenu.Item onSelect={() => (googlePhotosOpen = true)}>
+						Import from Google Photos…
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 			<!-- Content-header ⋮ for the active solo class — keeps its settings reachable when the rail is
 			     collapsed (no single active entity in multi-select/All-Files mode, so it only shows here). -->
 			{#if soloClass}
@@ -1214,3 +1233,12 @@
 		</div>
 	</AlertDialog.Content>
 </AlertDialog.Root>
+
+<GooglePhotosDialog
+	bind:open={googlePhotosOpen}
+	onImported={async (count) => {
+		toast.success(`Imported ${count} photo${count === 1 ? '' : 's'} from Google Photos`);
+		await loadMeta();
+		await loadFiles();
+	}}
+/>

@@ -463,16 +463,16 @@ External services — kept opt-in, out of the core, and out of the way.
 ### 37 · Import from Google Photos (Picker API)
 
 ```yaml
-status: blocked
+status: ready
 size: L
 usefulness: 3
 priority: medium
 files: [src/routes/files/+page.svelte, src/lib/storage/classRepo.ts, src/lib/storage/manifest.ts]
 depends_on: []
-open_questions: 4
+open_questions: 0
 acceptance:
   - New googlePhotos server module (OAuth2 loopback + PKCE; Picker REST), googleConfig storage (media/google.json, chmod 600 — NEVER seed into test-fixtures/), client wrappers
-  - New /api/google-photos/* routes (status, credentials, auth/start, auth/callback, session, session/[id], import)
+  - New /api/google-photos/* routes (status, credentials, auth/start [spins a 127.0.0.1 loopback listener], session, session/[id], import)
   - GooglePhotosDialog + a "⋮ More" overflow menu next to Upload; on success call loadMeta()/loadFiles()
   - heic-convert factored into a shared helper so /upload and /import don't duplicate it
   - FEATURES.md updated (new feature row + 7 endpoints)
@@ -480,7 +480,14 @@ acceptance:
 
 Full design: [`plans/google-photos-import.md`](plans/google-photos-import.md) + mockup [`google-photos-import.html`](google-photos-import.html). **Verdict (2026-06-22): feasible** — a picked photo collapses onto the existing upload path. **Decisions locked:** bring-your-own OAuth credentials (no Google app verification); import to All Files (unclassified); a `⋮ More` overflow menu, not a primary button (rare action). **Hard constraints** (Google 2025 API): Picker API only (no library browse/sync), can't embed (new tab + poll), ~60-min download window, ~weekly re-login.
 
-**Open questions / research before building:** scope tier (`photospicker.mediaitems.readonly` sensitive vs. restricted); loopback OAuth port (overlaps Item 31's ephemeral-port work); partial-import resilience (`{ imported, failed }`); token-expiry UX.
+**Open questions — all resolved by research (2026-06-29), now `ready`:**
+
+- **Scope tier:** `photospicker.mediaitems.readonly` is a **sensitive** scope, **not restricted** (absent from Google's restricted-scopes list, which is Gmail/Drive/Photos-Ambient only) → **no CASA audit ever applies.** And BYO-credentials + **Testing** publishing status sidesteps even the lighter brand/OAuth review (Google's "Development/Testing" + "Personal use" exemptions; the user is a test user clicking through the unverified-app screen).
+- **Loopback OAuth port:** loopback `127.0.0.1` + PKCE with a **dynamic ephemeral port (no port pre-registration)** is Google's _recommended_ Desktop-client pattern — the OOB deprecation doesn't touch it. Item 31's `findFreePort()` lives in `bin/media-manager.js` (separate process) and isn't reusable, but an adapter-node route handler can open its own `http`/`net` listener → add a small `findFreePort()` in `src/lib/server/`.
+- **Partial-import resilience:** wrap **each item** in its own try/catch; `/import` returns `{ imported, failed, fileIds, failures[] }` (mirrors the `/api/files/missing` summary shape). Factor the HEIC step (`upload/+server.ts:52-60`) into a shared `maybeConvertHeic()` used by `/upload` + `/import`.
+- **Token-expiry UX:** 7-day refresh-token expiry is real in Testing for this scope (the name/email exemption doesn't apply). **Recommend** documenting "flip the consent screen to **In production**" (no verification submission) for long-lived tokens — user clicks the unverified warning once; **persist & reuse one refresh token** (100-token cap, 6-month idle expiry). Surface "connected · expires in N days" via a `MetadataButton.svelte`-style dialog (`$effect` fetch-on-open + `$derived` state) + a Zod `apiGetGooglePhotosStatus` wrapper shaped like `apiGetMissingFiles`.
+
+**⚠️ Plan correction:** `baseUrl=d` downloads retain full-res + all EXIF **except GPS/location** (Google strips it server-side) — the plan's "EXIF intact" claim is corrected in `plans/google-photos-import.md`.
 
 ### 11 · AI / External Field Enrichment
 
