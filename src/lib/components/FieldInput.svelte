@@ -13,6 +13,7 @@
 	import FilePicker from './FilePicker.svelte';
 	import RecordPicker from './RecordPicker.svelte';
 	import SuggestInput from './SuggestInput.svelte';
+	import DateField from './DateField.svelte';
 
 	/**
 	 * The single schema-driven input for one field value, shared by every editor (the files-hub
@@ -211,6 +212,12 @@
 
 {#if def.type === 'boolean'}
 	<Checkbox {id} checked={value === true} onCheckedChange={(v) => (value = v === true)} />
+{:else if def.type === 'date'}
+	<DateField
+		{id}
+		value={typeof value === 'string' ? value : ''}
+		onValueChange={(v) => (value = v)}
+	/>
 {:else if def.type === 'number'}
 	<Input
 		{id}

@@ -28,7 +28,8 @@
 			"recordType": "albums",
 			"linkedField": "photos",
 			"defaultValue": ""
-		}
+		},
+		"date_taken": { "type": "date", "removable": true, "defaultValue": "" }
 	},
 	"config": {
 		"displayName": "Images",
@@ -47,7 +48,8 @@
 			"tags": ["warm", "sky"],
 			"source": { "display_name": "Sample", "url": "https://example.com/sunset" },
 			"related_doc": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75",
-			"album": "a1b2c3d4-0000-4000-8000-000000000001"
+			"album": "a1b2c3d4-0000-4000-8000-000000000001",
+			"date_taken": "2026-06-29"
 		},
 		"0880c3c5-46dd-4e02-8e11-b0f6634142aa": {
 			"id": "0880c3c5-46dd-4e02-8e11-b0f6634142aa",
@@ -57,7 +59,8 @@
 			"category": "nature",
 			"tags": ["green", "trees"],
 			"source": { "display_name": "", "url": "" },
-			"related_doc": "deadbeef-0000-4000-8000-000000000000"
+			"related_doc": "deadbeef-0000-4000-8000-000000000000",
+			"date_taken": "2019-01-02"
 		},
 		"e3c2cf9d-d01d-480c-b0e4-d1843a7d9dc3": {
 			"id": "e3c2cf9d-d01d-480c-b0e4-d1843a7d9dc3",

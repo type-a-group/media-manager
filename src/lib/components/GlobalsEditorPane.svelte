@@ -10,6 +10,7 @@
 	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
 	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
+	import { isValidIsoDate } from '$lib/core/dates.js';
 	import { formatTimestamp } from '$lib/core/datetime.js';
 	import {
 		GLOBALS_FIELD_KINDS_KEY,
@@ -38,7 +39,8 @@
 		| 'list'
 		| 'url'
 		| 'file'
-		| 'record';
+		| 'record'
+		| 'date';
 	type ItemType = 'string' | 'number' | 'url';
 	type FieldMeta = {
 		options?: string[];
@@ -127,6 +129,7 @@
 			return Number.isFinite(n) ? n : 0;
 		}
 		if (kind === 'url') return normalizeUrlValue(current);
+		if (kind === 'date') return isValidIsoDate(current) ? current : '';
 		if (kind === 'list') {
 			if (Array.isArray(current)) return current;
 			if (typeof current === 'string' && current.trim().length > 0) return [current.trim()];

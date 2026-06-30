@@ -12,6 +12,8 @@
 
 	import { fieldLabel, isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
 	import { fieldSupportsSuggest } from '$lib/core/types.js';
+	import { isValidIsoDate } from '$lib/core/dates.js';
+	import DateField from '$lib/components/DateField.svelte';
 	import type { SchemaDefinition, FieldType, ListItemType } from '$lib/core/types.js';
 	import type { SchemaEditorAdapter } from './types.js';
 	import { apiListMediaTypes, apiGetSchemaForType } from '$lib/api/client.js';
@@ -45,7 +47,8 @@
 		'list',
 		'url',
 		'file',
-		'record'
+		'record',
+		'date'
 	];
 	const LIST_ITEM_TYPES: ListItemType[] = ['string', 'number', 'url'];
 
@@ -259,6 +262,7 @@
 				: [];
 		}
 		if (type === 'url') return { display_name: urlName.trim(), url: urlUrl.trim() };
+		if (type === 'date') return isValidIsoDate(raw) ? raw : undefined;
 		return raw || undefined;
 	}
 
@@ -543,6 +547,14 @@
 										<Input type="url" bind:value={editDefaultUrlUrl} placeholder="https://…" />
 									</div>
 								</div>
+							{:else if editFieldType === 'date'}
+								<div class="flex flex-row items-center gap-2">
+									<Label class="w-20 shrink-0">Default</Label>
+									<DateField
+										value={editDefaultValue}
+										onValueChange={(v) => (editDefaultValue = v)}
+									/>
+								</div>
 							{:else if editFieldType !== 'file' && editFieldType !== 'record'}
 								<div class="flex flex-row items-center gap-2">
 									<Label class="w-20 shrink-0">Default</Label>
@@ -797,7 +809,11 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				{#if addFieldType !== 'url' && addFieldType !== 'file' && addFieldType !== 'record'}
+				{#if addFieldType === 'date'}
+					<div class="w-44">
+						<DateField value={addDefaultValue} onValueChange={(v) => (addDefaultValue = v)} />
+					</div>
+				{:else if addFieldType !== 'url' && addFieldType !== 'file' && addFieldType !== 'record'}
 					<Input
 						type="text"
 						bind:value={addDefaultValue}

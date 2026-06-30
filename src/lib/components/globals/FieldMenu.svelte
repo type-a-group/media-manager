@@ -19,7 +19,8 @@
 		| 'list'
 		| 'url'
 		| 'file'
-		| 'record';
+		| 'record'
+		| 'date';
 	type ItemType = 'string' | 'number' | 'url';
 	type FieldMeta = {
 		options?: string[];
@@ -88,7 +89,8 @@
 		'list',
 		'url',
 		'file',
-		'record'
+		'record',
+		'date'
 	];
 	const ITEM_TYPES: ItemType[] = ['string', 'number', 'url'];
 

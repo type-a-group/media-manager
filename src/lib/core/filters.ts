@@ -92,6 +92,35 @@ export const BOOLEAN_OPERATORS: OperatorId[] = [
 ];
 
 /**
+ * Operators available for date fields. Reuses the numeric comparison operator IDs — a date-only ISO
+ * string (`YYYY-MM-DD`) sorts lexicographically in chronological order, so `<`/`>` on the raw strings
+ * is the correct date comparison (no parsing). The repo evaluators compare the ISO strings directly.
+ * Default (first) is `equals` ("on") for new filter rows.
+ */
+export const DATE_OPERATORS: OperatorId[] = [
+	OPERATORS.equals,
+	OPERATORS.less_than,
+	OPERATORS.less_than_or_equal,
+	OPERATORS.greater_than,
+	OPERATORS.greater_than_or_equal,
+	OPERATORS.is_empty,
+	OPERATORS.is_not_empty
+];
+
+/**
+ * Date-aware labels for the comparison operators, for a filter UI scoped to a `date` field. The shared
+ * {@link OPERATOR_LABELS} read "less than" / "greater than", which are wrong words for a date; a date
+ * filter row should relabel them ("on" / "before" / "after"). Keyed only by the operators that differ.
+ */
+export const DATE_OPERATOR_LABELS: Partial<Record<OperatorId, string>> = {
+	[OPERATORS.equals]: 'on',
+	[OPERATORS.less_than]: 'before',
+	[OPERATORS.less_than_or_equal]: 'on or before',
+	[OPERATORS.greater_than]: 'after',
+	[OPERATORS.greater_than_or_equal]: 'on or after'
+};
+
+/**
  * Returns the list of operator IDs valid for a given schema field type.
  * Used by the sidebar to populate the operator dropdown per row.
  *
@@ -112,6 +141,8 @@ export function getOperatorsForFieldType(fieldType: FieldType): OperatorId[] {
 			return DROPDOWN_OPERATORS;
 		case 'boolean':
 			return BOOLEAN_OPERATORS;
+		case 'date':
+			return DATE_OPERATORS;
 		default:
 			return STRING_OPERATORS;
 	}

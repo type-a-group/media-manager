@@ -15,7 +15,12 @@ import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
 import { isProtectedSchemaKey, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
-import { buildFieldValues, stringifyFieldValue } from '$lib/core/recordDisplay.js';
+import {
+	buildFieldValues,
+	stringifyFieldValue,
+	type RecordRefRenderer
+} from '$lib/core/recordDisplay.js';
+import { isValidIsoDate } from '$lib/core/dates.js';
 import { readImageDimensions } from '$lib/server/fileMetadata.js';
 import {
 	readManifest,
@@ -245,7 +250,8 @@ const SchemaFieldTypeSchema = z.enum([
 	'list',
 	'url',
 	'file',
-	'record'
+	'record',
+	'date'
 ]);
 
 export async function addSchemaField(
@@ -690,6 +696,27 @@ function evaluateClause(
 		const target = value === true || value === 'true';
 		return operator === OPERATORS.equals ? bool === target : false;
 	}
+	if (fieldType === 'date') {
+		// Date-only ISO strings (`YYYY-MM-DD`) compare chronologically as plain strings; empty/invalid
+		// matches nothing (is_empty/is_not_empty handled above). Mirrors jsonRepo.evaluateClause.
+		const d = isValidIsoDate(raw) ? raw : '';
+		const f = value != null ? String(value) : '';
+		if (!d) return false;
+		switch (operator) {
+			case OPERATORS.equals:
+				return d === f;
+			case OPERATORS.less_than:
+				return d < f;
+			case OPERATORS.less_than_or_equal:
+				return d <= f;
+			case OPERATORS.greater_than:
+				return d > f;
+			case OPERATORS.greater_than_or_equal:
+				return d >= f;
+			default:
+				return false;
+		}
+	}
 	if (fieldType === 'url') {
 		const urlVal = normalizeUrlValue(raw);
 		const str = (urlVal.display_name + ' ' + urlVal.url).trim().toLowerCase();
@@ -745,11 +772,19 @@ function evaluateClause(
 function groupByValue(
 	rec: Record<string, unknown>,
 	schema: SchemaDefinition,
-	groupBy: string
+	groupBy: string,
+	resolveRef?: RecordRefRenderer
 ): string | number | boolean | string[] | null {
 	const val = rec[groupBy];
 	const def = schema[groupBy];
 	if (val === undefined || val === null) return null;
+	if (def?.type === 'record') {
+		// Group by the referenced record's title(s) rather than the raw id; fall back to the id when no
+		// cross-type resolver is supplied.
+		const resolved = resolveRef?.(groupBy, val);
+		if (resolved !== undefined) return resolved;
+		return Array.isArray(val) ? (val as string[]).join(', ') : String(val);
+	}
 	if (def?.type === 'url') {
 		const urlVal = normalizeUrlValue(val);
 		return (urlVal.display_name ?? '').trim() || urlVal.url || '';
@@ -940,11 +975,18 @@ export async function listAllFiles(params?: {
 	const searchField = params?.searchField || null;
 	const crossMode = matchAll && !unclassified && !!classIds && classIds.length > 1;
 
-	// Load the group-by class once so we can read each member's field value (best-effort).
+	// Load the group-by class once so we can read each member's field value (best-effort). When the
+	// group-by field is a `record` reference, build a cross-type resolver so the group key is the
+	// referenced record's title rather than its raw id.
 	let groupByClassFile: ClassFile | null = null;
+	let groupByResolveRef: RecordRefRenderer | undefined;
 	if (groupBy) {
 		try {
 			groupByClassFile = await readClassFile(groupBy.classId);
+			if (groupByClassFile && schemaHasRecordField(groupByClassFile.schema)) {
+				const refResolver = await resolveRecordRefs(groupByClassFile.schema);
+				groupByResolveRef = recordRefRenderer(groupByClassFile.schema, refResolver);
+			}
 		} catch {
 			groupByClassFile = null;
 		}
@@ -1005,7 +1047,12 @@ export async function listAllFiles(params?: {
 		const item = fileItemFromEntry(id, manifest);
 		if (groupByClassFile) {
 			const rec = (groupByClassFile.records[id] ?? {}) as Record<string, unknown>;
-			item.group_by_value = groupByValue(rec, groupByClassFile.schema, groupBy!.field);
+			item.group_by_value = groupByValue(
+				rec,
+				groupByClassFile.schema,
+				groupBy!.field,
+				groupByResolveRef
+			);
 		}
 		files.push(item);
 	}
@@ -1103,7 +1150,7 @@ export async function listClassMembers(
 		// Incomplete filter (Item 10): drop members where every class field has a value.
 		if (incomplete && !recordHasEmptyField(recObj, incompleteKeys)) continue;
 		const item = fileItemFromEntry(fileId, manifest);
-		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy);
+		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy, resolveRef);
 		if (titleField) {
 			const tv = stringifyFieldValue(file.schema, titleField, recObj[titleField], resolveRef);
 			if (tv !== undefined && tv !== '') item.title_value = tv;

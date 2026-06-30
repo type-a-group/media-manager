@@ -17,7 +17,8 @@ export const FieldTypeSchema = z.enum([
 	'list',
 	'url',
 	'file',
-	'record'
+	'record',
+	'date'
 ]);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
 

@@ -9,6 +9,8 @@
 	import { Trash2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { fieldLabel, isUserFieldKey } from '$lib/core/fieldKeys.js';
+	import { isValidIsoDate } from '$lib/core/dates.js';
+	import DateField from '$lib/components/DateField.svelte';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { apiBulkUpdatePropertiesForType, apiBulkDeleteForType } from '$lib/api/client.js';
 
@@ -105,6 +107,7 @@
 				return raw as { display_name: string; url: string };
 			return { display_name: '', url: typeof raw === 'string' ? raw : '' };
 		}
+		if (type === 'date') return isValidIsoDate(raw) ? raw : '';
 		return raw === null || raw === undefined ? '' : String(raw);
 	}
 
@@ -259,6 +262,12 @@
 									? setFieldValue.join(', ')
 									: String(setFieldValue ?? '')}
 								oninput={(e) => (setFieldValue = (e.currentTarget as HTMLInputElement).value)}
+							/>
+						{:else if type === 'date'}
+							<DateField
+								id="set-field-value"
+								value={typeof setFieldValue === 'string' ? setFieldValue : ''}
+								onValueChange={(v) => (setFieldValue = v)}
 							/>
 						{:else if type === 'url'}
 							{@const urlObj =

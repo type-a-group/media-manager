@@ -25,7 +25,8 @@
 		| 'list'
 		| 'url'
 		| 'file'
-		| 'record';
+		| 'record'
+		| 'date';
 	type ItemType = 'string' | 'number' | 'url';
 	type FieldMeta = {
 		options?: string[];

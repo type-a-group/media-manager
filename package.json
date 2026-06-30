@@ -44,8 +44,7 @@
 		"upgrade-data": "node scripts/upgrade-data.mjs"
 	},
 	"devDependencies": {
-		"@internationalized/date": "^3.12.2",
-		"@lucide/svelte": "^1.21.0",
+		"@lucide/svelte": "^1.22.0",
 		"@sveltejs/adapter-node": "^5.5.2",
 		"@sveltejs/kit": "^2.16.0",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
@@ -78,6 +77,7 @@
 		"vitest": "^4.0.18"
 	},
 	"dependencies": {
+		"@internationalized/date": "^3.12.2",
 		"exiftool-vendored": "^25.0.0",
 		"google-auth-library": "^10.9.0",
 		"heic-convert": "^2.1.0",

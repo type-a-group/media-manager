@@ -1,5 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { isEmptyValue, recordHasEmptyField } from './filters.js';
+import {
+	isEmptyValue,
+	recordHasEmptyField,
+	getOperatorsForFieldType,
+	OPERATORS,
+	DATE_OPERATORS
+} from './filters.js';
+
+describe('getOperatorsForFieldType — date', () => {
+	it('offers the date-aware comparison operators (on/before/after + empty)', () => {
+		expect(getOperatorsForFieldType('date')).toEqual(DATE_OPERATORS);
+		expect(getOperatorsForFieldType('date')).toEqual([
+			OPERATORS.equals,
+			OPERATORS.less_than,
+			OPERATORS.less_than_or_equal,
+			OPERATORS.greater_than,
+			OPERATORS.greater_than_or_equal,
+			OPERATORS.is_empty,
+			OPERATORS.is_not_empty
+		]);
+	});
+
+	it('defaults (first operator) to equals ("on")', () => {
+		expect(getOperatorsForFieldType('date')[0]).toBe(OPERATORS.equals);
+	});
+});
 
 describe('isEmptyValue — the single empty predicate', () => {
 	it('treats empty string / null / undefined as empty', () => {

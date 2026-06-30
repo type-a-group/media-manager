@@ -58,7 +58,8 @@ const schema: SchemaDefinition = {
 	tags: { type: 'list', itemTypes: ['string'] },
 	site: { type: 'url' },
 	labels: { type: 'dropdown', options: ['a', 'b', 'c'], multiselect: true },
-	count: { type: 'number' }
+	count: { type: 'number' },
+	taken: { type: 'date' }
 } as unknown as SchemaDefinition;
 
 describe('stringifyFieldValue', () => {
@@ -80,6 +81,12 @@ describe('stringifyFieldValue', () => {
 
 	it('stringifies scalars', () => {
 		expect(stringifyFieldValue(schema, 'count', 7)).toBe('7');
+	});
+
+	it('renders a date as the medium form, blank when invalid', () => {
+		expect(stringifyFieldValue(schema, 'taken', '2026-06-29')).toBe('29 Jun 2026');
+		expect(stringifyFieldValue(schema, 'taken', '')).toBeUndefined();
+		expect(stringifyFieldValue(schema, 'taken', 'garbage')).toBeUndefined();
 	});
 
 	it('renders a record ref via the resolver, else falls back to the raw id', () => {

@@ -94,7 +94,8 @@ describe('fieldSortValue — per field type', () => {
 		done: { type: 'boolean', removable: true },
 		tags: { type: 'list', itemType: 'string', removable: true },
 		link: { type: 'url', removable: true },
-		genre: { type: 'dropdown', multiselect: true, removable: true }
+		genre: { type: 'dropdown', multiselect: true, removable: true },
+		taken: { type: 'date', removable: true }
 	} as unknown as SchemaDefinition;
 
 	it('keeps numbers native for numeric ordering', () => {
@@ -123,6 +124,23 @@ describe('fieldSortValue — per field type', () => {
 	it('empty values become null', () => {
 		expect(fieldSortValue(schema, 'title', null)).toBeNull();
 		expect(fieldSortValue(schema, 'title', undefined)).toBeNull();
+	});
+
+	it('date sorts by raw ISO (chronological), not the display string', () => {
+		// The raw ISO is returned (so the compare is chronological); an invalid date is null (sorts last).
+		expect(fieldSortValue(schema, 'taken', '2026-06-29')).toBe('2026-06-29');
+		expect(fieldSortValue(schema, 'taken', 'garbage')).toBeNull();
+		// Lexicographic order of the ISO strings === chronological order — the whole point of storing ISO.
+		// (Sorting the medium display form "29 Jun 2026" instead would scramble this.)
+		const items = order(
+			rows(
+				['a', fieldSortValue(schema, 'taken', '2026-06-29')],
+				['b', fieldSortValue(schema, 'taken', '2020-01-30')],
+				['c', fieldSortValue(schema, 'taken', '2019-12-31')]
+			),
+			'asc'
+		);
+		expect(items).toEqual(['c', 'b', 'a']);
 	});
 
 	it('composes with sortItems for a number schema field', () => {

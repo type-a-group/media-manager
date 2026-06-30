@@ -26,6 +26,7 @@ import {
 	fieldSupportsSuggest,
 	FieldTypeSchema
 } from '$lib/core/types.js';
+import { isValidIsoDate } from '$lib/core/dates.js';
 import { newImageId, type ImageId } from '$lib/core/ids.js';
 import {
 	type FilterClause,
@@ -168,6 +169,28 @@ function evaluateClause(rec: JsonRecord, clause: FilterClause, schema: SchemaDef
 		const target = value === true || value === 'true';
 		if (operator === OPERATORS.equals) return bool === target;
 		return false;
+	}
+
+	if (fieldType === 'date') {
+		// Date-only ISO strings (`YYYY-MM-DD`) compare chronologically as plain strings. An empty/
+		// invalid stored value matches nothing (the is_empty/is_not_empty cases were handled above).
+		const d = isValidIsoDate(raw) ? raw : '';
+		const f = value != null ? String(value) : '';
+		if (!d) return false;
+		switch (operator) {
+			case OPERATORS.equals:
+				return d === f;
+			case OPERATORS.less_than:
+				return d < f;
+			case OPERATORS.less_than_or_equal:
+				return d <= f;
+			case OPERATORS.greater_than:
+				return d > f;
+			case OPERATORS.greater_than_or_equal:
+				return d >= f;
+			default:
+				return false;
+		}
 	}
 
 	if (fieldType === 'url') {

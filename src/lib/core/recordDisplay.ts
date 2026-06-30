@@ -1,4 +1,5 @@
 import { normalizeUrlValue, type JsonListItem, type SchemaDefinition } from './types.js';
+import { formatDateMedium } from './dates.js';
 
 /**
  * Renders a `record`-field value (a referenced record id or id[]) to its display title(s). Supplied by
@@ -102,6 +103,11 @@ export function stringifyFieldValue(
 		const urlVal = normalizeUrlValue(val);
 		return (urlVal.display_name ?? '').trim() || urlVal.url || undefined;
 	}
+	if (def?.type === 'date') {
+		// Stored as a date-only ISO string; render the medium form (e.g. `29 Jun 2026`). An invalid
+		// or empty value formats to '' → undefined (the row stays blank, like any other empty field).
+		return formatDateMedium(val) || undefined;
+	}
 	if (def?.type === 'list' && Array.isArray(val)) {
 		return (
 			val
@@ -159,16 +165,26 @@ export function buildFieldValues(
 
 /**
  * Resolve a row's `group_by_value` for `field`. Scalars/arrays pass through unchanged (the grid groups
- * over the raw value); `url`/`list`/multiselect-`dropdown` are rendered to a string. Mirrors the server
- * group-by projection so an optimistic patch regroups a row exactly as a reload would. Returns
- * `undefined` only for value shapes that aren't groupable (caller leaves the field unset).
+ * over the raw value); `url`/`list`/multiselect-`dropdown` are rendered to a string, and a `record`-type
+ * field is resolved to its referenced record's title(s) via `resolveRef` (so grouping shows the name, not
+ * the raw id). Mirrors the server group-by projection so an optimistic patch regroups a row exactly as a
+ * reload would. Returns `undefined` only for value shapes that aren't groupable (caller leaves the field
+ * unset).
  */
 export function groupByDisplayValue(
 	schema: SchemaDefinition,
 	field: string,
-	val: unknown
+	val: unknown,
+	resolveRef?: RecordRefRenderer
 ): string | number | boolean | string[] | null | undefined {
 	const def = schema[field];
+	if (def?.type === 'record' && val != null) {
+		// Group by the referenced record's title(s); without a resolver (optimistic client patch) fall
+		// back to the raw id(s) so the row still groups deterministically.
+		const resolved = resolveRef?.(field, val);
+		if (resolved !== undefined) return resolved;
+		return Array.isArray(val) ? (val as string[]).join(', ') : String(val);
+	}
 	if (def?.type === 'url' && val != null) {
 		const urlVal = normalizeUrlValue(val);
 		return (urlVal.display_name ?? '').trim() || urlVal.url || '';
@@ -237,7 +253,7 @@ export function projectRecordRow(
 		if (sv !== undefined && sv !== '') out.subtitle_value = sv;
 	}
 	if (groupBy) {
-		const gv = groupByDisplayValue(schema, groupBy, record[groupBy]);
+		const gv = groupByDisplayValue(schema, groupBy, record[groupBy], resolveRef);
 		if (gv !== undefined) out.group_by_value = gv;
 	}
 	return out;

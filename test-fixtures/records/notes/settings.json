@@ -33,6 +33,11 @@
 			"removable": true,
 			"recordType": "notes",
 			"defaultValue": ""
+		},
+		"due": {
+			"type": "date",
+			"removable": true,
+			"defaultValue": ""
 		}
 	},
 	"displayField": "title",

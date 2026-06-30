@@ -18,6 +18,7 @@
 
 import type { SchemaDefinition } from './types.js';
 import { stringifyFieldValue, type RecordRefRenderer } from './recordDisplay.js';
+import { isValidIsoDate } from './dates.js';
 
 /** Sort direction. */
 export type SortDir = 'asc' | 'desc';
@@ -127,6 +128,9 @@ export function fieldSortValue(
 		return Number.isNaN(n) ? null : n;
 	}
 	if (def?.type === 'boolean') return typeof val === 'boolean' ? val : null;
+	// A `date` value must sort by its raw ISO string (`YYYY-MM-DD`), which orders chronologically —
+	// NOT by its display form (`29 Jun 2026`), which would sort alphabetically and scramble the order.
+	if (def?.type === 'date') return isValidIsoDate(val) ? val : null;
 	return stringifyFieldValue(schema, key, val, resolveRef) ?? null;
 }
 
