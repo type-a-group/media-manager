@@ -487,6 +487,16 @@ export const UpdateFieldRequestSchema = z.object({
 export type UpdateFieldRequest = z.infer<typeof UpdateFieldRequestSchema>;
 
 /**
+ * API: payload for reordering a schema's fields. `order` is the desired field-key order; the server
+ * rewrites the schema object so its keys follow this list (keys it omits are appended, preserving
+ * their prior relative order). Field definitions are moved verbatim — no def is rewritten.
+ */
+export const ReorderFieldsRequestSchema = z.object({
+	order: z.array(z.string())
+});
+export type ReorderFieldsRequest = z.infer<typeof ReorderFieldsRequestSchema>;
+
+/**
  * API: properties update payload.
  *
  * Notes:

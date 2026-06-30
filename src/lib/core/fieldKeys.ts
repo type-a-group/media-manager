@@ -92,7 +92,7 @@ export function fieldLabel(key: string): string {
 
 /**
  * Canonical ordered list of a schema's **user-facing** field keys: keeps user fields plus the
- * reserved `name` field, dropping all other system keys, sorted with `name` first then alpha.
+ * reserved `name` field, dropping all other system keys, in schema (manual) order with `name` first.
  *
  * This is the single source of truth for "which fields does this entity expose to the UI" — the
  * Records list group-by, the record filter panel, the detail-pane field order, the title/subtitle
@@ -100,16 +100,19 @@ export function fieldLabel(key: string): string {
  * re-derived the same filter+sort inline.
  *
  * @param schema - The entity's schema definition (key → field definition)
- * @returns Field keys, `name`-first then alphabetical, system keys excluded
+ * @returns Field keys in schema order (the manual field order), `name` floated first, system keys excluded
  *
  * Concerns / future improvements:
  * - Files **classes** intentionally expose *all* schema keys (no `name`/system filtering); they use
  *   their own enumeration, not this helper.
  */
 export function schemaUserFieldKeys(schema: SchemaDefinition): string[] {
+	// Preserve the schema's own key order (= the manual field order, default insertion order); only
+	// float the reserved `name` field to the top. `Array.sort` is stable (ES2019+), so returning 0 for
+	// every non-`name` pair leaves their relative object order intact.
 	return Object.keys(schema)
 		.filter((k) => isUserFieldKey(k) || k === 'name')
-		.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)));
+		.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : 0));
 }
 
 /**
@@ -120,4 +123,36 @@ export function schemaUserFieldKeys(schema: SchemaDefinition): string[] {
  */
 export function schemaUserFields(schema: SchemaDefinition): { key: string; label: string }[] {
 	return schemaUserFieldKeys(schema).map((k) => ({ key: k, label: fieldLabel(k) }));
+}
+
+/**
+ * Rebuild a schema object so its keys follow `orderedKeys` (the manual field order). This is the
+ * single source of truth for the reorder write path, shared by the class and json repos.
+ *
+ * Field definitions are copied verbatim — only key order changes. Robust to a partial list:
+ * - keys in `orderedKeys` that exist are placed first, in the given order;
+ * - existing keys not mentioned are appended afterwards, preserving their prior relative order
+ *   (so system/`name` keys a caller omits never get dropped);
+ * - keys in `orderedKeys` that don't exist in the schema are ignored.
+ *
+ * @param schema - The current schema definition.
+ * @param orderedKeys - Desired field-key order (subset/superset tolerated).
+ * @returns A new schema object with reordered keys.
+ */
+export function reorderSchemaObject(
+	schema: SchemaDefinition,
+	orderedKeys: string[]
+): SchemaDefinition {
+	const next: SchemaDefinition = {};
+	const seen = new Set<string>();
+	for (const key of orderedKeys) {
+		if (key in schema && !seen.has(key)) {
+			next[key] = schema[key];
+			seen.add(key);
+		}
+	}
+	for (const key of Object.keys(schema)) {
+		if (!seen.has(key)) next[key] = schema[key];
+	}
+	return next;
 }

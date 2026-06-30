@@ -310,6 +310,27 @@ export async function apiImportSchemaForType(
 }
 
 /**
+ * Reorder a media type's schema fields. `order` is the desired field-key order; the server rewrites
+ * the schema object so its keys follow it (omitted keys appended).
+ *
+ * @param typeId - Target media type
+ * @param order - Desired field-key order
+ */
+export async function apiReorderSchemaFieldsForType(
+	typeId: string,
+	order: string[],
+	fetchFn: typeof fetch = fetch
+) {
+	const res = await fetchFn(`/api/media-types/${encodeURIComponent(typeId)}/schema/order`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ order })
+	});
+	await assertOk(res, 'Failed to reorder fields');
+	return await res.json();
+}
+
+/**
  * Validate (and optionally fix) records against the current schema.
  *
  * @param typeId - Target media type

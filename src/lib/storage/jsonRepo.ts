@@ -11,7 +11,8 @@ import {
 	isProtectedSchemaKey,
 	GLOBALS_FIELD_KINDS_KEY,
 	GLOBALS_FIELD_META_KEY,
-	schemaUserFieldKeys
+	schemaUserFieldKeys,
+	reorderSchemaObject
 } from '$lib/core/fieldKeys.js';
 
 import type { SchemaDefinition, FieldDefinition } from '$lib/core/types.js';
@@ -945,6 +946,25 @@ export function createJsonRepoForType(typeId: string) {
 	 * @param schema - Full schema definition to apply
 	 * @returns The validated schema that was written
 	 */
+	/**
+	 * Reorder this type's schema fields. Rewrites the settings-file schema object so its keys follow
+	 * `orderedKeys`; unlisted existing keys (including `name` / system keys a caller omits) are
+	 * appended afterwards. Field defs are moved verbatim; records are untouched.
+	 *
+	 * @param orderedKeys - Desired field-key order (subset/superset tolerated).
+	 * @returns The reordered schema.
+	 */
+	async function reorderSchemaFields(orderedKeys: string[]): Promise<{ schema: SchemaDefinition }> {
+		if (isGlobalsType) throw new Error('Schema is not editable for globals');
+		return await withFileLock(`${settingsPath}.lock`, async () => {
+			const settings = getSettings();
+			if (!settings) throw new Error(`Not a valid media-type folder: ${typeId}`);
+			const schema = reorderSchemaObject(settings.schema, orderedKeys);
+			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
+			return { schema };
+		});
+	}
+
 	async function importSchema(schema: SchemaDefinition): Promise<{ schema: SchemaDefinition }> {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
 		return await withFileLock(`${settingsPath}.lock`, async () => {
@@ -984,6 +1004,7 @@ export function createJsonRepoForType(typeId: string) {
 		updateSchemaField,
 		deleteSchemaField,
 		importSchema,
+		reorderSchemaFields,
 		getUniqueFieldValues
 	};
 }

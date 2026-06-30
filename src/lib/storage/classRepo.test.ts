@@ -16,6 +16,7 @@ import {
 	updateClassConfig,
 	addSchemaField,
 	updateSchemaField,
+	reorderSchemaFields,
 	getClassSchema,
 	getUniqueFieldValues
 } from './classRepo.js';
@@ -396,5 +397,70 @@ describe('classRepo — opt-in class membership', () => {
 		expect((await getRecord(classId, fileId))?._missing_records).toMatchObject({
 			author: expect.any(String)
 		});
+	});
+});
+
+describe('reorderSchemaFields (class)', () => {
+	let filesDir: string;
+	beforeEach(() => {
+		const root = path.join(
+			tmpdir(),
+			`mm-reorder-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		filesDir = path.join(root, 'media', 'files');
+		fs.mkdirSync(filesDir, { recursive: true });
+		fs.mkdirSync(path.join(root, 'media', 'classes'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	it('persists a new field order and preserves it on read', async () => {
+		const id = await createClass('Docs', {} as SchemaDefinition);
+		await addSchemaField(id, 'alpha', 'string', '');
+		await addSchemaField(id, 'beta', 'string', '');
+		await addSchemaField(id, 'gamma', 'string', '');
+		// Default order is insertion order.
+		expect(Object.keys(await getClassSchema(id))).toEqual(['alpha', 'beta', 'gamma']);
+
+		const { schema } = await reorderSchemaFields(id, ['gamma', 'alpha', 'beta']);
+		expect(Object.keys(schema)).toEqual(['gamma', 'alpha', 'beta']);
+		// And it round-trips from disk.
+		expect(Object.keys(await getClassSchema(id))).toEqual(['gamma', 'alpha', 'beta']);
+	});
+
+	it('appends fields omitted from the order', async () => {
+		const id = await createClass('Docs', {} as SchemaDefinition);
+		await addSchemaField(id, 'alpha', 'string', '');
+		await addSchemaField(id, 'beta', 'string', '');
+		await addSchemaField(id, 'gamma', 'string', '');
+		const { schema } = await reorderSchemaFields(id, ['gamma']);
+		expect(Object.keys(schema)).toEqual(['gamma', 'alpha', 'beta']);
+	});
+});
+
+describe('reorderSchemaFields (json type)', () => {
+	beforeEach(() => {
+		const root = path.join(
+			tmpdir(),
+			`mm-reorder-type-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+		);
+		fs.mkdirSync(path.join(root, 'media', 'files'), { recursive: true });
+		fs.mkdirSync(path.join(root, 'media', 'classes'), { recursive: true });
+		process.env.MEDIA_MANAGER_ROOT = root;
+	});
+
+	it('reorders a record type schema and keeps it on read', async () => {
+		const typeId = await createMediaType('Tasks');
+		const repo = getMediaTypeRepo(typeId);
+		await repo.addSchemaField('priority', 'string', '');
+		await repo.addSchemaField('due', 'string', '');
+		await repo.addSchemaField('owner', 'string', '');
+
+		const { schema } = await repo.reorderSchemaFields(['owner', 'priority', 'due']);
+		const order = Object.keys(schema).filter((k) => ['owner', 'priority', 'due'].includes(k));
+		expect(order).toEqual(['owner', 'priority', 'due']);
+
+		const reread = await repo.getSchema();
+		const order2 = Object.keys(reread).filter((k) => ['owner', 'priority', 'due'].includes(k));
+		expect(order2).toEqual(['owner', 'priority', 'due']);
 	});
 });

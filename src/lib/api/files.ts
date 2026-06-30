@@ -470,6 +470,25 @@ export async function apiDeleteClassField(
 	return data.schema;
 }
 
+/** POST /api/classes/[id]/schema/order — reorder the class schema's fields to `order`. */
+export async function apiReorderClassSchema(
+	id: string,
+	order: string[],
+	fetchFn: typeof fetch = fetch
+): Promise<SchemaDefinition> {
+	const res = await fetchFn(`/api/classes/${id}/schema/order`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ order })
+	});
+	const data = await jsonOrThrow(
+		res,
+		z.object({ success: z.literal(true), schema: SchemaDefinitionSchema }),
+		'Failed to reorder fields'
+	);
+	return data.schema;
+}
+
 /**
  * Fetch the distinct existing values of one field across a class's members — the source for the
  * autocomplete combobox on `suggest`-enabled string/list fields. The server already flattens list

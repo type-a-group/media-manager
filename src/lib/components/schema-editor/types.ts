@@ -21,6 +21,14 @@ export interface SchemaEditorAdapter {
 	updateField: (body: UpdateFieldRequest) => Promise<unknown>;
 	/** Delete a field; `removeFromRecords` also strips the value from every member record. */
 	deleteField: (fieldName: string, removeFromRecords: boolean) => Promise<unknown>;
-	/** Optional key ordering (defaults to a plain locale sort). */
+	/**
+	 * Optional key ordering (defaults to the schema's own key order). When the entity pins a field
+	 * first (e.g. a record type's `name`), this reflects it; the reorder UI keeps that key fixed.
+	 */
 	orderKeys?: (s: SchemaDefinition) => string[];
+	/**
+	 * Optional reorder write. Persists `orderedKeys` as the schema's field order. When absent, the
+	 * editor hides its drag/reorder affordances (back-compat).
+	 */
+	reorderFields?: (orderedKeys: string[]) => Promise<unknown>;
 }

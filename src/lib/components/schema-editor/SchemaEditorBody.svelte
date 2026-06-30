@@ -7,7 +7,17 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Plus, Pencil, Trash2, X, Link2, Link2Off } from 'lucide-svelte';
+	import {
+		Plus,
+		Pencil,
+		Trash2,
+		X,
+		Link2,
+		Link2Off,
+		GripVertical,
+		ChevronUp,
+		ChevronDown
+	} from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { fieldLabel, isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
@@ -233,11 +243,68 @@
 		fetchClasses();
 	});
 
-	/** Schema keys in display order (adapter override, else plain locale sort). */
+	/** Schema keys in display order (adapter override, else schema/manual key order). */
 	function getEditableSchemaKeys(s: SchemaDefinition): string[] {
-		return adapter.orderKeys
-			? adapter.orderKeys(s)
-			: Object.keys(s).sort((a, b) => a.localeCompare(b));
+		return adapter.orderKeys ? adapter.orderKeys(s) : Object.keys(s);
+	}
+
+	// ---- Field reordering ----------------------------------------------------
+	/** Whether this adapter can persist a manual field order (hides the reorder affordances if not). */
+	const canReorder = $derived(!!adapter.reorderFields);
+	/** Optimistic order applied while a reorder write is in flight; null = render the schema's order. */
+	let orderOverride = $state<string[] | null>(null);
+	/** Key currently being dragged, and the key being hovered as a drop target. */
+	let dragKey = $state<string | null>(null);
+	let dragOverKey = $state<string | null>(null);
+
+	/** Field keys in render order: the optimistic override while reordering, else the schema order. */
+	const displayKeys = $derived(orderOverride ?? (schema ? getEditableSchemaKeys(schema) : []));
+	/** Protected/pinned keys (e.g. a record type's `name`) — fixed at the front, not reorderable. */
+	const pinnedKeys = $derived(displayKeys.filter((k) => isProtectedSchemaKey(k)));
+	/** Reorderable keys, in their current order. */
+	const movableKeys = $derived(displayKeys.filter((k) => !isProtectedSchemaKey(k)));
+
+	/**
+	 * Persist a new movable-key order (pinned keys always stay first). Optimistic: the override shows
+	 * the new order immediately, then we re-read the schema; on failure we revert and toast.
+	 */
+	async function commitOrder(nextMovable: string[]) {
+		if (!adapter.reorderFields || !schema) return;
+		const next = [...pinnedKeys, ...nextMovable];
+		orderOverride = next;
+		try {
+			await adapter.reorderFields(next);
+			await fetchSchema();
+			orderOverride = null;
+			onchanged?.();
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to reorder fields');
+			orderOverride = null;
+		}
+	}
+
+	/** Drop the dragged field immediately before `targetKey` (both must be reorderable). */
+	function onDropOn(targetKey: string) {
+		const src = dragKey;
+		dragKey = null;
+		dragOverKey = null;
+		if (!src || src === targetKey || isProtectedSchemaKey(targetKey)) return;
+		const arr = movableKeys.filter((k) => k !== src);
+		const to = arr.indexOf(targetKey);
+		if (to === -1) return;
+		arr.splice(to, 0, src);
+		commitOrder(arr);
+	}
+
+	/** Nudge a reorderable field one slot up/down (keyboard / accessibility fallback for drag). */
+	function moveBy(key: string, delta: number) {
+		const arr = [...movableKeys];
+		const i = arr.indexOf(key);
+		const j = i + delta;
+		if (i === -1 || j < 0 || j >= arr.length) return;
+		[arr[i], arr[j]] = [arr[j], arr[i]];
+		commitOrder(arr);
 	}
 
 	/** Coerce the form's string default into the typed default for the chosen field type. */
@@ -509,7 +576,7 @@
 		<div class="flex flex-col gap-2">
 			<h3 class="font-semibold">Fields</h3>
 			<div class="flex flex-col gap-2">
-				{#each getEditableSchemaKeys(schema) as key (key)}
+				{#each displayKeys as key (key)}
 					{#if editingKey === key}
 						<div class="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
 							<div class="flex flex-row items-center gap-2">
@@ -737,36 +804,94 @@
 							</div>
 						</div>
 					{:else}
+						{@const reorderable = canReorder && !isProtectedSchemaKey(key)}
 						<div
-							class="flex flex-row items-center justify-between gap-2 rounded border p-2 hover:bg-muted/30"
+							class="flex flex-row items-center justify-between gap-2 rounded border p-2 transition-colors hover:bg-muted/30 {dragOverKey ===
+								key && reorderable
+								? 'border-primary'
+								: ''} {dragKey === key ? 'opacity-50' : ''}"
+							role="listitem"
+							ondragover={(e) => {
+								if (!dragKey || !reorderable) return;
+								e.preventDefault();
+								dragOverKey = key;
+							}}
+							ondragleave={() => {
+								if (dragOverKey === key) dragOverKey = null;
+							}}
+							ondrop={(e) => {
+								e.preventDefault();
+								onDropOn(key);
+							}}
 						>
-							<div class="flex min-w-0 flex-col">
-								<span class="font-medium">{fieldLabel(key)}</span>
-								<span class="text-xs text-muted-foreground">
-									{schema[key]?.type}
-									{#if schema[key]?.type === 'dropdown' && schema[key]?.options?.length}
-										— {schema[key].options.join(', ')}
-										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiselect){/if}
-									{:else if schema[key]?.type === 'list' && (schema[key] as { itemTypes?: ListItemType[] }).itemTypes?.length}
-										— {(schema[key] as { itemTypes: ListItemType[] }).itemTypes[0]}
-									{:else if schema[key]?.type === 'record'}
-										→ {recordTypeLabel((schema[key] as { recordType?: string }).recordType)}
-										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
-									{:else if schema[key]?.type === 'file'}
-										{#if (schema[key] as { classId?: string }).classId}→ {classLabel(
-												(schema[key] as { classId?: string }).classId
-											)}{/if}
-										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
+							<div class="flex min-w-0 items-center gap-2">
+								{#if canReorder}
+									{#if reorderable}
+										<button
+											type="button"
+											class="shrink-0 cursor-grab text-muted-foreground/40 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+											draggable="true"
+											aria-label="Drag to reorder"
+											ondragstart={() => (dragKey = key)}
+											ondragend={() => {
+												dragKey = null;
+												dragOverKey = null;
+											}}
+										>
+											<GripVertical class="size-4" />
+										</button>
+									{:else}
+										<span class="w-4 shrink-0"></span>
 									{/if}
-									{#if (schema[key] as { linkedField?: string }).linkedField}
-										· <Link2 class="inline size-3 align-text-bottom" />{fieldLabel(
-											(schema[key] as { linkedField?: string }).linkedField!
-										)}
-									{/if}
-									{#if (schema[key] as { suggest?: boolean }).suggest}· suggestions{/if}
-								</span>
+								{/if}
+								<div class="flex min-w-0 flex-col">
+									<span class="font-medium">{fieldLabel(key)}</span>
+									<span class="text-xs text-muted-foreground">
+										{schema[key]?.type}
+										{#if schema[key]?.type === 'dropdown' && schema[key]?.options?.length}
+											— {schema[key].options.join(', ')}
+											{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiselect){/if}
+										{:else if schema[key]?.type === 'list' && (schema[key] as { itemTypes?: ListItemType[] }).itemTypes?.length}
+											— {(schema[key] as { itemTypes: ListItemType[] }).itemTypes[0]}
+										{:else if schema[key]?.type === 'record'}
+											→ {recordTypeLabel((schema[key] as { recordType?: string }).recordType)}
+											{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
+										{:else if schema[key]?.type === 'file'}
+											{#if (schema[key] as { classId?: string }).classId}→ {classLabel(
+													(schema[key] as { classId?: string }).classId
+												)}{/if}
+											{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
+										{/if}
+										{#if (schema[key] as { linkedField?: string }).linkedField}
+											· <Link2 class="inline size-3 align-text-bottom" />{fieldLabel(
+												(schema[key] as { linkedField?: string }).linkedField!
+											)}
+										{/if}
+										{#if (schema[key] as { suggest?: boolean }).suggest}· suggestions{/if}
+									</span>
+								</div>
 							</div>
-							<div class="flex shrink-0 gap-1">
+							<div class="flex shrink-0 items-center gap-1">
+								{#if reorderable}
+									<Button
+										variant="ghost"
+										size="icon"
+										title="Move up"
+										onclick={() => moveBy(key, -1)}
+										disabled={movableKeys[0] === key}
+									>
+										<ChevronUp class="size-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										title="Move down"
+										onclick={() => moveBy(key, 1)}
+										disabled={movableKeys[movableKeys.length - 1] === key}
+									>
+										<ChevronDown class="size-4" />
+									</Button>
+								{/if}
 								<Button
 									variant="ghost"
 									size="icon"
@@ -789,7 +914,7 @@
 						</div>
 					{/if}
 				{/each}
-				{#if getEditableSchemaKeys(schema).length === 0}
+				{#if displayKeys.length === 0}
 					<p class="text-sm text-muted-foreground">No fields yet.</p>
 				{/if}
 			</div>

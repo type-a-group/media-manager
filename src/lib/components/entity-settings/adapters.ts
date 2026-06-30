@@ -7,7 +7,8 @@ import {
 	apiDeleteClass,
 	apiAddClassField,
 	apiUpdateClassField,
-	apiDeleteClassField
+	apiDeleteClassField,
+	apiReorderClassSchema
 } from '$lib/api/files.js';
 import {
 	apiGetTypeSettings,
@@ -16,14 +17,13 @@ import {
 	apiGetSchemaForType,
 	apiAddSchemaFieldForType,
 	apiUpdateSchemaFieldForType,
-	apiDeleteSchemaFieldForType
+	apiDeleteSchemaFieldForType,
+	apiReorderSchemaFieldsForType
 } from '$lib/api/client.js';
 
-/** Sorted `{ key, label }` list for a class schema's title/group selects. */
+/** `{ key, label }` list for a class schema's title/group selects, in schema (manual) order. */
 function classFields(schema: SchemaDefinition): { key: string; label: string }[] {
-	return Object.keys(schema)
-		.sort((a, b) => a.localeCompare(b))
-		.map((k) => ({ key: k, label: fieldLabel(k) }));
+	return Object.keys(schema).map((k) => ({ key: k, label: fieldLabel(k) }));
 }
 
 /**
@@ -64,7 +64,8 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 			addField: (body) => apiAddClassField(classId, body),
 			updateField: (body) => apiUpdateClassField(classId, body),
 			deleteField: (fieldName, removeFromRecords) =>
-				apiDeleteClassField(classId, fieldName, removeFromRecords)
+				apiDeleteClassField(classId, fieldName, removeFromRecords),
+			reorderFields: (order) => apiReorderClassSchema(classId, order)
 		},
 		remove: () => apiDeleteClass(classId)
 	};
@@ -73,11 +74,14 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 /** `{ key, label }` list for a record type: user fields + `name`, name first (shared helper). */
 const typeFields = schemaUserFields;
 
-/** Media-type schema key ordering: hide system keys, float the name field first. */
+/**
+ * Media-type schema key ordering for the schema editor: hide system keys, float the `name` field
+ * first, otherwise preserve schema (manual) order. Stable sort keeps non-`name` keys in object order.
+ */
 function orderTypeKeys(s: SchemaDefinition): string[] {
 	return Object.keys(s)
 		.filter((k) => !['file_name', 'last_modified', 'default'].includes(k))
-		.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : a.localeCompare(b)));
+		.sort((a, b) => (a === 'name' ? -1 : b === 'name' ? 1 : 0));
 }
 
 /**
@@ -121,7 +125,8 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 			updateField: (body) => apiUpdateSchemaFieldForType(typeId, body),
 			deleteField: (fieldName, removeFromRecords) =>
 				apiDeleteSchemaFieldForType(typeId, { fieldName, removeFromImages: removeFromRecords }),
-			orderKeys: orderTypeKeys
+			orderKeys: orderTypeKeys,
+			reorderFields: (order) => apiReorderSchemaFieldsForType(typeId, order)
 		},
 		remove: async () => {
 			await apiDeleteMediaType(typeId);

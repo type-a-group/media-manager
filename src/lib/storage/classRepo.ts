@@ -14,7 +14,11 @@ import { readJsonFile, writeJsonFileAtomic } from './json.js';
 import { withFileLock } from './lock.js';
 import { assertSafeBasename } from './filenames.js';
 import { normalizeFieldKey } from './migrate.js';
-import { isProtectedSchemaKey, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
+import {
+	isProtectedSchemaKey,
+	schemaUserFieldKeys,
+	reorderSchemaObject
+} from '$lib/core/fieldKeys.js';
 import {
 	buildFieldValues,
 	stringifyFieldValue,
@@ -447,6 +451,28 @@ export async function importSchema(
 			return changed ? next : rec;
 		});
 		await writeClassFile(id, { ...file, schema, records });
+		return { schema };
+	});
+}
+
+/**
+ * Reorder this class's schema fields. Rewrites the schema object so its keys follow `orderedKeys`;
+ * any existing keys not listed are appended afterwards (preserving their prior relative order), and
+ * keys in `orderedKeys` that don't exist are ignored. Field definitions are moved verbatim — nothing
+ * else changes, and records are untouched (their key order is irrelevant).
+ *
+ * @param id - Class id.
+ * @param orderedKeys - Desired field-key order (a subset/superset is tolerated).
+ * @returns The reordered schema.
+ */
+export async function reorderSchemaFields(
+	id: string,
+	orderedKeys: string[]
+): Promise<{ schema: SchemaDefinition }> {
+	return await withFileLock(classLockPath(id), async () => {
+		const file = await readClassFile(id);
+		const schema = reorderSchemaObject(file.schema, orderedKeys);
+		await writeClassFile(id, { ...file, schema });
 		return { schema };
 	});
 }

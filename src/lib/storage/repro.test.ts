@@ -28,7 +28,16 @@ describe('repro: create record with date field', () => {
 		const target = await createMediaType('People');
 		const id = await createMediaType('Events');
 		const repo = getMediaTypeRepo(id) as JsonRepo;
-		await repo.addSchemaField('Owner', 'record', undefined, undefined, undefined, false, false, target);
+		await repo.addSchemaField(
+			'Owner',
+			'record',
+			undefined,
+			undefined,
+			undefined,
+			false,
+			false,
+			target
+		);
 		const rec = await repo.createRecord();
 		expect(rec.id).toBeTruthy();
 	});
