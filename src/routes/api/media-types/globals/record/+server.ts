@@ -35,10 +35,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	try {
 		const repo = getMediaTypeRepo('globals') as import('$lib/storage/jsonRepo.js').JsonRepo;
-		const updated = await repo.updatePropertiesById(
-			GLOBALS_RECORD_ID,
-			body as Record<string, unknown>
-		);
+		await repo.updatePropertiesById(GLOBALS_RECORD_ID, body as Record<string, unknown>);
+		// Re-read so the response carries the recomputed `_missing_files` / `_missing_records` (the bare
+		// update path returns the raw record). Without this the editor's missing-ref badges would freeze at
+		// load and re-appear for a now-valid reference right after the user fixes it. Parity with GET.
+		const updated = await repo.getRecordById(GLOBALS_RECORD_ID);
 		return json(updated);
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

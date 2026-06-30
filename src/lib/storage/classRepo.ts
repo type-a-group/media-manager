@@ -602,33 +602,6 @@ export async function updateRecord(
 	});
 }
 
-/** Bulk-set the same fields on many members of a class. */
-export async function bulkUpdateRecords(
-	id: string,
-	fileIds: string[],
-	patch: Record<string, unknown>
-): Promise<void> {
-	await withFileLock(classLockPath(id), async () => {
-		const file = await readClassFile(id);
-		const allowed = new Set(Object.keys(file.schema));
-		allowed.delete('id');
-		allowed.delete('last_modified');
-		const records = { ...file.records };
-		for (const fileId of fileIds) {
-			const rec = records[fileId];
-			if (!rec) continue;
-			const next: Record<string, unknown> = { ...(rec as Record<string, unknown>) };
-			for (const [k, v] of Object.entries(patch)) {
-				if (allowed.has(k)) next[k] = v;
-				else if (k in next && v === null) delete next[k];
-			}
-			next.last_modified = new Date().toISOString();
-			records[fileId] = JsonRecordSchema.parse(next);
-		}
-		await writeClassFile(id, { ...file, records });
-	});
-}
-
 /** Unique non-empty values for a field across a class's members (for filter/dropdown suggestions). */
 export async function getUniqueFieldValues(id: string, fieldName: string): Promise<string[]> {
 	const file = await readClassFile(id);

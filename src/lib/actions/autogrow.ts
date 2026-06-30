@@ -45,17 +45,15 @@ export const autogrow: Action<HTMLTextAreaElement, unknown> = (node) => {
  * single-line input that these textareas replace — Enter still "finishes" the
  * field — while keeping deliberate multi-line entry available.
  *
- * @param e - the textarea keydown event.
- * @param save - the owning editor pane's save routine, invoked on a bare Enter.
+ * The save itself rides on the resulting `blur` (the textarea's `onblur` fires the
+ * host's autosave `commit()`), so this handler no longer takes a save callback —
+ * committing on blur is the single code path (Item: autosave rework).
  *
- * Concerns / future improvements:
- * - `save` is fired fire-and-forget (`void`); the pane is responsible for its own
- *   in-flight/dirty guarding (each pane's `save()` already no-ops when clean).
+ * @param e - the textarea keydown event.
  */
-export function blurSaveOnEnter(e: KeyboardEvent, save: () => void | Promise<void>): void {
+export function blurSaveOnEnter(e: KeyboardEvent): void {
 	if (e.key === 'Enter' && !e.shiftKey) {
 		e.preventDefault();
 		(e.currentTarget as HTMLTextAreaElement).blur();
-		void save();
 	}
 }

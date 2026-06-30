@@ -7,8 +7,8 @@
 	import { toast } from 'svelte-sonner';
 	import { Loader2, Check, Plus, Settings, FolderPlus, Search } from 'lucide-svelte';
 	import { apiGetGlobalsRecord, apiUpdateGlobalsRecord } from '$lib/api/client.js';
-	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
-	import { triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
+	import { createAutosave } from '$lib/actions/autosave.svelte.js';
+	import { refreshTrigger, triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
 	import { isValidIsoDate } from '$lib/core/dates.js';
 	import { formatTimestamp } from '$lib/core/datetime.js';
@@ -57,9 +57,10 @@
 	 * reserved record keys `__field_kinds` / `__field_meta`, and the sectioning persists in `__layout`
 	 * (decoded/reconciled by `core/globalsLayout.ts`). All three are hidden from the field list.
 	 *
-	 * Save policy is identical to the records/files panels via {@link debouncedAutosave}: ~600ms debounce,
-	 * Saving…/Saved status, no Save button, and — critically — it must NOT reload after save (that would
-	 * reset `formValues` mid-edit). It advances the saved baseline in place instead.
+	 * Save policy is identical to the records/files panels via {@link createAutosave}: saves on field
+	 * blur / discrete change / Enter (`autosave.commit`) with a slow 3s idle safety net, a Saving…/Saved
+	 * status, no Save button, and — critically — it must NOT reload after save (that would reset
+	 * `formValues` mid-edit). It advances the saved baseline in place instead.
 	 */
 	const RESERVED = new Set([
 		'id',
@@ -72,8 +73,6 @@
 	]);
 
 	let loading = $state(true);
-	let saving = $state(false);
-	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	/** Serialized editable state at last load/save — the baseline for the `dirty` autosave trigger. */
 	let savedSnapshot = $state('');
 	let baseValues = $state<Record<string, unknown>>({});
@@ -260,22 +259,37 @@
 		deletedKeys.clear();
 		if (resetBaseline) {
 			savedSnapshot = currentSnapshot();
-			saveStatus = 'idle';
 		}
 	}
 
-	async function load() {
-		loading = true;
+	async function load({ quiet = false }: { quiet?: boolean } = {}) {
+		if (!quiet) loading = true;
 		try {
 			const rec = (await apiGetGlobalsRecord()) as Record<string, unknown>;
 			applyRecord(rec);
 		} catch (e) {
 			console.error(e);
-			toast.error('Failed to load globals');
+			if (!quiet) toast.error('Failed to load globals');
 		} finally {
-			loading = false;
+			if (!quiet) loading = false;
 		}
 	}
+
+	// A referenced record/file renamed or deleted elsewhere (which bumps `refreshTrigger`) changes a
+	// resolved value or `_missing_*` badge this pane renders. Re-read quietly to catch up — but only when
+	// idle (never reload mid-edit; the pane must not reset `formValues` while typing). The `!autosave.saving`
+	// guard also swallows the synchronous self-echo from this pane's own save (which fires the trigger while
+	// the save is still in flight); cross-tab bumps arrive async and are handled normally.
+	$effect(() => {
+		let prev = 0;
+		const unsub = refreshTrigger.subscribe((n) => {
+			if (n !== prev) {
+				prev = n;
+				if (!dirty && !autosave.saving) void load({ quiet: true });
+			}
+		});
+		return unsub;
+	});
 
 	/** Serialize editable state (values + kinds/meta + layout + deletions) for dirty detection. */
 	function currentSnapshot(): string {
@@ -571,12 +585,16 @@
 	}
 
 	// ---------------------------------------------------------------------------
-	// save (debounced autosave; never reloads)
+	// save (autosave; never reloads)
 	// ---------------------------------------------------------------------------
+	/**
+	 * Persist the whole free-form record (values + the reserved kinds/meta/layout keys), advance the
+	 * saved baseline in place, and refresh the missing-ref badges from the server's recomputed result.
+	 * Throws on failure — {@link createAutosave} owns the status/saving/toast bookkeeping. No-ops when
+	 * clean so the direct unload/destroy callers stay cheap.
+	 */
 	async function save() {
-		if (saving || !dirty) return;
-		saving = true;
-		saveStatus = 'saving';
+		if (!dirty) return;
 		const persistedValues = { ...formValues };
 		const baselineAfterSave = JSON.stringify({
 			values: persistedValues,
@@ -585,49 +603,54 @@
 			layout: JSON.parse(JSON.stringify(layout)),
 			deleted: []
 		});
-		try {
-			const patch: Record<string, unknown> = {};
-			for (const [k, v] of Object.entries(formValues)) patch[k] = v;
-			for (const k of deletedKeys) patch[k] = null;
-			const kindsToStore: Record<string, ValueKind> = {};
-			const metaToStore: Record<string, FieldMeta> = {};
-			for (const k of Object.keys(formValues)) {
-				kindsToStore[k] = getFieldKind(k);
-				const m = getMeta(k);
-				if (hasMeta(m)) metaToStore[k] = m;
-			}
-			patch[GLOBALS_FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
-			patch[GLOBALS_FIELD_META_KEY] = JSON.stringify(metaToStore);
-			patch[GLOBALS_LAYOUT_KEY] = JSON.stringify(layout);
-			const updated = (await apiUpdateGlobalsRecord(patch)) as Record<string, unknown>;
-			if (typeof updated?.last_modified === 'string') lastModified = updated.last_modified;
-			baseValues = persistedValues;
-			deletedKeys.clear();
-			savedSnapshot = baselineAfterSave;
-			saveStatus = 'saved';
-			triggerImageListRefresh();
-		} catch (e) {
-			console.error(e);
-			saveStatus = 'error';
-			toast.error('Failed to save globals');
-		} finally {
-			saving = false;
+		const patch: Record<string, unknown> = {};
+		for (const [k, v] of Object.entries(formValues)) patch[k] = v;
+		for (const k of deletedKeys) patch[k] = null;
+		const kindsToStore: Record<string, ValueKind> = {};
+		const metaToStore: Record<string, FieldMeta> = {};
+		for (const k of Object.keys(formValues)) {
+			kindsToStore[k] = getFieldKind(k);
+			const m = getMeta(k);
+			if (hasMeta(m)) metaToStore[k] = m;
 		}
+		patch[GLOBALS_FIELD_KINDS_KEY] = JSON.stringify(kindsToStore);
+		patch[GLOBALS_FIELD_META_KEY] = JSON.stringify(metaToStore);
+		patch[GLOBALS_LAYOUT_KEY] = JSON.stringify(layout);
+		const updated = (await apiUpdateGlobalsRecord(patch)) as Record<string, unknown>;
+		if (typeof updated?.last_modified === 'string') lastModified = updated.last_modified;
+		baseValues = persistedValues;
+		deletedKeys.clear();
+		savedSnapshot = baselineAfterSave;
+		// Refresh the missing-ref badges from the server's recomputed result (the POST now re-reads the
+		// enriched record). Without this, fixing a broken file/record ref would leave a stale "Missing"
+		// hint until a full reload, because the display condition keys off these maps.
+		missingFiles =
+			updated._missing_files && typeof updated._missing_files === 'object'
+				? (updated._missing_files as Record<string, string>)
+				: {};
+		missingRecords =
+			updated._missing_records && typeof updated._missing_records === 'object'
+				? (updated._missing_records as Record<string, string>)
+				: {};
+		triggerImageListRefresh();
 	}
 
-	const autosave = debouncedAutosave({ isDirty: () => dirty, save });
-	const flush = () => autosave.flush();
+	const autosave = createAutosave({
+		isDirty: () => dirty,
+		save,
+		errorMessage: 'Failed to save globals'
+	});
 
 	$effect(() => {
 		const handler = () => {
-			if (dirty) void save();
+			if (dirty) void save().catch((e) => console.error(e));
 		};
 		window.addEventListener('beforeunload', handler);
 		return () => window.removeEventListener('beforeunload', handler);
 	});
 	onDestroy(() => {
 		autosave.cancel();
-		if (dirty) void save();
+		if (dirty) void save().catch((e) => console.error(e));
 	});
 
 	onMount(load);
@@ -682,11 +705,11 @@
 			{/if}
 
 			<div class="w-20 text-right text-xs text-muted-foreground">
-				{#if saveStatus === 'saving'}
+				{#if autosave.status === 'saving'}
 					<Loader2 class="mr-1 inline size-3 animate-spin" /> Saving…
-				{:else if saveStatus === 'saved' && !dirty}
+				{:else if autosave.status === 'saved' && !dirty}
 					<Check class="mr-1 inline size-3 text-green-600" /> Saved
-				{:else if saveStatus === 'error'}
+				{:else if autosave.status === 'error'}
 					<span class="text-destructive">Failed</span>
 				{/if}
 			</div>
@@ -731,7 +754,7 @@
 								missing={(missingFiles[key] !== undefined || missingRecords[key] !== undefined) &&
 									formValues[key] === baseValues[key]}
 								missingName={missingFiles[key] ?? missingRecords[key]}
-								onEnterSave={flush}
+								oncommit={() => autosave.commit()}
 								onRename={renameField}
 								onTypeChange={setFieldKind}
 								onMetaChange={setFieldMeta}

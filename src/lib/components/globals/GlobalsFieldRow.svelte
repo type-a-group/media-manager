@@ -40,7 +40,7 @@
 		sections,
 		missing = false,
 		missingName,
-		onEnterSave,
+		oncommit,
 		onRename,
 		onTypeChange,
 		onMetaChange,
@@ -61,7 +61,7 @@
 		sections: SectionOption[];
 		missing?: boolean;
 		missingName?: string;
-		onEnterSave?: () => void;
+		oncommit?: () => void;
 		onRename?: (oldKey: string, newKey: string) => boolean;
 		onTypeChange?: (key: string, kind: ValueKind) => void;
 		onMetaChange?: (key: string, meta: FieldMeta) => void;
@@ -116,7 +116,7 @@
 
 	<!-- Value control -->
 	<div class="min-w-0 flex-1">
-		<FieldInput {def} bind:value {missing} {missingName} {onEnterSave} />
+		<FieldInput {def} bind:value {missing} {missingName} {oncommit} />
 	</div>
 
 	<!-- Per-field structure menu -->

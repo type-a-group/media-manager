@@ -15,12 +15,11 @@
 	import FieldInput from './FieldInput.svelte';
 	import MetadataButton from './MetadataButton.svelte';
 	import EditorPanelShell from './EditorPanelShell.svelte';
-	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
+	import { createAutosave } from '$lib/actions/autosave.svelte.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { FileText, Loader2, Check } from 'lucide-svelte';
-	import { toast } from 'svelte-sonner';
 	import type { ClassSummary, FileItem, SchemaDefinition, ClassConfig } from '$lib/core/types.js';
 
 	/** One editable class section: schema/config plus the blob's (always-present) record. */
@@ -89,9 +88,6 @@
 	let lightboxOpen = $state(false);
 	/** Per-section serialized snapshot at last save/load, to detect unsaved edits. */
 	let savedSnapshots = $state<Record<string, string>>({});
-	/** Debounced-autosave bookkeeping (mirrors the Records detail pane). */
-	let saving = $state(false);
-	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
 	const memberClassIds = $derived(new Set(sections.map((s) => s.id)));
 	const addable = $derived(classes.filter((c) => !memberClassIds.has(c.id)));
@@ -111,9 +107,10 @@
 	/** Any section with edits not yet persisted. */
 	const dirty = $derived(sections.some((s) => snapshotOf(s) !== savedSnapshots[s.id]));
 
-	// Shared debounced autosave: schedules `saveDirtySections` while dirty. `onSaved` (not a list
-	// refetch) keeps the grid stable so typing never stutters.
-	const autosave = debouncedAutosave({ isDirty: () => dirty, save: saveDirtySections });
+	// Shared autosave: `saveDirtySections` runs on field blur / discrete change / Enter / prev-next /
+	// close (`autosave.commit`), with a slow 3s idle safety net. `onSaved` (not a list refetch) keeps
+	// the grid stable so typing never stutters.
+	const autosave = createAutosave({ isDirty: () => dirty, save: saveDirtySections });
 
 	async function load() {
 		loading = true;
@@ -129,31 +126,21 @@
 		}
 	}
 
-	/** Persist every section with unsaved edits, tracking a single save status for the panel header. */
+	/**
+	 * Persist every section with unsaved edits. Updates each section's saved snapshot as it goes (so a
+	 * mid-loop failure doesn't re-save the sections already written) and notifies the host. Throws on
+	 * failure — {@link createAutosave} owns the status/saving/toast bookkeeping.
+	 */
 	async function saveDirtySections() {
-		if (saving || !dirty) return;
-		saving = true;
-		saveStatus = 'saving';
-		try {
-			for (const s of sections) {
-				if (snapshotOf(s) !== savedSnapshots[s.id]) {
-					await apiUpdateClassRecord(s.id, file.id, patchFor(s));
-					savedSnapshots[s.id] = snapshotOf(s);
-				}
+		if (!dirty) return;
+		for (const s of sections) {
+			if (snapshotOf(s) !== savedSnapshots[s.id]) {
+				await apiUpdateClassRecord(s.id, file.id, patchFor(s));
+				savedSnapshots[s.id] = snapshotOf(s);
 			}
-			saveStatus = 'saved';
-			onSaved?.();
-		} catch (e) {
-			console.error(e);
-			saveStatus = 'error';
-			toast.error('Failed to save');
-		} finally {
-			saving = false;
 		}
+		onSaved?.();
 	}
-
-	/** Cancel any pending debounce and persist immediately. */
-	const flush = () => autosave.flush();
 
 	/**
 	 * Fire-and-forget flush for the file we're leaving (effect cleanup can't be async, and
@@ -161,7 +148,7 @@
 	 */
 	function flushLeavingSync(fid: string) {
 		autosave.cancel();
-		if (saving || !dirty) return;
+		if (autosave.saving || !dirty) return;
 		for (const s of sections) {
 			if (snapshotOf(s) !== savedSnapshots[s.id]) {
 				const snap = snapshotOf(s);
@@ -178,12 +165,12 @@
 	/** Flush pending edits, then run a prev/next navigation. */
 	async function advance(go: (() => void) | undefined) {
 		if (!go) return;
-		await flush();
+		await autosave.commit();
 		go();
 	}
 
 	async function handleClose() {
-		await flush();
+		await autosave.commit();
 		onclose();
 	}
 
@@ -334,11 +321,11 @@
 			onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
 		/>
 		<span class="shrink-0 text-xs text-muted-foreground">
-			{#if saveStatus === 'saving'}
+			{#if autosave.status === 'saving'}
 				<Loader2 class="inline size-3 animate-spin" /> Saving…
-			{:else if saveStatus === 'saved' && !dirty}
+			{:else if autosave.status === 'saved' && !dirty}
 				<Check class="inline size-3 text-green-600" /> Saved
-			{:else if saveStatus === 'error'}
+			{:else if autosave.status === 'error'}
 				<span class="text-destructive">Save failed</span>
 			{/if}
 		</span>
@@ -454,7 +441,7 @@
 								outOfClass={!!(
 									section.record._out_of_class as Record<string, string> | undefined
 								)?.[key]}
-								onEnterSave={flush}
+								oncommit={() => autosave.commit()}
 								loadSuggestions={() =>
 									apiGetClassFieldValues(section.id, key).then((r) => r.values)}
 							/>

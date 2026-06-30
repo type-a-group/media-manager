@@ -168,6 +168,9 @@
 	onblur={() => {
 		open = false;
 		highlight = -1;
+		// Commit the typed value on blur for string fields (parity with the plain textarea). The
+		// list/tags add-item box (keepOpenAfterCommit) must NOT auto-add a half-typed item on blur.
+		if (!keepOpenAfterCommit) oncommit?.();
 	}}
 />
 

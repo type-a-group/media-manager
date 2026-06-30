@@ -7,7 +7,7 @@
 	import { toast } from 'svelte-sonner';
 	import EditorPanelShell from '$lib/components/EditorPanelShell.svelte';
 	import FieldInput from '$lib/components/FieldInput.svelte';
-	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
+	import { createAutosave } from '$lib/actions/autosave.svelte.js';
 	import { fieldLabel, schemaUserFieldKeys } from '$lib/core/fieldKeys.js';
 	import type { SchemaDefinition } from '$lib/core/types.js';
 	import { normalizeUrlValue } from '$lib/core/types.js';
@@ -70,8 +70,6 @@
 	let schema = $state<SchemaDefinition | null>(null);
 	let record = $state<Record<string, unknown> | null>(null);
 	let loading = $state(false);
-	let saving = $state(false);
-	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let deleteOpen = $state(false);
 	let formValues = $state<Record<string, unknown>>({});
 	let lastSavedPatch = $state<Record<string, unknown>>({});
@@ -146,13 +144,13 @@
 
 	const title = $derived(recordDetailTitle(record, recordId, titleField));
 
-	// Shared debounced autosave: schedules `doSave` while dirty, resetting on each keystroke. The host
-	// patches the edited row in place from `onchanged(updated)` — no refetch — so typing never stutters.
-	const autosave = debouncedAutosave({ isDirty: () => isDirty, save: doSave });
+	// Shared autosave: `doSave` runs on field blur / discrete change / Enter / prev-next / close
+	// (`autosave.commit`), with a slow 3s idle safety net. The host patches the edited row in place from
+	// `onchanged(updated)` — no refetch — so typing never stutters.
+	const autosave = createAutosave({ isDirty: () => isDirty, save: doSave });
 
 	async function load() {
 		loading = true;
-		saveStatus = 'idle';
 		try {
 			const [s, r] = await Promise.all([
 				apiGetSchemaForType(typeId),
@@ -171,30 +169,20 @@
 		}
 	}
 
-	/** Persist the current edits if dirty. Returns when the write settles. */
+	/**
+	 * Persist the current edits if dirty. Advances the saved baseline and hands the host the updated
+	 * record (patch-in-place, no refetch). Throws on failure — {@link createAutosave} owns the
+	 * status/saving/toast bookkeeping.
+	 */
 	async function doSave() {
-		if (!schema || saving) return;
+		if (!schema) return;
 		const patch = buildPatch();
 		if (JSON.stringify(patch) === JSON.stringify(lastSavedPatch)) return;
-		saving = true;
-		saveStatus = 'saving';
-		try {
-			const updated = await apiUpdatePropertiesByIdForType(typeId, recordId, patch);
-			record = updated as Record<string, unknown>;
-			lastSavedPatch = patch;
-			saveStatus = 'saved';
-			onchanged(updated as Record<string, unknown>);
-		} catch (e) {
-			console.error(e);
-			saveStatus = 'error';
-			toast.error('Failed to save');
-		} finally {
-			saving = false;
-		}
+		const updated = await apiUpdatePropertiesByIdForType(typeId, recordId, patch);
+		record = updated as Record<string, unknown>;
+		lastSavedPatch = patch;
+		onchanged(updated as Record<string, unknown>);
 	}
-
-	/** Cancel any pending debounce and persist immediately. */
-	const flush = () => autosave.flush();
 
 	/**
 	 * Fire-and-forget flush for the record we're leaving — used in the load effect's cleanup (which
@@ -203,7 +191,7 @@
 	 */
 	function flushLeavingSync() {
 		autosave.cancel();
-		if (!loaded || !schema || saving) return;
+		if (!loaded || !schema || autosave.saving) return;
 		const patch = buildPatch();
 		if (JSON.stringify(patch) === JSON.stringify(lastSavedPatch)) return;
 		void apiUpdatePropertiesByIdForType(loaded.typeId, loaded.recordId, patch)
@@ -234,12 +222,12 @@
 	/** Flush pending edits, then run a prev/next navigation. */
 	async function advance(go: (() => void) | undefined) {
 		if (!go) return;
-		await flush();
+		await autosave.commit();
 		go();
 	}
 
 	async function handleClose() {
-		await flush();
+		await autosave.commit();
 		onclose();
 	}
 
@@ -270,11 +258,11 @@
 	{#snippet titleArea()}
 		<span class="min-w-0 flex-1 truncate text-sm font-medium" {title}>{title}</span>
 		<span class="shrink-0 text-xs text-muted-foreground">
-			{#if saveStatus === 'saving'}
+			{#if autosave.status === 'saving'}
 				<Loader2 class="inline size-3 animate-spin" /> Saving…
-			{:else if saveStatus === 'saved' && !isDirty}
+			{:else if autosave.status === 'saved' && !isDirty}
 				<Check class="inline size-3 text-green-600" /> Saved
-			{:else if saveStatus === 'error'}
+			{:else if autosave.status === 'error'}
 				<span class="text-destructive">Save failed</span>
 			{/if}
 		</span>
@@ -329,7 +317,7 @@
 									missing={isMissing}
 									missingName={mf?.[key] ?? mr?.[key]}
 									outOfClass={isOutOfClass}
-									onEnterSave={flush}
+									oncommit={() => autosave.commit()}
 									loadSuggestions={() =>
 										apiGetFieldValuesForType(typeId, key).then((r) => r.values)}
 								/>

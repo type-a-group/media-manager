@@ -5,6 +5,7 @@
 	import { Search, File, X, ExternalLink, Plus } from 'lucide-svelte';
 	import { apiListFiles, apiListClassMembers, apiBlobUrl } from '$lib/api/files.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
+	import { refreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import type { FileItem } from '$lib/core/types.js';
 
 	let {
@@ -81,6 +82,18 @@
 	// can show the resolved filename instead of the raw file_id.
 	$effect(() => {
 		if (selectedIds.length > 0 && files.length === 0 && !loading) fetchFiles();
+	});
+
+	// The cached `files` list backs the collapsed trigger's label/thumbnail. When a blob is renamed or
+	// its class title-by value changes elsewhere (which bumps `refreshTrigger`), refresh the cache so a
+	// closed picker doesn't keep a stale label until reopened. Skips the initial value (no-op on mount).
+	let lastRefresh = $state(0);
+	$effect(() => {
+		const n = $refreshTrigger;
+		if (n !== lastRefresh) {
+			lastRefresh = n;
+			if (selectedIds.length > 0) fetchFiles();
+		}
 	});
 
 	function commit(next: string | string[]) {

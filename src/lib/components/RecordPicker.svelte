@@ -5,6 +5,7 @@
 	import { Search, FileText, X, ExternalLink, Plus } from 'lucide-svelte';
 	import { apiListRecordsForType } from '$lib/api/client.js';
 	import { recordListTitle } from '$lib/core/recordDisplay.js';
+	import { refreshTrigger } from '$lib/stores/refreshTrigger.js';
 	import type { JsonListItem } from '$lib/core/types.js';
 
 	/**
@@ -84,6 +85,18 @@
 	// Resolve already-selected ids to titles even before the dialog is first opened.
 	$effect(() => {
 		if (selectedIds.length > 0 && records.length === 0 && !loading) fetchRecords();
+	});
+
+	// The cached `records` list backs the collapsed trigger's title. When a referenced record's title
+	// changes elsewhere (which bumps `refreshTrigger`), refresh the cache so a closed picker doesn't keep
+	// a stale title until reopened. Skips the initial value (no-op on mount).
+	let lastRefresh = $state(0);
+	$effect(() => {
+		const n = $refreshTrigger;
+		if (n !== lastRefresh) {
+			lastRefresh = n;
+			if (selectedIds.length > 0) fetchRecords();
+		}
 	});
 
 	function commit(next: string | string[]) {

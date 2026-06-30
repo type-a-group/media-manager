@@ -26,7 +26,10 @@
 	 * @param value - Two-way bound value; its shape matches the field type (host coerces on save).
 	 * @param missing - Mark a broken `file` reference (renders a destructive hint).
 	 * @param missingName - Optional name of the missing file (shown in the hint).
-	 * @param onEnterSave - Optional: bare Enter on a string field commits (blur + save).
+	 * @param oncommit - Optional: fired when this field reaches a committed value the host should
+	 *   persist — on **blur** of a text/number/url input, **Enter** on a string field, and immediately
+	 *   on a **discrete** change (checkbox, dropdown, date, file/record pick, list add/remove). The host
+	 *   wires it to its autosave `commit()`; per-keystroke typing only updates `value` (stays dirty).
 	 * @param id - Optional id applied to the primary control (for an external `<Label for>`).
 	 * @param loadSuggestions - Optional host-supplied loader of distinct existing values for this field.
 	 *   When provided and the field has `suggest` enabled (string, or list with string items), the input
@@ -39,7 +42,7 @@
 		missing = false,
 		missingName,
 		outOfClass = false,
-		onEnterSave,
+		oncommit,
 		id,
 		loadSuggestions
 	}: {
@@ -49,7 +52,7 @@
 		missingName?: string;
 		/** A class-scoped `file` ref whose blob exists but isn't a member of the field's class. */
 		outOfClass?: boolean;
-		onEnterSave?: () => void;
+		oncommit?: () => void;
 		id?: string;
 		loadSuggestions?: () => Promise<string[]>;
 	} = $props();
@@ -153,12 +156,14 @@
 			newItem = '';
 		}
 		value = arr;
+		oncommit?.();
 	}
 
 	function removeListItem(i: number) {
 		const arr = [...listItems];
 		arr.splice(i, 1);
 		value = arr;
+		oncommit?.();
 	}
 </script>
 
@@ -211,12 +216,22 @@
 {/snippet}
 
 {#if def.type === 'boolean'}
-	<Checkbox {id} checked={value === true} onCheckedChange={(v) => (value = v === true)} />
+	<Checkbox
+		{id}
+		checked={value === true}
+		onCheckedChange={(v) => {
+			value = v === true;
+			oncommit?.();
+		}}
+	/>
 {:else if def.type === 'date'}
 	<DateField
 		{id}
 		value={typeof value === 'string' ? value : ''}
-		onValueChange={(v) => (value = v)}
+		onValueChange={(v) => {
+			value = v;
+			oncommit?.();
+		}}
 	/>
 {:else if def.type === 'number'}
 	<Input
@@ -224,6 +239,7 @@
 		type="number"
 		value={typeof value === 'number' ? value : (value ?? '')}
 		oninput={(e) => (value = e.currentTarget.value === '' ? 0 : Number(e.currentTarget.value))}
+		onblur={() => oncommit?.()}
 	/>
 {:else if def.type === 'dropdown'}
 	{#if multiselect}
@@ -238,6 +254,7 @@
 							if (checked) set.add(opt);
 							else set.delete(opt);
 							value = [...set];
+							oncommit?.();
 						}}
 					/>
 					<Label for={`${uid}-${i}`} class="font-normal">{opt}</Label>
@@ -245,7 +262,14 @@
 			{/each}
 		</div>
 	{:else}
-		<Select.Root type="single" value={stringValue} onValueChange={(v) => (value = v)}>
+		<Select.Root
+			type="single"
+			value={stringValue}
+			onValueChange={(v) => {
+				value = v;
+				oncommit?.();
+			}}
+		>
 			<Select.Trigger {id} class="w-full">{stringValue || 'Select…'}</Select.Trigger>
 			<Select.Content>
 				{#each def.options ?? [] as opt (opt)}
@@ -265,6 +289,7 @@
 					placeholder="Display name"
 					value={u.display_name}
 					oninput={(e) => updateUrlItem(i, { display_name: e.currentTarget.value })}
+					onblur={() => oncommit?.()}
 				/>
 				<Input
 					class="min-w-0 flex-1"
@@ -272,6 +297,7 @@
 					placeholder="https://…"
 					value={u.url}
 					oninput={(e) => updateUrlItem(i, { url: e.currentTarget.value })}
+					onblur={() => oncommit?.()}
 				/>
 				{@render openLink(u.url)}
 				<Button
@@ -348,6 +374,7 @@
 			placeholder="Display name"
 			value={url.display_name}
 			oninput={(e) => setUrl({ display_name: e.currentTarget.value })}
+			onblur={() => oncommit?.()}
 		/>
 		<Input
 			{id}
@@ -356,6 +383,7 @@
 			placeholder="https://…"
 			value={url.url}
 			oninput={(e) => setUrl({ url: e.currentTarget.value })}
+			onblur={() => oncommit?.()}
 		/>
 		{@render openLink(url.url)}
 	</div>
@@ -365,7 +393,10 @@
 			{multiselect}
 			classId={classId || undefined}
 			value={refValue}
-			onSelect={(v) => (value = v)}
+			onSelect={(v) => {
+				value = v;
+				oncommit?.();
+			}}
 		/>
 		{@render linkedHint()}
 		{#if missing}
@@ -402,7 +433,15 @@
 	</div>
 {:else if def.type === 'record'}
 	<div class="flex w-full flex-col gap-1">
-		<RecordPicker {recordType} {multiselect} value={refValue} onSelect={(v) => (value = v)} />
+		<RecordPicker
+			{recordType}
+			{multiselect}
+			value={refValue}
+			onSelect={(v) => {
+				value = v;
+				oncommit?.();
+			}}
+		/>
 		{@render linkedHint()}
 		{#if missing}
 			<div class="mt-1 flex items-center justify-between gap-2">
@@ -427,14 +466,15 @@
 		value={stringValue}
 		onValueChange={(v) => (value = v)}
 		loadSuggestions={loadSuggestions!}
-		oncommit={onEnterSave}
+		{oncommit}
 	/>
 {:else}
 	<textarea
 		{id}
 		rows="1"
 		use:autogrow={value}
-		onkeydown={(e) => onEnterSave && blurSaveOnEnter(e, onEnterSave)}
+		onkeydown={(e) => blurSaveOnEnter(e)}
+		onblur={() => oncommit?.()}
 		class="flex w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 		value={stringValue}
 		oninput={(e) => (value = e.currentTarget.value)}

@@ -864,24 +864,6 @@ export function createJsonRepoForType(typeId: string) {
 	}
 
 	/**
-	 * Update the same properties on many records in one call.
-	 *
-	 * @param ids - Record ids to update
-	 * @param patch - Property patch applied to each
-	 * @returns The updated records
-	 */
-	async function bulkUpdatePropertiesByIds(
-		ids: ImageId[],
-		patch: Record<string, unknown>
-	): Promise<JsonRecord[]> {
-		const out: JsonRecord[] = [];
-		for (const id of ids) {
-			out.push(await updatePropertiesById(id, patch));
-		}
-		return out;
-	}
-
-	/**
 	 * Delete many records in one call.
 	 *
 	 * @param ids - Record ids to delete
@@ -995,7 +977,6 @@ export function createJsonRepoForType(typeId: string) {
 		listRecords,
 		getRecordById,
 		updatePropertiesById,
-		bulkUpdatePropertiesByIds,
 		deleteRecord,
 		bulkDeleteRecordsByIds,
 		createRecord,

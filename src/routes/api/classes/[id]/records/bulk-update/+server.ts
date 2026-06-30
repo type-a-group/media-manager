@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
-import { bulkUpdateRecords } from '$lib/storage/classRepo.js';
+import { updateClassRecordLinked } from '$lib/storage/relationLinks.js';
 
 const BulkUpdateSchema = z.object({
 	ids: z.array(ImageIdSchema).min(1),
@@ -15,7 +15,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const parsed = BulkUpdateSchema.safeParse(await request.json());
 	if (!parsed.success) throw error(400, 'Invalid bulk update payload');
 	try {
-		await bulkUpdateRecords(params.id, parsed.data.ids, parsed.data.patch);
+		// Route each member through the link-aware wrapper so a bulk-set of a linked `record` field
+		// mirrors onto the partner type's file field. Falls through to a bare write when not linked.
+		for (const fileId of parsed.data.ids)
+			await updateClassRecordLinked(params.id, fileId, parsed.data.patch);
 		return json({ updated: parsed.data.ids.length });
 	} catch (err) {
 		const e = err as Error;

@@ -1,9 +1,9 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import { z } from 'zod';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
+import { updateTypeRecordLinked } from '$lib/storage/relationLinks.js';
 
 const BulkUpdateRequestSchema = z.object({
 	ids: z.array(ImageIdSchema),
@@ -17,9 +17,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	try {
 		const typeId = params.typeId;
-		const repo = getMediaTypeRepo(typeId);
-		const updated = await repo.bulkUpdatePropertiesByIds(parsed.data.ids, parsed.data.patch);
-		return json({ updated: updated.length });
+		// Route each record through the link-aware wrapper so a bulk-set of a linked `file` field mirrors
+		// onto the partner class's record field — parity with the single-record POST. Falls through to a
+		// bare write per record when no linked field is touched.
+		for (const id of parsed.data.ids) await updateTypeRecordLinked(typeId, id, parsed.data.patch);
+		return json({ updated: parsed.data.ids.length });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;

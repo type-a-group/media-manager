@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -48,6 +48,7 @@
 	import { ChevronDown, ListChecks, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
+	import { refreshTrigger, triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { SortDir } from '$lib/core/sort.js';
 	import type { ClassSummary, FileItem } from '$lib/core/types.js';
 
@@ -340,8 +341,17 @@
 		}
 	}
 
-	async function loadFiles() {
-		loading = true;
+	/**
+	 * (Re)load the current file listing.
+	 *
+	 * `quiet` performs a **background** refresh that does NOT toggle `loading` (so the grid never flashes)
+	 * — used after a per-file field autosave in a catalog view, where the tile's server-resolved
+	 * `title_value` (the title-by field) and verbose `field_values` change but nothing structural does.
+	 * The open editor panel is undisturbed: its `sections` reload only when `file.id`/`file.file_name`
+	 * change, neither of which a field edit touches.
+	 */
+	async function loadFiles({ quiet = false }: { quiet?: boolean } = {}) {
+		if (!quiet) loading = true;
 		try {
 			if (soloClass) {
 				if (catalogLoadedFor !== soloClass) {
@@ -392,9 +402,43 @@
 				files = data.files;
 			}
 		} finally {
-			loading = false;
+			if (!quiet) loading = false;
 		}
 	}
+
+	/**
+	 * Debounced list-refresh bump for the high-frequency field-autosave path. In a catalog the edited
+	 * field may be the title-by (drives `title_value`) or a verbose field (both server-resolved), and a
+	 * linked `record`-field edit propagates to the partner Records type. Firing `refreshTrigger` (rather
+	 * than calling `loadFiles` inline) drives this page's own quiet refetch via the subscription below AND
+	 * notifies other tabs / mounted pickers. Coalesced so rapid autosaves don't storm.
+	 */
+	let referenceRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleReferenceRefresh() {
+		if (referenceRefreshTimer) clearTimeout(referenceRefreshTimer);
+		referenceRefreshTimer = setTimeout(() => {
+			referenceRefreshTimer = null;
+			triggerImageListRefresh();
+		}, 650);
+	}
+	onDestroy(() => {
+		if (referenceRefreshTimer) clearTimeout(referenceRefreshTimer);
+	});
+
+	// Quiet refetch on any list-refresh bump: this page's own debounced reference refresh, a structural
+	// change / bulk op here, OR a cross-tab edit (a record retitled or deleted in the Records app that a
+	// tile renders via a `record`-field, a blob changed in another tab). Quiet so an open editor isn't
+	// disturbed.
+	$effect(() => {
+		let prev = 0;
+		const unsub = refreshTrigger.subscribe((n) => {
+			if (n !== prev) {
+				prev = n;
+				loadFiles({ quiet: true });
+			}
+		});
+		return unsub;
+	});
 
 	/** Re-run the catalog member query when the user picks a different group-by field. */
 	async function changeCatalogGroupBy(field: string) {
@@ -736,6 +780,8 @@
 		selectedIds.clear();
 		await loadMeta();
 		await loadFiles();
+		// Membership change can flip a class-scoped picker's `_out_of_class` flag; notify pickers/tabs.
+		triggerImageListRefresh();
 	}
 
 	async function bulkRemove() {
@@ -744,6 +790,9 @@
 		selectedIds.clear();
 		await loadMeta();
 		await loadFiles();
+		// Removing membership also unlinks the blob from any linked record (server-side cascade), so the
+		// partner Records type changed — notify it (and pickers) here and in other tabs.
+		triggerImageListRefresh();
 	}
 
 	async function bulkDelete() {
@@ -753,6 +802,9 @@
 		deleteFilesOpen = false;
 		await loadMeta();
 		await loadFiles();
+		// Deleting a blob turns any record's `file`-field reference to it into a missing-ref; refresh an
+		// open Records grid so that surfaces there too.
+		triggerImageListRefresh();
 	}
 
 	async function onUpload(ev: Event) {
@@ -1170,9 +1222,19 @@
 			onPrev={() => gotoFile(-1)}
 			onNext={() => gotoFile(1)}
 			onclose={() => (editorFileId = null)}
+			onSaved={() => {
+				// A field autosave: nothing structural changed, but the edited field may be the catalog
+				// title-by / a verbose field (server-resolved), or a linked `record`-field that propagates
+				// to the partner Records type. Debounced bump → this page's own quiet refetch + other tabs /
+				// pickers, without disturbing the open editor or storming on rapid edits.
+				scheduleReferenceRefresh();
+			}}
 			onStructureChanged={async () => {
 				await loadMeta();
 				await loadFiles();
+				// A rename / metadata change here can alter a filename that a record renders via a
+				// `file`-field. Nudge an open Records grid (a separate sub-app) to refresh quietly.
+				triggerImageListRefresh();
 			}}
 		/>
 	{/if}

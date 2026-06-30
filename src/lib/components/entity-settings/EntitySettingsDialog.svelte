@@ -9,7 +9,7 @@
 	import IconPicker from '$lib/components/IconPicker.svelte';
 	import { Check, Loader2 } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
-	import { debouncedAutosave } from '$lib/actions/debouncedAutosave.svelte.js';
+	import { createAutosave } from '$lib/actions/autosave.svelte.js';
 	import type { IconId } from '$lib/core/icons.js';
 	import type { EntitySettingsAdapter, EntityGeneralConfig } from './types.js';
 
@@ -25,9 +25,9 @@
 	 * @param adapter - Data layer (load/save general config, schema adapter, delete).
 	 * @param name - Current display name (for the title; the General tab can rename it).
 	 * @param open - Bindable dialog open state.
-	 * @param onchanged - Called after a (debounced) autosave / schema mutation (host refreshes
-	 *   names/counts/list). The General tab has no Save button — edits persist on a ~600ms debounce and
-	 *   on close, mirroring the editor-panel autosave policy ({@link debouncedAutosave}).
+	 * @param onchanged - Called after an autosave / schema mutation (host refreshes names/counts/list).
+	 *   The General tab has no Save button — edits persist on field blur / discrete change, on close, and
+	 *   on a slow 3s idle safety net, mirroring the editor-panel autosave policy ({@link createAutosave}).
 	 * @param ondeleted - Called after the entity is deleted (host clears selection + reloads).
 	 */
 	let {
@@ -48,8 +48,6 @@
 	let tab = $state<Tab>('general');
 
 	let loading = $state(false);
-	let saving = $state(false);
-	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let deleting = $state(false);
 	let confirmDeleteOpen = $state(false);
 
@@ -72,7 +70,11 @@
 	// has drifted from the last save. This is the sole signal driving the debounced autosave.
 	const isDirty = $derived(!loading && displayName.trim() !== '' && snapshot !== savedSnapshot);
 
-	const autosave = debouncedAutosave({ isDirty: () => isDirty, save: saveGeneral });
+	const autosave = createAutosave({
+		isDirty: () => isDirty,
+		save: saveGeneral,
+		errorMessage: 'Failed to save settings'
+	});
 
 	const titleByLabel = $derived(
 		titleBy ? (fields.find((f) => f.key === titleBy)?.label ?? titleBy) : 'Default'
@@ -89,7 +91,6 @@
 
 	async function load() {
 		loading = true;
-		saveStatus = 'idle';
 		try {
 			const cfg: EntityGeneralConfig = await adapter.load();
 			displayName = cfg.displayName;
@@ -108,36 +109,28 @@
 	}
 
 	// (Re)load whenever the dialog opens (reset to the General tab); flush any pending edit on close so
-	// nothing is lost if the user closes inside the debounce window.
+	// nothing is lost if the user closes before the safety net fires.
 	$effect(() => {
 		if (open) {
 			tab = 'general';
 			load();
 		} else {
-			void autosave.flush();
+			void autosave.commit();
 		}
 	});
 
-	/** Persist the General tab if dirty. Called by the debounced autosave and on close. */
+	/**
+	 * Persist the General tab if dirty. Advances the saved baseline and notifies the host. Throws on
+	 * failure — {@link createAutosave} owns the status/saving/toast bookkeeping. No-ops on a blank name
+	 * (we never autosave one) or when nothing changed.
+	 */
 	async function saveGeneral() {
 		const trimmed = displayName.trim();
-		// Never autosave a blank name; the snapshot is already up to date when nothing changed.
-		if (loading || saving || !trimmed || snapshot === savedSnapshot) return;
+		if (loading || !trimmed || snapshot === savedSnapshot) return;
 		const committed = snapshot;
-		saving = true;
-		saveStatus = 'saving';
-		try {
-			await adapter.save({ displayName: trimmed, icon, titleBy, subtitleBy, groupBy });
-			savedSnapshot = committed;
-			saveStatus = 'saved';
-			onchanged?.();
-		} catch (e) {
-			console.error(e);
-			saveStatus = 'error';
-			toast.error('Failed to save settings');
-		} finally {
-			saving = false;
-		}
+		await adapter.save({ displayName: trimmed, icon, titleBy, subtitleBy, groupBy });
+		savedSnapshot = committed;
+		onchanged?.();
 	}
 
 	async function doDelete() {
@@ -212,19 +205,35 @@
 							<IconPicker
 								value={icon}
 								fallback={fallbackIcon}
-								onSelect={(id) => (icon = id ?? '')}
+								onSelect={(id) => {
+									icon = id ?? '';
+									void autosave.commit();
+								}}
 								label="Choose {adapter.noun} icon"
 							/>
 						</div>
 						<div class="flex flex-1 flex-col gap-2">
 							<Label for="entity-display-name">Display name</Label>
-							<Input id="entity-display-name" bind:value={displayName} placeholder="Name" />
+							<Input
+								id="entity-display-name"
+								bind:value={displayName}
+								placeholder="Name"
+								onblur={() => autosave.commit()}
+								onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+							/>
 						</div>
 					</div>
 
 					<div class="flex flex-col gap-2">
 						<Label>Title rows by</Label>
-						<Select.Root type="single" value={titleBy} onValueChange={(v) => (titleBy = v ?? '')}>
+						<Select.Root
+							type="single"
+							value={titleBy}
+							onValueChange={(v) => {
+								titleBy = v ?? '';
+								void autosave.commit();
+							}}
+						>
 							<Select.Trigger>{titleByLabel}</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="">Default</Select.Item>
@@ -244,7 +253,10 @@
 							<Select.Root
 								type="single"
 								value={subtitleBy}
-								onValueChange={(v) => (subtitleBy = v ?? '')}
+								onValueChange={(v) => {
+									subtitleBy = v ?? '';
+									void autosave.commit();
+								}}
 							>
 								<Select.Trigger>{subtitleByLabel}</Select.Trigger>
 								<Select.Content>
@@ -263,7 +275,14 @@
 					{#if adapter.hasGroupBy}
 						<div class="flex flex-col gap-2">
 							<Label>Group by</Label>
-							<Select.Root type="single" value={groupBy} onValueChange={(v) => (groupBy = v ?? '')}>
+							<Select.Root
+								type="single"
+								value={groupBy}
+								onValueChange={(v) => {
+									groupBy = v ?? '';
+									void autosave.commit();
+								}}
+							>
 								<Select.Trigger>{groupByLabel}</Select.Trigger>
 								<Select.Content>
 									<Select.Item value="">None</Select.Item>
@@ -276,11 +295,11 @@
 					{/if}
 
 					<div class="flex h-4 justify-end text-xs text-muted-foreground">
-						{#if saveStatus === 'saving'}
+						{#if autosave.status === 'saving'}
 							<span><Loader2 class="inline size-3 animate-spin" /> Saving…</span>
-						{:else if saveStatus === 'saved' && !isDirty}
+						{:else if autosave.status === 'saved' && !isDirty}
 							<span><Check class="inline size-3 text-green-600" /> Saved</span>
-						{:else if saveStatus === 'error'}
+						{:else if autosave.status === 'error'}
 							<span class="text-destructive">Save failed</span>
 						{/if}
 					</div>

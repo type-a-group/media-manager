@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
 	import { goto } from '$app/navigation';
@@ -28,7 +28,11 @@
 		type MediaTypeSummary
 	} from '$lib/api/client.js';
 	import { currentMediaTypeStore } from '$lib/stores/currentMediaType.js';
-	import { refreshTrigger, schemaRefreshTrigger } from '$lib/stores/refreshTrigger.js';
+	import {
+		refreshTrigger,
+		schemaRefreshTrigger,
+		triggerImageListRefresh
+	} from '$lib/stores/refreshTrigger.js';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { isUserFieldKey, schemaUserFields } from '$lib/core/fieldKeys.js';
 	import { OPERATORS } from '$lib/core/filters.js';
@@ -207,9 +211,19 @@
 		}
 	}
 
-	async function loadRecords() {
+	/**
+	 * Fetch the active type's record list.
+	 *
+	 * `quiet` performs a **background** refresh used after an edit that could change a value OTHER rows
+	 * render *by reference* — a record's title shown via another row's `record`-field, or a renamed blob
+	 * shown via a `file`-field (the optimistic {@link patchRecordRow} only fixes the *edited* row). It (a)
+	 * does NOT toggle `loading`, so the grid never flashes, and (b) preserves the currently-open record's
+	 * in-memory row so a refetch landing mid-typing can't clobber unsaved keystrokes (`patchRecordRow`
+	 * already keeps that one row correct). A normal (non-quiet) load replaces every row.
+	 */
+	async function loadRecords({ quiet = false }: { quiet?: boolean } = {}) {
 		if (!activeTypeId || isGlobals) return;
-		loading = true;
+		if (!quiet) loading = true;
 		try {
 			// Per-field "is empty" (Item 10) rides the existing filters param as a single clause; the
 			// "Incomplete only" toggle goes via the dedicated incomplete flag (the AND-only clause model
@@ -230,12 +244,20 @@
 				// Verbose grid (Item 8): only request inline field values when the mode is on with a selection.
 				fields: verbose && verboseFields.length ? verboseFields : undefined
 			});
-			records = 'records' in data ? (data.records as JsonListItem[]) : [];
+			const next = 'records' in data ? (data.records as JsonListItem[]) : [];
+			// A quiet refresh must not stomp the open row: keep its current in-memory version (which
+			// patchRecordRow keeps fresh) so an in-flight edit survives a background refetch.
+			records =
+				quiet && selectedRecordId
+					? next.map((r) =>
+							r.id === selectedRecordId ? (records.find((o) => o.id === selectedRecordId) ?? r) : r
+						)
+					: next;
 		} catch (e) {
 			console.error(e);
-			toast.error('Failed to load records');
+			if (!quiet) toast.error('Failed to load records');
 		} finally {
-			loading = false;
+			if (!quiet) loading = false;
 		}
 	}
 
@@ -245,14 +267,36 @@
 	 * group value identical to what a reload would produce, while avoiding the full-list re-render that
 	 * used to flash the page and drop in-flight keystrokes in the open editor.
 	 */
+	/**
+	 * The field rows are actually titled by — mirrors the server's resolution in `jsonRepo.listRecords`
+	 * (explicit `displayField` → `name` → first string field → first field). The optimistic patch and the
+	 * reference-change check below must use THIS, not the raw `titleField`: when no `displayField` is set
+	 * the page's `titleField` is `''`, but the server still populates `title_value` from the default — so
+	 * projecting with `titleField || null` would wrongly blank the row's title and hide a title change.
+	 */
+	const effectiveTitleField = $derived.by(() => {
+		if (titleField) return titleField;
+		const s = schema;
+		if (!s) return null;
+		const keys = Object.keys(s);
+		if (keys.includes('name')) return 'name';
+		return keys.find((k) => s[k]?.type === 'string') ?? keys[0] ?? null;
+	});
+
 	function patchRecordRow(updated: Record<string, unknown>) {
 		if (!schema) return;
 		const id = updated.id as string;
 		const projected = projectRecordRow(schema, updated, {
-			titleField: titleField || null,
+			titleField: effectiveTitleField,
 			subtitleField: subtitleField || null,
 			groupBy: groupBy || null
 		});
+		// Did the edited record's *display title* change? If so, any OTHER row in this type that points
+		// at it via a `record`-field renders a now-stale title (in its tile, verbose row, or a group
+		// header) — schedule a quiet background refresh so those referencing rows catch up without
+		// flashing.
+		const prev = records.find((r) => r.id === id);
+		const titleChanged = prev != null && prev.title_value !== projected.title_value;
 		records = records.map((r) =>
 			r.id === id
 				? {
@@ -264,7 +308,31 @@
 					}
 				: r
 		);
+		// Two cases need the quiet refetch: (1) a title change (above) — referencing rows; (2) the verbose
+		// grid is on — this patch does NOT recompute the edited row's server-resolved `field_values`, so a
+		// changed `file`/`record` verbose field would otherwise show its old filename/title until reload.
+		if (titleChanged || (verbose && verboseFields.length > 0)) scheduleReferenceRefresh();
 	}
+
+	/**
+	 * Debounced refresh of server-resolved display values the optimistic patch can't recompute — a
+	 * *referenced* entity's title/filename on other rows, and the edited row's own verbose `field_values`.
+	 * Coalesced (one trailing fire after edits settle) so rapid edits don't storm. Fires the shared
+	 * `refreshTrigger`, which (a) drives THIS page's own quiet refetch via its subscription below, (b)
+	 * broadcasts to other tabs (a Files grid / Records grid referencing this record by id), and (c)
+	 * refreshes any mounted file/record picker — all without flashing or disturbing the open editor.
+	 */
+	let referenceRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleReferenceRefresh() {
+		if (referenceRefreshTimer) clearTimeout(referenceRefreshTimer);
+		referenceRefreshTimer = setTimeout(() => {
+			referenceRefreshTimer = null;
+			triggerImageListRefresh();
+		}, 650);
+	}
+	onDestroy(() => {
+		if (referenceRefreshTimer) clearTimeout(referenceRefreshTimer);
+	});
 
 	/** Switch the active type, resetting per-type view state. The URL is kept in sync by {@link syncUrl}. */
 	function selectType(id: string) {
@@ -401,6 +469,9 @@
 	async function afterBulk() {
 		selectedIds.clear();
 		await loadRecords();
+		// A bulk set-field/delete can change titles or drop records that other grids/pickers reference;
+		// notify them (here and in other tabs).
+		triggerImageListRefresh();
 	}
 
 	// Initial load: settings (rail state), the type list, and the initial active type from ?type=.
@@ -478,13 +549,16 @@
 		if (activeTypeId && !isGlobals) loadRecords();
 	});
 
-	// Shared refresh triggers (fired by SchemaEditorButton / bulk actions).
+	// Quiet refetch on any list-refresh bump: this page's own debounced reference refresh
+	// (`scheduleReferenceRefresh`), a record delete/bulk op here, OR a cross-tab edit (a blob renamed in
+	// the Files app, a linked record edited in another tab) that changes a value this type renders by id.
+	// Quiet so an open editor here isn't disturbed.
 	$effect(() => {
 		let prev = 0;
 		const unsub = refreshTrigger.subscribe((n) => {
 			if (n !== prev) {
 				prev = n;
-				if (activeTypeId && !isGlobals) loadRecords();
+				if (activeTypeId && !isGlobals) loadRecords({ quiet: true });
 			}
 		});
 		return unsub;
@@ -574,6 +648,9 @@
 				ondeleted={async () => {
 					selectedRecordId = null;
 					await loadRecords();
+					// A deleted record turns any blob's `record`-field reference to it into a missing-ref;
+					// notify the Files grid / pickers (here and in other tabs) so that surfaces there too.
+					triggerImageListRefresh();
 				}}
 			/>
 		{/if}
