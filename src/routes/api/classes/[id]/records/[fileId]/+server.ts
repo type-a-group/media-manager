@@ -2,7 +2,8 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
-import { getRecord, updateRecord } from '$lib/storage/classRepo.js';
+import { getRecord } from '$lib/storage/classRepo.js';
+import { updateClassRecordLinked } from '$lib/storage/relationLinks.js';
 
 /** GET: One blob's record within a class (404 if not a member). */
 export const GET: RequestHandler = async ({ params }) => {
@@ -28,7 +29,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	const patch = UpdatePropertiesRequestSchema.safeParse(await request.json());
 	if (!patch.success) throw error(400, 'Invalid properties payload');
 	try {
-		return json(await updateRecord(params.id, fileId.data, patch.data));
+		return json(await updateClassRecordLinked(params.id, fileId.data, patch.data));
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
 		const e = err as Error;

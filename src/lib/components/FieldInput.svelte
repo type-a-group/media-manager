@@ -7,9 +7,12 @@
 	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import { X, TriangleAlert, ExternalLink } from 'lucide-svelte';
+	import { X, TriangleAlert, ExternalLink, Link2 } from 'lucide-svelte';
 	import { autogrow, blurSaveOnEnter } from '$lib/actions/autogrow.js';
+	import { fieldSupportsSuggest } from '$lib/core/types.js';
 	import FilePicker from './FilePicker.svelte';
+	import RecordPicker from './RecordPicker.svelte';
+	import SuggestInput from './SuggestInput.svelte';
 
 	/**
 	 * The single schema-driven input for one field value, shared by every editor (the files-hub
@@ -24,28 +27,59 @@
 	 * @param missingName - Optional name of the missing file (shown in the hint).
 	 * @param onEnterSave - Optional: bare Enter on a string field commits (blur + save).
 	 * @param id - Optional id applied to the primary control (for an external `<Label for>`).
+	 * @param loadSuggestions - Optional host-supplied loader of distinct existing values for this field.
+	 *   When provided and the field has `suggest` enabled (string, or list with string items), the input
+	 *   becomes an autocomplete combobox ({@link SuggestInput}). The host binds it to its entity + key;
+	 *   omitting it (e.g. globals, which has no sibling rows) leaves the plain input.
 	 */
 	let {
 		def,
 		value = $bindable(),
 		missing = false,
 		missingName,
+		outOfClass = false,
 		onEnterSave,
-		id
+		id,
+		loadSuggestions
 	}: {
 		def: FieldDefinition;
 		value: unknown;
 		missing?: boolean;
 		missingName?: string;
+		/** A class-scoped `file` ref whose blob exists but isn't a member of the field's class. */
+		outOfClass?: boolean;
 		onEnterSave?: () => void;
 		id?: string;
+		loadSuggestions?: () => Promise<string[]>;
 	} = $props();
 
-	const multiselect = $derived(
-		def.type === 'dropdown' && (def as { multiselect?: boolean }).multiselect === true
+	// `multiselect` (array vs single value) is meaningful for dropdown, file, and record fields.
+	const multiselect = $derived((def as { multiselect?: boolean }).multiselect === true);
+	/** Target record type for a `record` field; '' when unconfigured (picker shows an empty state). */
+	const recordType = $derived((def as { recordType?: string }).recordType ?? '');
+	/** Class scope for a `file` field; '' = any file (picker unscoped). */
+	const classId = $derived((def as { classId?: string }).classId ?? '');
+	/** A `file`/`record` field that's half of a two-way relation link (edits mirror to the partner). */
+	const linked = $derived(!!(def as { linkedField?: string }).linkedField);
+	/** Normalized `file`/`record`-field value: an id array (multiselect) or a single id string. */
+	const refValue = $derived<string | string[]>(
+		multiselect
+			? Array.isArray(value)
+				? (value as string[])
+				: []
+			: typeof value === 'string'
+				? value
+				: ''
 	);
 	const itemType = $derived<ListItemType>(
 		(def as { itemTypes?: ListItemType[] }).itemTypes?.[0] ?? 'string'
+	);
+
+	/** Whether to render the autocomplete combobox: field opted in, type qualifies, host wired a loader. */
+	const suggestActive = $derived(
+		!!(def as { suggest?: boolean }).suggest &&
+			!!loadSuggestions &&
+			fieldSupportsSuggest(def.type, [itemType])
 	);
 
 	/** Per-instance id base so multiselect checkbox/label pairs associate without colliding. */
@@ -159,6 +193,22 @@
 	</Tooltip.Root>
 {/snippet}
 
+<!-- Subtle "this field is half of a two-way link" hint, shown under linked file/record pickers. -->
+{#snippet linkedHint()}
+	{#if linked}
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<span class="flex w-fit items-center gap-1 text-xs text-muted-foreground">
+					<Link2 class="size-3 shrink-0" /> Linked
+				</span>
+			</Tooltip.Trigger>
+			<Tooltip.Content side="top" sideOffset={6}>
+				Two-way relation — editing this also updates the paired field.
+			</Tooltip.Content>
+		</Tooltip.Root>
+	{/if}
+{/snippet}
+
 {#if def.type === 'boolean'}
 	<Checkbox {id} checked={value === true} onCheckedChange={(v) => (value = v === true)} />
 {:else if def.type === 'number'}
@@ -261,13 +311,26 @@
 			</div>
 		{/if}
 		<div class="flex flex-wrap items-end gap-2">
-			<Input
-				class="min-w-0 flex-1"
-				type={itemType === 'number' ? 'number' : 'text'}
-				placeholder="Add item"
-				bind:value={newItem}
-				onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
-			/>
+			{#if suggestActive}
+				<div class="min-w-0 flex-1">
+					<SuggestInput
+						placeholder="Add item"
+						bind:value={newItem}
+						loadSuggestions={loadSuggestions!}
+						exclude={listItems.map((it) => String(it))}
+						oncommit={addListItem}
+						keepOpenAfterCommit
+					/>
+				</div>
+			{:else}
+				<Input
+					class="min-w-0 flex-1"
+					type={itemType === 'number' ? 'number' : 'text'}
+					placeholder="Add item"
+					bind:value={newItem}
+					onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addListItem())}
+				/>
+			{/if}
 			<Button type="button" variant="outline" size="sm" onclick={addListItem}>Add</Button>
 		</div>
 	</div>
@@ -291,19 +354,74 @@
 	</div>
 {:else if def.type === 'file'}
 	<div class="flex w-full flex-col gap-1">
-		<FilePicker value={stringValue} onSelect={(fid) => (value = fid)} />
+		<FilePicker
+			{multiselect}
+			classId={classId || undefined}
+			value={refValue}
+			onSelect={(v) => (value = v)}
+		/>
+		{@render linkedHint()}
 		{#if missing}
 			<div class="mt-1 flex items-center justify-between gap-2">
 				<span class="flex items-center gap-1 text-xs text-destructive">
 					<TriangleAlert class="size-3 shrink-0" />
 					{missingName ? `Missing file: ${missingName}` : 'File not found on disk'}
 				</span>
-				<Button variant="ghost" size="sm" class="h-6 px-2 text-xs" onclick={() => (value = '')}>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-6 px-2 text-xs"
+					onclick={() => (value = multiselect ? [] : '')}
+				>
+					Clear
+				</Button>
+			</div>
+		{:else if outOfClass}
+			<div class="mt-1 flex items-center justify-between gap-2">
+				<span class="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
+					<TriangleAlert class="size-3 shrink-0" />
+					Not a member of the required class
+				</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-6 px-2 text-xs"
+					onclick={() => (value = multiselect ? [] : '')}
+				>
 					Clear
 				</Button>
 			</div>
 		{/if}
 	</div>
+{:else if def.type === 'record'}
+	<div class="flex w-full flex-col gap-1">
+		<RecordPicker {recordType} {multiselect} value={refValue} onSelect={(v) => (value = v)} />
+		{@render linkedHint()}
+		{#if missing}
+			<div class="mt-1 flex items-center justify-between gap-2">
+				<span class="flex items-center gap-1 text-xs text-destructive">
+					<TriangleAlert class="size-3 shrink-0" />
+					{missingName ? `Missing record: ${missingName}` : 'Referenced record not found'}
+				</span>
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-6 px-2 text-xs"
+					onclick={() => (value = multiselect ? [] : '')}
+				>
+					Clear
+				</Button>
+			</div>
+		{/if}
+	</div>
+{:else if suggestActive}
+	<SuggestInput
+		{id}
+		value={stringValue}
+		onValueChange={(v) => (value = v)}
+		loadSuggestions={loadSuggestions!}
+		oncommit={onEnterSave}
+	/>
 {:else}
 	<textarea
 		{id}

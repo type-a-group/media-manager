@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — `record` field type (+ multiselect for file/record)</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --accent-dim: #8a7416;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 120px; }
+      header.hero { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 74ch; }
+      .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+      .toc a {
+        font: 600 12px/1 var(--mono); text-decoration: none; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 12px; transition: 0.15s;
+      }
+      .toc a:hover { border-color: var(--accent); color: var(--accent); }
+      section { margin-top: 44px; scroll-margin-top: 20px; }
+      h2 { font-size: 21px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+      h2 .n { font: 700 13px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 6px; padding: 5px 8px; }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      p { margin: 8px 0; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      ul { margin: 8px 0; padding-left: 20px; }
+      li { margin: 5px 0; }
+      .tag { font: 600 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; white-space: nowrap; }
+      .tag.fe { color: var(--blue); background: #14233f; }
+      .tag.be { color: var(--green); background: #11291c; }
+      .tag.core { color: var(--accent); background: #2c2608; }
+      .tag.doc { color: var(--pink); background: #341823; }
+      pre.mock, pre.code {
+        font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--ink);
+        background: #0e1216; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+      }
+      pre .c { color: var(--muted); }
+      pre .k { color: var(--accent); }
+      pre .s { color: var(--green); }
+      .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+      .files code { background: #0e1216; }
+      .pill { display: inline-flex; gap: 7px; align-items: center; }
+      table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      .note { border-left: 3px solid var(--accent); background: #1a1606; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+      .warn { border-left: 3px solid var(--pink); background: #240f17; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+      .step { counter-increment: step; }
+      ol.phases { list-style: none; counter-reset: ph; padding-left: 0; }
+      ol.phases > li { counter-increment: ph; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 16px 56px; position: relative; margin: 12px 0; }
+      ol.phases > li::before { content: counter(ph); position: absolute; left: 16px; top: 16px; font: 700 14px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 7px; padding: 6px 9px; }
+      .lbl { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="kicker">media-manager · plan</div>
+        <h1><code style="font-size:0.8em">record</code> field type — reference another type's records</h1>
+        <p class="sub">
+          A foreign-key field, mirroring the existing <code>file</code> field. A <code>record</code>
+          field stores the referenced record's <code>id</code>; the <span class="lbl">target record type is configured in
+          the schema</span>, so the picker only searches that one type — never all records. Single or
+          <span class="lbl">multiselect</span> (a per-field toggle), the value links through to the referenced record,
+          and dangling references are flagged with the same discipline as broken file references. The
+          multiselect toggle is also <span class="lbl">added to <code>file</code> fields</span> in the same change.
+        </p>
+        <div class="toc">
+          <a href="#decisions">Decisions</a>
+          <a href="#model">Data model</a>
+          <a href="#resolve">Title &amp; missing-ref resolution</a>
+          <a href="#schema">Schema editor</a>
+          <a href="#picker">RecordPicker</a>
+          <a href="#fieldinput">FieldInput</a>
+          <a href="#file-multi">file multiselect</a>
+          <a href="#globals">Globals parity</a>
+          <a href="#phases">Build order</a>
+          <a href="#tests">Tests · fixtures · docs</a>
+        </div>
+      </header>
+
+      <section id="decisions">
+        <h2><span class="n">0</span> Locked decisions</h2>
+        <div class="card">
+          <table>
+            <tr><th>Question</th><th>Decision</th></tr>
+            <tr><td>Cardinality</td><td><span class="lbl">Single + multiselect toggle</span> (a <code>multiselect</code> flag on the field, exactly like dropdown). Single stores <code>id</code>; multiselect stores <code>id[]</code>. <span class="lbl">Apply the same toggle to <code>file</code> fields too.</span></td></tr>
+            <tr><td>Target scope</td><td><span class="lbl">JSON record types only</span> (one <code>records/&lt;typeId&gt;</code>). Globals excluded (singleton). No class targets in v1.</td></tr>
+            <tr><td>Navigation</td><td><span class="lbl">Yes</span> — the resolved title links to <code>/media/&lt;typeId&gt;?record=&lt;id&gt;</code>.</td></tr>
+            <tr><td>Missing refs</td><td><span class="lbl">Yes</span> — annotate dangling refs (<code>_missing_records</code> / <code>missing_record_fields</code>) so the editor shows a "record not found" warning + clear, parity with <code>file</code>.</td></tr>
+          </table>
+        </div>
+        <div class="note">
+          <span class="lbl">Where it lives:</span> any schema can host a <code>record</code> field — class schemas
+          (<code>media/classes/&lt;id&gt;.json</code>), json record types (<code>records/&lt;typeId&gt;/</code>), and
+          globals (via the synthetic-schema path). All three feed the same shared
+          <code>FieldInput.svelte</code>, so the editor work is written once.
+        </div>
+      </section>
+
+      <section id="model">
+        <h2><span class="n">1</span> Data model <span class="tag core">core</span></h2>
+        <p>All in <code>src/lib/core/types.ts</code>. Additive and backward-compatible.</p>
+        <ul>
+          <li>Add <code>'record'</code> to <code>FieldTypeSchema</code> (and the <code>ListItemType</code> note — record is <em>not</em> a valid list item type; multiselect handles multiplicity).</li>
+          <li><code>FieldDefinitionSchema</code> gains <code>recordType?: string</code> (the target typeId; required-in-spirit for <code>record</code> fields, optional in the zod shape). <code>multiselect?: boolean</code> already exists — its <em>meaning</em> widens from "dropdown only" to also cover <code>file</code> and <code>record</code>.</li>
+          <li>Mirror <code>recordType</code> into <code>AddFieldRequestSchema</code> and <code>UpdateFieldRequestSchema</code>.</li>
+          <li>Stored value shape: single ⇒ a record-id <code>string</code>; multiselect ⇒ <code>string[]</code>. Both already pass the record <code>catchall</code> union (<code>z.string()</code> / <code>z.array(ListItemValueSchema)</code>), so no on-disk schema migration is needed.</li>
+          <li>New annotation keys (parity with <code>_missing_files</code> / <code>missing_file_fields</code>):
+            <ul>
+              <li><code>_missing_records?: Record&lt;string,string&gt;</code> on <code>JsonRecordSchema</code> / <code>ImageRecordSchema</code> — key → expected title (or <code>''</code>) for each broken ref. Read-time only.</li>
+              <li><code>missing_record_fields?: string[]</code> on <code>JsonListItemSchema</code> and <code>FileItemSchema</code>.</li>
+            </ul>
+          </li>
+        </ul>
+        <div class="warn">
+          <span class="lbl">Why separate keys (not reuse <code>_missing_files</code>):</span> the resolution source differs
+          (global blob manifest vs the target type's <code>data.json</code>), and a record can carry both a broken file
+          ref and a broken record ref at once. Keep them distinct; the <code>FieldInput</code> <code>missing</code>/<code>missingName</code>
+          props are already field-agnostic, so the host just feeds the right map per field.
+        </div>
+      </section>
+
+      <section id="resolve">
+        <h2><span class="n">2</span> Title &amp; missing-ref resolution <span class="tag be">server</span></h2>
+        <p>
+          This is the only genuinely new mechanism. A <code>file</code> ref resolves against one global manifest;
+          a <code>record</code> ref resolves against <span class="lbl">another type's data file</span> — cross-type and async,
+          so it cannot live inside the pure <code>stringifyFieldValue</code>.
+        </p>
+        <h3>New module — <code>src/lib/storage/recordRefs.ts</code></h3>
+        <pre class="code"><span class="c">// Per-request resolver over the target types a schema references.</span>
+<span class="k">resolveRecordRefs</span>(schema, records[]) → {
+  <span class="c">// 1. collect distinct recordType targets from `record` fields in schema</span>
+  <span class="c">// 2. read each target type's data.json once (batched, deduped)</span>
+  <span class="c">// 3. build per-type { id → title } using that type's displayField/name</span>
+  <span class="c">//    (reuse projectRecordRow's title logic / recordListTitle)</span>
+  available:  Map&lt;typeId, Set&lt;id&gt;&gt;,
+  titles:     Map&lt;typeId, Map&lt;id, string&gt;&gt;
+}
+
+<span class="k">missingRecordFields</span>(rec, schema, available) → string[]   <span class="c">// parity w/ missingFileFields</span>
+<span class="k">missingRecordsMap</span>(rec, schema, resolver)   → Record&lt;key,title&gt;? <span class="c">// parity w/ missingFilesMap</span>
+<span class="k">recordRefTitles</span>(rec, schema, resolver)    → Record&lt;key,string&gt;  <span class="c">// key → comma-joined titles</span></pre>
+        <p>Wire the resolver into the three read paths that already annotate <code>file</code> refs:</p>
+        <table>
+          <tr><th>Path</th><th>Add</th></tr>
+          <tr><td><code>jsonRepo.getRecordById</code></td><td>attach <code>_missing_records</code> (so the editor warns)</td></tr>
+          <tr><td><code>jsonRepo.listRecords</code></td><td><code>missing_record_fields</code>; feed titles into title-by / group-by / verbose <code>field_values</code></td></tr>
+          <tr><td><code>classRepo.listClassMembers</code> + class record get</td><td>same, for <code>record</code> fields on a class schema</td></tr>
+        </table>
+        <h3>Rendering titles in lists/verbose (the pure-function gap)</h3>
+        <p>
+          <code>stringifyFieldValue(schema, key, val)</code> only sees the raw id(s). Add an <span class="lbl">optional</span>
+          4th param — a resolver <code>resolveRef?(key, val) =&gt; string | undefined</code> — that <code>buildFieldValues</code>,
+          <code>projectRecordRow</code>, and <code>fieldSortValue</code> thread through. When present and the field is
+          <code>record</code>, it returns the title(s); absent ⇒ falls back to the raw id. Pure, optional, backward-compatible
+          (every existing caller passing 3 args is unaffected). The server builds the resolver from
+          <code>resolveRecordRefs().titles</code>; the client's optimistic in-place patch passes one built from the
+          RecordPicker's already-loaded titles (or omits it → id fallback until next list load).
+        </p>
+        <div class="files">
+          <code>src/lib/storage/recordRefs.ts</code> <code>src/lib/storage/jsonRepo.ts</code>
+          <code>src/lib/storage/classRepo.ts</code> <code>src/lib/core/recordDisplay.ts</code> <code>src/lib/core/sort.ts</code>
+        </div>
+      </section>
+
+      <section id="schema">
+        <h2><span class="n">3</span> Schema editor <span class="tag fe">frontend</span></h2>
+        <p><code>src/lib/components/schema-editor/SchemaEditorBody.svelte</code> — add/edit form for both class &amp; type schemas.</p>
+        <ul>
+          <li>Add <code>'record'</code> to <code>FIELD_TYPES</code>.</li>
+          <li>When type ∈ {<code>file</code>, <code>record</code>}: show the <span class="lbl">Multiselect</span> checkbox (today it's gated to <code>dropdown</code>). Generalize the gate.</li>
+          <li>When type = <code>record</code>: show a <span class="lbl">Record type</span> <code>Select</code> populated from <code>apiListMediaTypes()</code> (filter out <code>globals</code> and the entity being edited if it's itself a type, to avoid trivial self-cycles — self-reference across <em>different</em> records is allowed). Persist as <code>recordType</code>.</li>
+          <li><code>handleAddField</code> / <code>doSaveEdit</code> pass <code>recordType</code> + <code>multiselect</code> through the adapter. <code>startEdit</code> hydrates them from the def.</li>
+          <li>Field list summary line: show <code>record → &lt;typeName&gt;</code> and <code>(multiselect)</code>.</li>
+        </ul>
+        <p>The <code>SchemaEditorAdapter</code> (<code>addField</code>/<code>updateField</code>) is generic over the request DTO, so adding <code>recordType</code> to the DTO is the only adapter-side change.</p>
+      </section>
+
+      <section id="storage-persist">
+        <h2><span class="n">4</span> Persist the new field props <span class="tag be">server</span></h2>
+        <p>
+          <code>classRepo.addSchemaField/updateSchemaField</code> and <code>jsonRepo.addField/updateField</code> currently only
+          spread <code>multiselect</code> for <code>dropdown</code> and <code>itemTypes</code> for <code>list</code>. Extend the spreads so:
+        </p>
+        <ul>
+          <li><code>multiselect</code> persists for <code>file</code> and <code>record</code> too.</li>
+          <li><code>recordType</code> persists for <code>record</code> (and is stripped/ignored for other types).</li>
+        </ul>
+        <div class="files">
+          <code>src/lib/storage/classRepo.ts</code> <code>src/lib/storage/jsonRepo.ts</code>
+          <code>src/routes/api/classes/[id]/schema/+server.ts</code> <code>src/routes/api/media-types/[typeId]/schema/+server.ts</code>
+        </div>
+      </section>
+
+      <section id="picker">
+        <h2><span class="n">5</span> <code>RecordPicker.svelte</code> — mirror <code>FilePicker</code> <span class="tag fe">frontend</span></h2>
+        <p>New component, modeled directly on <code>FilePicker.svelte</code>.</p>
+        <pre class="mock">┌─ single ──────────────────────────────────┐   ┌─ multiselect ─────────────────────────┐
+│ [ ▦ ] Q3 Planning note         ↗  ✕        │   │ ‹Q3 Planning ↗ ✕› ‹Roadmap ↗ ✕›       │
+└────────────────────────────────────────────┘   │ [ + Add record… ]                      │
+   click ↗ → /media/notes?record=&lt;id&gt;             └────────────────────────────────────────┘</pre>
+        <ul>
+          <li>Props: <code>recordType: string</code>, <code>value</code> (<code>string | string[]</code>), <code>multiselect: boolean</code>, <code>onSelect</code>.</li>
+          <li>Dialog lists records via <code>apiListRecordsForType(recordType, { searchQuery, titleField })</code> showing <code>title_value</code> (debounced search, like FilePicker).</li>
+          <li>Resolve the selected id(s) → title: list once, or <code>apiGetRecordByIdForType</code> per id for the initial trigger label. Cache by id.</li>
+          <li>Each selected ref shows an "open" link (anchor to <code>/media/&lt;recordType&gt;?record=&lt;id&gt;</code>) + clear/remove. Single = trigger button; multi = removable chips + an "Add record…" trigger.</li>
+        </ul>
+        <div class="files"><code>src/lib/components/RecordPicker.svelte</code> (new)</div>
+      </section>
+
+      <section id="fieldinput">
+        <h2><span class="n">6</span> <code>FieldInput.svelte</code> — the one shared input <span class="tag fe">frontend</span></h2>
+        <ul>
+          <li>Generalize <code>multiselect</code>: <code>const multiselect = $derived(def.multiselect === true)</code> (still only meaningful for dropdown/file/record).</li>
+          <li>New branch <code>def.type === 'record'</code> → <code>&lt;RecordPicker recordType={def.recordType} {multiselect} … /&gt;</code> + the missing-ref hint &amp; Clear (copy the <code>file</code> branch's destructive hint, driven by <code>missing</code>/<code>missingName</code>).</li>
+          <li>Extend the <code>file</code> branch for multiselect (see §7).</li>
+        </ul>
+        <p>Because all three editors (<code>FileEditorPanel</code>, <code>RecordDetailPane</code>, <code>GlobalsEditorPane</code>) render through <code>FieldInput</code>, they get the new field for free — the only host change is passing the per-field <code>missing</code> flag from the new <code>missing_record_fields</code>/<code>_missing_records</code> annotation (each host already does this for files).</p>
+      </section>
+
+      <section id="file-multi">
+        <h2><span class="n">7</span> <code>file</code> multiselect <span class="tag fe">frontend</span> <span class="tag be">server</span></h2>
+        <p>Requested alongside the record field. Same toggle, value becomes <code>string[]</code> of blob ids.</p>
+        <ul>
+          <li><span class="lbl">FieldInput:</span> when <code>multiselect</code>, render a stack of selected-file rows (each a mini FilePicker result + remove) plus an "Add file…" trigger; value is <code>string[]</code>. Single path unchanged.</li>
+          <li><span class="lbl">Server:</span> <code>manifest.missingFileFields</code> / <code>missingFilesMap</code> today check <code>typeof v === 'string'</code> only. Extend to also iterate a <code>string[]</code> value (any id not in <code>available</code> ⇒ the field is flagged; the map joins the missing names).</li>
+          <li><span class="lbl">Display:</span> <code>stringifyFieldValue</code> for a <code>file</code> array → comma-joined filenames (via the same resolver mechanism as record titles, since filenames are also out-of-band). For v1 a file <code>file:*</code> verbose value can stay id/count if resolver wiring for files is more than we want — <em>decision: reuse the resolver param so files and records share it.</em></li>
+        </ul>
+      </section>
+
+      <section id="globals">
+        <h2><span class="n">8</span> Globals parity <span class="tag fe">frontend</span> <span class="tag be">server</span></h2>
+        <p>
+          CLAUDE.md mandate: globals must keep feature parity with <code>json</code> records. Globals has no schema —
+          per-field metadata lives in the reserved <code>__field_meta</code> key, and the server builds a synthetic
+          schema from <code>__field_kinds</code>.
+        </p>
+        <ul>
+          <li><code>__field_meta</code> entries gain <code>recordType</code> (and <code>multiselect</code> for file/record). <code>globalsSyntheticSchema</code> (<code>jsonRepo.ts</code>) must copy <code>recordType</code>/<code>multiselect</code> off <code>__field_meta</code> into the synthetic <code>FieldDefinition</code> so missing-ref detection + RecordPicker config work in globals.</li>
+          <li><code>GlobalsEditorPane</code>'s add/edit-field UI offers the <code>record</code> type + record-type picker + multiselect (same controls as SchemaEditorBody), writing to <code>__field_meta</code>.</li>
+          <li>The globals read path (<code>getRecordById</code> with <code>isGlobalsType</code>) already branches on the synthetic schema for files — extend the same block to attach <code>_missing_records</code>.</li>
+        </ul>
+        <div class="files">
+          <code>src/lib/storage/jsonRepo.ts</code> (<code>globalsSyntheticSchema</code>)
+          <code>src/lib/components/.../GlobalsEditorPane.svelte</code>
+          <code>src/lib/core/fieldKeys.ts</code> (field-meta shape doc)
+        </div>
+      </section>
+
+      <section id="phases">
+        <h2><span class="n">9</span> Build order</h2>
+        <ol class="phases">
+          <li><span class="lbl">Core model + persistence</span> — <code>types.ts</code> (field type, <code>recordType</code>, annotations, DTOs), storage <code>addField</code>/<code>updateField</code> spreads, schema-editor controls (record-type picker + multiselect toggle for file/record). <span class="muted">Outcome: you can define a record field; it saves.</span></li>
+          <li><span class="lbl">RecordPicker + FieldInput record branch + navigation</span> — the editor works end-to-end (resolves titles client-side, links through). <span class="muted">Outcome: the headline feature is usable in every editor.</span></li>
+          <li><span class="lbl">Missing-ref + title resolution server-side</span> — <code>recordRefs.ts</code>, wire into <code>getRecordById</code>/<code>listRecords</code>/<code>listClassMembers</code>, resolver param threaded through <code>stringifyFieldValue</code>/<code>buildFieldValues</code>/<code>projectRecordRow</code>/<code>fieldSortValue</code>. <span class="muted">Outcome: dangling refs warn; titles render in lists/verbose/title-by/group-by/sort.</span></li>
+          <li><span class="lbl">file multiselect</span> — FieldInput multi UI + array-aware <code>missingFileFields</code>/<code>missingFilesMap</code>.</li>
+          <li><span class="lbl">Globals parity</span> — <code>__field_meta</code>, <code>globalsSyntheticSchema</code>, GlobalsEditorPane controls.</li>
+          <li><span class="lbl">Fixtures · tests · docs</span> — see §10.</li>
+        </ol>
+        <p class="muted">Phases 1–2 ship a working feature; 3 adds the polish (warnings + list rendering); 4–5 complete parity.</p>
+      </section>
+
+      <section id="tests">
+        <h2><span class="n">10</span> Tests · fixtures · docs <span class="tag doc">docs</span></h2>
+        <ul>
+          <li><span class="lbl">Unit:</span> extend <code>classRepo.test.ts</code> (and add <code>recordRefs</code> tests) — define a <code>record</code> field, set a ref, assert title resolution + <code>missing_record_fields</code> when the target is deleted; multiselect single↔array round-trips; <code>file</code> multiselect missing detection.</li>
+          <li><span class="lbl">Fixtures:</span> update the committed <code>test-fixtures/</code> seed — add a <code>record</code> field on a class or the <code>notes</code> type pointing at another type, including <span class="lbl">one dangling ref</span> to exercise the missing-record warning (mirrors the existing deliberately-dangling file ref). Per CLAUDE.md, regenerate by serving a scratch root and copy back.</li>
+          <li><span class="lbl">Docs:</span> <code>docs/FEATURES.md</code> — the new field type, schema config (<code>recordType</code>), missing-record annotation, multiselect for file/record, the navigation link; field-type list in conventions. Reader package (<code>src/lib/reader/media-manager.ts</code>) — note whether record refs resolve in read-only mode (parity follow-up; flag if deferred).</li>
+          <li><span class="lbl">Manual:</span> <code>npm run test:serve</code> + the <code>test-ui-feature</code> skill to screenshot the picker (single + multi), the link-through, and the missing-ref warning.</li>
+        </ul>
+      </section>
+
+      <section id="risks">
+        <h2><span class="n">11</span> Risks &amp; edge cases</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3>Cross-type read cost</h3>
+            <p class="muted">Each list with record fields reads the target type's <code>data.json</code>. Dedup per request and batch by typeId in <code>resolveRecordRefs</code>; targets are small JSON files. No N+1 per row.</p>
+          </div>
+          <div class="card">
+            <h3>Cycles &amp; self-reference</h3>
+            <p class="muted">A type referencing itself (or a 2-cycle) is fine — resolution is one level deep (title only, never recursive). The schema editor only blocks the trivial self-target to reduce footguns; cross-type cycles are allowed.</p>
+          </div>
+          <div class="card">
+            <h3>Target type deleted/renamed</h3>
+            <p class="muted">If <code>recordType</code> points at a type that no longer exists, the field degrades gracefully: picker shows "type unavailable", all refs read as missing. typeIds are immutable, so rename is safe (only displayName changes).</p>
+          </div>
+          <div class="card">
+            <h3>Optimistic patch vs title</h3>
+            <p class="muted">After autosave the host patches the row in place without a refetch. The client resolver (from the picker's loaded titles) keeps the rendered title correct; worst case it shows the id until the next list load — never wrong, just less pretty.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="touchpoints">
+        <h2><span class="n">12</span> File touchpoints at a glance</h2>
+        <div class="card">
+          <div class="files">
+            <code>src/lib/core/types.ts</code>
+            <code>src/lib/core/recordDisplay.ts</code>
+            <code>src/lib/core/sort.ts</code>
+            <code>src/lib/core/fieldKeys.ts</code>
+            <code>src/lib/storage/recordRefs.ts <span class="muted">(new)</span></code>
+            <code>src/lib/storage/jsonRepo.ts</code>
+            <code>src/lib/storage/classRepo.ts</code>
+            <code>src/lib/storage/manifest.ts</code>
+            <code>src/routes/api/classes/[id]/schema/+server.ts</code>
+            <code>src/routes/api/media-types/[typeId]/schema/+server.ts</code>
+            <code>src/lib/components/RecordPicker.svelte <span class="muted">(new)</span></code>
+            <code>src/lib/components/FieldInput.svelte</code>
+            <code>src/lib/components/schema-editor/SchemaEditorBody.svelte</code>
+            <code>src/lib/components/.../GlobalsEditorPane.svelte</code>
+            <code>src/lib/api/client.ts <span class="muted">(DTO pass-through)</span></code>
+            <code>src/lib/storage/classRepo.test.ts</code>
+            <code>test-fixtures/…</code>
+            <code>docs/FEATURES.md</code>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

@@ -261,6 +261,26 @@ export async function apiListClasses(fetchFn: typeof fetch = fetch): Promise<Cla
 	return jsonOrThrow(res, z.array(ClassSummarySchema), 'Failed to list classes');
 }
 
+/**
+ * Preview the data mismatch a proposed two-way link would have (read-only). Lets the schema editor
+ * prompt the user to pick an authoritative side only when the two sides already disagree.
+ */
+export async function apiClassLinkPreview(
+	classId: string,
+	recordField: string,
+	recordType: string,
+	fileField: string,
+	fetchFn: typeof fetch = fetch
+): Promise<{ classOnly: number; typeOnly: number; mismatch: boolean }> {
+	const q = new URLSearchParams({ recordField, recordType, fileField });
+	const res = await fetchFn(`/api/classes/${classId}/link-preview?${q.toString()}`);
+	return jsonOrThrow(
+		res,
+		z.object({ classOnly: z.number(), typeOnly: z.number(), mismatch: z.boolean() }),
+		'Failed to preview link'
+	);
+}
+
 export async function apiCreateClass(
 	displayName: string,
 	schema?: SchemaDefinition,
@@ -448,4 +468,29 @@ export async function apiDeleteClassField(
 		'Failed to delete field'
 	);
 	return data.schema;
+}
+
+/**
+ * Fetch the distinct existing values of one field across a class's members — the source for the
+ * autocomplete combobox on `suggest`-enabled string/list fields. The server already flattens list
+ * fields into their individual items, so a `tags` field returns the distinct tags.
+ *
+ * @param id - Class id.
+ * @param fieldName - Schema field key to gather values for.
+ * @returns Sorted distinct stringified values (empty array on any non-fatal issue).
+ */
+export async function apiGetClassFieldValues(
+	id: string,
+	fieldName: string,
+	fetchFn: typeof fetch = fetch
+): Promise<{ values: string[] }> {
+	const res = await fetchFn(
+		`/api/classes/${encodeURIComponent(id)}/field-values?field=${encodeURIComponent(fieldName)}`
+	);
+	const data = await jsonOrThrow(
+		res,
+		z.object({ values: z.array(z.string()) }),
+		'Failed to fetch field values'
+	);
+	return { values: data.values };
 }

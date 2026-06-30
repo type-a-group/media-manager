@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { readClassFile, updateClassConfig, deleteClass } from '$lib/storage/classRepo.js';
+import { purgeClassLinks } from '$lib/storage/relationLinks.js';
 import { MAX_VERBOSE_FIELDS } from '$lib/core/recordDisplay.js';
 
 const ConfigPatchSchema = z.object({
@@ -61,6 +62,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 export const DELETE: RequestHandler = async ({ params }) => {
 	try {
 		await deleteClass(params.id);
+		// Strip class scope + link from any type file field that pointed at this class.
+		await purgeClassLinks(params.id);
 		return json({ success: true });
 	} catch (err) {
 		const e = err as Error;

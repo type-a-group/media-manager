@@ -1,6 +1,5 @@
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
-import { z } from 'zod';
 
 import { getMediaTypePaths } from './paths.js';
 import { readJsonFile, writeJsonFileAtomic } from './json.js';
@@ -11,6 +10,7 @@ import { normalizeFieldKey } from './migrate.js';
 import {
 	isProtectedSchemaKey,
 	GLOBALS_FIELD_KINDS_KEY,
+	GLOBALS_FIELD_META_KEY,
 	schemaUserFieldKeys
 } from '$lib/core/fieldKeys.js';
 
@@ -22,7 +22,9 @@ import {
 	type JsonDataFile,
 	type JsonListItem,
 	type JsonListResponse,
-	normalizeUrlValue
+	normalizeUrlValue,
+	fieldSupportsSuggest,
+	FieldTypeSchema
 } from '$lib/core/types.js';
 import { newImageId, type ImageId } from '$lib/core/ids.js';
 import {
@@ -33,7 +35,20 @@ import {
 	recordHasEmptyField
 } from '$lib/core/filters.js';
 import type { FieldType } from '$lib/core/types.js';
-import { getAvailableFileIds, missingFileFields, missingFilesMap } from './manifest.js';
+import {
+	getAvailableFileIds,
+	missingFileFields,
+	missingFilesMap,
+	outOfClassFields,
+	outOfClassMap
+} from './manifest.js';
+import {
+	resolveRecordRefs,
+	recordRefRenderer,
+	missingRecordFields,
+	missingRecordsMap,
+	schemaHasRecordField
+} from './recordRefs.js';
 import {
 	buildFieldValues,
 	projectRecordRow,
@@ -62,18 +77,35 @@ function getFieldType(schema: SchemaDefinition, fieldKey: string): FieldType {
  * `__field_kinds` hint, so schema-driven read logic (url normalization, missing-file detection)
  * applies to globals too. Tolerant of a missing/malformed hint (returns `{}`).
  *
- * Note: only `__field_kinds` is consulted here. The other reserved keys are intentionally ignored —
- * `__field_meta` is per-field UI options (not schema), and `__layout` (the sectioned-editor grouping,
- * see `core/globalsLayout.ts`) is presentation-only. Neither should ever become a synthetic field.
+ * `__field_kinds` supplies each field's `type`; `__field_meta` is folded in for the bits schema-driven
+ * read logic needs — `recordType` and `multiselect` — so `record`-field resolution (target titles +
+ * missing-ref detection) works for globals too. `__layout` (the sectioned-editor grouping, see
+ * `core/globalsLayout.ts`) stays presentation-only and is never turned into a synthetic field.
  */
 function globalsSyntheticSchema(rec: Record<string, unknown>): SchemaDefinition {
 	const raw = rec[GLOBALS_FIELD_KINDS_KEY];
 	if (typeof raw !== 'string') return {};
+	let meta: Record<string, { recordType?: unknown; multiselect?: unknown }> = {};
+	const rawMeta = rec[GLOBALS_FIELD_META_KEY];
+	if (typeof rawMeta === 'string') {
+		try {
+			meta = JSON.parse(rawMeta) as typeof meta;
+		} catch {
+			meta = {};
+		}
+	}
 	try {
 		const kinds = JSON.parse(raw) as Record<string, unknown>;
 		const schema: SchemaDefinition = {};
 		for (const [key, kind] of Object.entries(kinds)) {
-			if (typeof kind === 'string') schema[key] = { type: kind } as FieldDefinition;
+			if (typeof kind !== 'string') continue;
+			const def = { type: kind } as FieldDefinition;
+			const m = meta[key];
+			if (kind === 'record' && typeof m?.recordType === 'string')
+				(def as { recordType?: string }).recordType = m.recordType;
+			if ((kind === 'record' || kind === 'file') && m?.multiselect === true)
+				(def as { multiselect?: boolean }).multiselect = true;
+			schema[key] = def;
 		}
 		return schema;
 	} catch {
@@ -319,7 +351,13 @@ export function createJsonRepoForType(typeId: string) {
 		const subtitleField = params?.subtitleField ?? settings.subtitleField ?? null;
 		// Only touch the global manifest/disk when the schema actually has `file` fields to validate.
 		const hasFileField = Object.values(settings.schema).some((d) => d?.type === 'file');
-		const available = hasFileField ? (await getAvailableFileIds()).available : null;
+		const fileIndex = hasFileField ? await getAvailableFileIds() : null;
+		const available = fileIndex?.available ?? null;
+		// Resolve cross-type `record` references (target titles + missing-ref detection) once per list.
+		const refResolver = schemaHasRecordField(settings.schema)
+			? await resolveRecordRefs(settings.schema)
+			: null;
+		const resolveRef = refResolver ? recordRefRenderer(settings.schema, refResolver) : undefined;
 
 		// Field-scoped (or all-field) text search, applied server-side because list rows carry only
 		// derived display values, not raw field data. Reuses the shared `stringifyFieldValue` so
@@ -331,7 +369,7 @@ export function createJsonRepoForType(typeId: string) {
 			records = records.filter((rec) => {
 				const recAny = rec as Record<string, unknown>;
 				return fieldsToSearch.some((k) =>
-					(stringifyFieldValue(settings.schema, k, recAny[k]) ?? '')
+					(stringifyFieldValue(settings.schema, k, recAny[k], resolveRef) ?? '')
 						.toLowerCase()
 						.includes(searchQuery)
 				);
@@ -368,9 +406,9 @@ export function createJsonRepoForType(typeId: string) {
 				if (sortField === 'last_modified') return (recAny.last_modified as string) ?? null;
 				if (sortField === 'name')
 					return titleField
-						? fieldSortValue(settings.schema, titleField, recAny[titleField])
+						? fieldSortValue(settings.schema, titleField, recAny[titleField], resolveRef)
 						: ((recAny.name as string) ?? null);
-				return fieldSortValue(settings.schema, sortField, recAny[sortField]);
+				return fieldSortValue(settings.schema, sortField, recAny[sortField], resolveRef);
 			},
 			id: (rec) => rec.id
 		});
@@ -381,13 +419,26 @@ export function createJsonRepoForType(typeId: string) {
 			// optimistic post-save row patch renders identically to this server projection.
 			const item: JsonListItem = {
 				id: rec.id,
-				...projectRecordRow(settings.schema, recAny, { titleField, subtitleField, groupBy })
+				...projectRecordRow(settings.schema, recAny, {
+					titleField,
+					subtitleField,
+					groupBy,
+					resolveRef
+				})
 			};
 			if (available) {
 				const miss = missingFileFields(recAny, settings.schema, available);
 				if (miss.length) item.missing_file_fields = miss;
 			}
-			const fv = buildFieldValues(settings.schema, recAny, params?.fields);
+			if (fileIndex) {
+				const ooc = outOfClassFields(recAny, settings.schema, fileIndex.manifest);
+				if (ooc.length) item.out_of_class_fields = ooc;
+			}
+			if (refResolver) {
+				const miss = missingRecordFields(recAny, settings.schema, refResolver);
+				if (miss.length) item.missing_record_fields = miss;
+			}
+			const fv = buildFieldValues(settings.schema, recAny, params?.fields, resolveRef);
 			if (fv) item.field_values = fv;
 			return item;
 		});
@@ -416,6 +467,13 @@ export function createJsonRepoForType(typeId: string) {
 			const { manifest, available } = await getAvailableFileIds();
 			const missing = missingFilesMap(out, effectiveSchema, manifest, available);
 			if (missing) out._missing_files = missing;
+			const outOfClass = outOfClassMap(out, effectiveSchema, manifest);
+			if (outOfClass) out._out_of_class = outOfClass;
+		}
+		if (schemaHasRecordField(effectiveSchema)) {
+			const resolver = await resolveRecordRefs(effectiveSchema);
+			const missing = missingRecordsMap(out, effectiveSchema, resolver);
+			if (missing) out._missing_records = missing;
 		}
 		return out as JsonRecord;
 	}
@@ -513,12 +571,17 @@ export function createJsonRepoForType(typeId: string) {
 		defaultValue: unknown,
 		options?: string[],
 		itemTypes?: string[],
-		multiselect?: boolean
+		multiselect?: boolean,
+		suggest?: boolean,
+		recordType?: string,
+		classId?: string
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const parsedType = FieldTypeSchema.parse(fieldType);
 		const key = normalizeFieldKey(fieldName);
+		// `multiselect` is meaningful for dropdown, file, and record (array vs single value).
+		const canMultiselect =
+			parsedType === 'dropdown' || parsedType === 'file' || parsedType === 'record';
 
 		return await withFileLock(`${settingsPath}.lock`, async () => {
 			const settings = getSettings();
@@ -529,14 +592,19 @@ export function createJsonRepoForType(typeId: string) {
 				removable: true,
 				defaultValue: defaultValue as never,
 				...(parsedType === 'dropdown' && options?.length ? { options } : {}),
-				...(parsedType === 'dropdown' && multiselect ? { multiselect: true } : {}),
-				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {})
+				...(canMultiselect && multiselect ? { multiselect: true } : {}),
+				...(parsedType === 'record' && recordType ? { recordType } : {}),
+				...(parsedType === 'file' && classId ? { classId } : {}),
+				...(parsedType === 'list' && itemTypes?.length ? { itemTypes } : {}),
+				...(suggest && fieldSupportsSuggest(parsedType, itemTypes) ? { suggest: true } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 
 			let defaultVal: unknown;
 			if (defaultValue !== undefined && defaultValue !== null) {
 				defaultVal = parsedType === 'url' ? normalizeUrlValue(defaultValue) : defaultValue;
+			} else if (canMultiselect && multiselect) {
+				defaultVal = [];
 			} else {
 				defaultVal =
 					parsedType === 'boolean'
@@ -544,9 +612,7 @@ export function createJsonRepoForType(typeId: string) {
 						: parsedType === 'number'
 							? 0
 							: parsedType === 'dropdown'
-								? multiselect
-									? []
-									: (options?.[0] ?? '')
+								? (options?.[0] ?? '')
 								: parsedType === 'list'
 									? []
 									: parsedType === 'url'
@@ -575,10 +641,12 @@ export function createJsonRepoForType(typeId: string) {
 			options?: string[];
 			itemTypes?: string[];
 			multiselect?: boolean;
+			suggest?: boolean;
+			recordType?: string;
+			classId?: string;
 		}
 	) {
 		if (isGlobalsType) throw new Error('Schema is not editable for globals');
-		const FieldTypeSchema = z.enum(['string', 'number', 'boolean', 'dropdown', 'list', 'url']);
 		const key = normalizeFieldKey(oldKey);
 		if (isProtectedSchemaKey(key)) throw new Error('Field not modifiable');
 
@@ -591,20 +659,34 @@ export function createJsonRepoForType(typeId: string) {
 			if (newKey !== key && isProtectedSchemaKey(newKey)) throw new Error('Field not modifiable');
 			const type = updates.type ? FieldTypeSchema.parse(updates.type) : def.type;
 			const wasMultiselect = (def as { multiselect?: boolean }).multiselect === true;
-			const multiselect =
-				type === 'dropdown'
-					? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false)
-					: false;
+			// `multiselect` is meaningful for dropdown, file, and record; forced off for every other type.
+			const canMultiselect = type === 'dropdown' || type === 'file' || type === 'record';
+			const multiselect = canMultiselect
+				? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false)
+				: false;
 
 			let defaultValue = updates.defaultValue ?? def.defaultValue;
 			if (type === 'url' && typeof defaultValue === 'string') {
 				defaultValue = normalizeUrlValue(defaultValue);
 			}
-			if (type === 'dropdown' && wasMultiselect && !multiselect && Array.isArray(defaultValue)) {
+			if (wasMultiselect && !multiselect && Array.isArray(defaultValue)) {
 				defaultValue = defaultValue[0] ?? '';
 			}
 			const options = updates.options ?? def.options;
 			const itemTypes = updates.itemTypes ?? (def as { itemTypes?: string[] }).itemTypes;
+			const recordType =
+				type === 'record'
+					? (updates.recordType ?? (def as { recordType?: string }).recordType)
+					: undefined;
+			const classId =
+				type === 'file' ? (updates.classId ?? (def as { classId?: string }).classId) : undefined;
+			// `linkedField` on a file field is the server-maintained back-link of a class record field.
+			// Preserve it across user edits (rename/cardinality) — it's only set/cleared by relationLinks.
+			const linkedField =
+				type === 'file' ? (def as { linkedField?: string }).linkedField : undefined;
+			const suggest =
+				(updates.suggest ?? (def as { suggest?: boolean }).suggest ?? false) &&
+				fieldSupportsSuggest(type, itemTypes);
 
 			if (type === 'dropdown' && options?.length && defaultValue !== undefined) {
 				if (multiselect) {
@@ -632,30 +714,31 @@ export function createJsonRepoForType(typeId: string) {
 				defaultValue: defaultValue as never,
 				...(options?.length ? { options } : {}),
 				...(type === 'list' && itemTypes?.length ? { itemTypes } : {}),
-				...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
+				...(multiselect ? { multiselect: true } : {}),
+				...(recordType ? { recordType } : {}),
+				...(classId ? { classId } : {}),
+				...(linkedField ? { linkedField } : {}),
+				...(suggest ? { suggest: true } : {})
 			} as FieldDefinition;
 			await writeMediaTypeSettingsFile(baseDir, { kind: 'json', schema });
 
-			if (newKey !== key) {
+			// Rename the key and/or convert stored values when cardinality flips (array ⇄ single).
+			const renamed = newKey !== key;
+			const toSingle = wasMultiselect && !multiselect;
+			const toMulti = !wasMultiselect && multiselect;
+			if (renamed || toSingle || toMulti) {
 				await withFileLock(`${dataPath}.lock`, async () => {
 					const data = await readData();
 					const records = data.records.map((rec) => {
 						const next = { ...rec } as Record<string, unknown>;
-						if (key in next) {
+						if (renamed && key in next) {
 							next[newKey] = next[key];
 							delete next[key];
 						}
-						return JsonRecordSchema.parse(next);
-					});
-					await writeJsonFileAtomic(dataPath, { records });
-				});
-			} else if (wasMultiselect && !multiselect) {
-				await withFileLock(`${dataPath}.lock`, async () => {
-					const data = await readData();
-					const records = data.records.map((rec) => {
-						const next = { ...rec } as Record<string, unknown>;
 						const val = next[newKey];
-						if (Array.isArray(val)) next[newKey] = val[0] ?? '';
+						if (toSingle && Array.isArray(val)) next[newKey] = val[0] ?? '';
+						else if (toMulti && val !== undefined && !Array.isArray(val))
+							next[newKey] = val === '' || val == null ? [] : [val];
 						return JsonRecordSchema.parse(next);
 					});
 					await writeJsonFileAtomic(dataPath, { records });

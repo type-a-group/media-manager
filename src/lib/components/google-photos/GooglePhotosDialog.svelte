@@ -236,8 +236,8 @@
 					</div>
 				{/if}
 				<p class="text-xs">
-					Make sure your OAuth client is a <b>Desktop app</b> (it has no “redirect URI” field). A
-					“Web application” client won’t work with the loopback sign-in.
+					Make sure your OAuth client is a <b>Desktop app</b> (it has no “redirect URI” field). A “Web
+					application” client won’t work with the loopback sign-in.
 				</p>
 			</div>
 			<Dialog.Footer class="sm:justify-between">

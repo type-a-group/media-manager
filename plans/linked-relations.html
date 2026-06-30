@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plan — class-filtered file fields + two-way linked relations</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2129;
+        --line: #2a323c;
+        --ink: #e7edf3;
+        --muted: #9aa7b4;
+        --accent: #ffd23f;
+        --accent-dim: #8a7416;
+        --green: #5fd08a;
+        --blue: #6ea8ff;
+        --pink: #ff8fb1;
+        --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 80% -10%, #1a1f27 0%, var(--bg) 55%);
+        color: var(--ink);
+        font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 28px 120px; }
+      header.hero { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+      .kicker { font: 600 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+      h1 { font-size: 30px; margin: 14px 0 6px; letter-spacing: -0.01em; }
+      .sub { color: var(--muted); max-width: 74ch; }
+      .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; }
+      .toc a {
+        font: 600 12px/1 var(--mono); text-decoration: none; color: var(--ink);
+        background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+        padding: 7px 12px; transition: 0.15s;
+      }
+      .toc a:hover { border-color: var(--accent); color: var(--accent); }
+      section { margin-top: 44px; scroll-margin-top: 20px; }
+      h2 { font-size: 21px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+      h2 .n { font: 700 13px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 6px; padding: 5px 8px; }
+      h3 { font-size: 15px; margin: 22px 0 8px; color: var(--accent); }
+      p { margin: 8px 0; }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: 0.86em; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+      .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+      ul { margin: 8px 0; padding-left: 20px; }
+      li { margin: 5px 0; }
+      .tag { font: 600 10.5px/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 5px; white-space: nowrap; }
+      .tag.fe { color: var(--blue); background: #14233f; }
+      .tag.be { color: var(--green); background: #11291c; }
+      .tag.core { color: var(--accent); background: #2c2608; }
+      .tag.doc { color: var(--pink); background: #341823; }
+      pre.mock, pre.code {
+        font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--ink);
+        background: #0e1216; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+      }
+      pre .c { color: var(--muted); }
+      pre .k { color: var(--accent); }
+      pre .s { color: var(--green); }
+      pre .b { color: var(--blue); }
+      .files { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+      .files code { background: #0e1216; }
+      .pill { display: inline-flex; gap: 7px; align-items: center; }
+      table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13.5px; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--muted); font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+      .note { border-left: 3px solid var(--accent); background: #1a1606; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+      .warn { border-left: 3px solid var(--pink); background: #240f17; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+      .ok { border-left: 3px solid var(--green); background: #0d1f15; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+      ol.phases { list-style: none; counter-reset: ph; padding-left: 0; }
+      ol.phases > li { counter-increment: ph; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 16px 56px; position: relative; margin: 12px 0; }
+      ol.phases > li::before { content: counter(ph); position: absolute; left: 16px; top: 16px; font: 700 14px/1 var(--mono); color: var(--bg); background: var(--accent); border-radius: 7px; padding: 6px 9px; }
+      .lbl { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="kicker">media-manager · plan</div>
+        <h1>Class-filtered file fields &amp; two-way linked relations</h1>
+        <p class="sub">
+          Two related additions. <span class="lbl">(1)</span> A <code>file</code> field can be scoped to a single
+          <span class="lbl">class</span> — the picker then offers only that class's members (a "class field").
+          Optional, exactly like <code>recordType</code> on a record field. <span class="lbl">(2)</span> A
+          <code>record</code> field on a class and a class-scoped <code>file</code> field on that record's type can be
+          <span class="lbl">linked</span> into one <span class="lbl">two-way relation</span>: pointing a member file
+          at a record from one side writes the reciprocal reference on the other, so the record automatically lists
+          every member that points at it. Symmetric, writable from both ends.
+        </p>
+        <div class="toc">
+          <a href="#decisions">Decisions</a>
+          <a href="#picture">The picture</a>
+          <a href="#model">Data model</a>
+          <a href="#classfilter">Class filter</a>
+          <a href="#linkcfg">Link setup</a>
+          <a href="#engine">Sync engine</a>
+          <a href="#cascades">Cascades</a>
+          <a href="#read">Read &amp; render</a>
+          <a href="#ui">UI &amp; confusion budget</a>
+          <a href="#phases">Build order</a>
+          <a href="#tests">Tests · fixtures · docs</a>
+          <a href="#risks">Risks</a>
+        </div>
+      </header>
+
+      <section id="decisions">
+        <h2><span class="n">0</span> Locked decisions</h2>
+        <div class="card">
+          <table>
+            <tr><th>Question</th><th>Decision</th></tr>
+            <tr><td>File-field class filter</td><td><span class="lbl">Optional</span> <code>classId</code> on a <code>file</code> field. When set it's a <span class="lbl">hard limit</span> — only members of that class are selectable; a non-member ref is flagged invalid.</td></tr>
+            <tr><td>Link sync model</td><td><span class="lbl">Two-way writable</span> — both sides editable; an edit on either side writes the reciprocal reference on the other. (Not a read-only derived backlink.)</td></tr>
+            <tr><td>Source of truth</td><td><span class="lbl">Symmetric</span> — neither side is canonical. The stored state is the union of both sides' assertions; writes keep them equal transactionally.</td></tr>
+            <tr><td>Pairing</td><td><span class="lbl">Explicit</span>, and the counterpart field <span class="lbl">must pre-exist</span>. You create the class-scoped <code>file</code> field first, then pick it as the inverse on the <code>record</code> field. Linking writes the reciprocal pointer on both schemas.</td></tr>
+            <tr><td>Single-side conflict</td><td><span class="lbl">Reassign (move)</span> — setting a new value on a single-cardinality side steals the link from the previous owner; the old record drops it. No error states.</td></tr>
+          </table>
+        </div>
+        <div class="note">
+          <span class="lbl">Scope of v1:</span> a link is exactly one shape — a class <code>C</code>'s <code>record</code> field
+          (<code>recordType = T</code>) paired with type <code>T</code>'s <code>file</code> field scoped to <code>C</code>
+          (<code>classId = C</code>). No class↔class, no record↔record, no globals links (globals is a schemaless
+          singleton — its file fields may still use the plain <code>classId</code> filter, just not linking).
+        </div>
+      </section>
+
+      <section id="picture">
+        <h2><span class="n">1</span> The picture</h2>
+        <p>Worked example used throughout: a class <code>photos</code> and a json type <code>albums</code>.</p>
+        <pre class="mock">  class <span class="b">photos</span> (members are blobs)             type <span class="b">albums</span> (json records)
+  ┌──────────────────────────────┐         ┌──────────────────────────────┐
+  │ field <span class="k">album</span>  : record → albums │  ⇄ link │ field <span class="k">shots</span> : file → photos    │
+  │                              │         │   (classId = photos)         │
+  └──────────────────────────────┘         └──────────────────────────────┘
+
+  blob <span class="s">abc</span>.album = album "Trip"   ──writes──▶  album "Trip".shots ∋ <span class="s">abc</span>
+  album "Trip".shots += <span class="s">def</span>      ──writes──▶  blob <span class="s">def</span>.album = "Trip"
+  (album single on photos side ⇒ moving <span class="s">abc</span> to "Beach" drops it from "Trip")</pre>
+        <p class="muted">
+          Because both sides are stored (writable, symmetric), each side renders from its <em>own</em> data with the
+          machinery that already exists — the <code>record</code> field resolves via <code>recordRefs.ts</code>, the
+          <code>file</code> field via the manifest. The only genuinely new code is the <span class="lbl">propagation</span>
+          that keeps the two stores equal on every write, plus the schema-editor wiring.
+        </p>
+      </section>
+
+      <section id="model">
+        <h2><span class="n">2</span> Data model <span class="tag core">core</span></h2>
+        <p>All additive in <code>src/lib/core/types.ts</code> (<code>FieldDefinitionSchema</code> already has
+          <code>recordType</code> + <code>multiselect</code>). Backward-compatible — every new prop is optional.</p>
+        <ul>
+          <li><code>classId?: string</code> — for a <code>file</code> field, the class whose members the picker is limited to.
+            Ignored for non-file types. <span class="muted">(Feature 1.)</span></li>
+          <li><code>linkedField?: string</code> — the counterpart field <em>key</em> on the partner schema. Present on
+            <span class="lbl">both</span> linked fields and self-describing:
+            <ul>
+              <li>on a <code>record</code> field: partner type is <code>recordType</code>, partner field is <code>linkedField</code>;</li>
+              <li>on a <code>file</code> field: partner class is <code>classId</code>, partner field is <code>linkedField</code>.</li>
+            </ul>
+            Both must be set and point at each other for the pair to be "linked." <span class="muted">(Feature 2.)</span></li>
+          <li>Mirror <code>classId</code> + <code>linkedField</code> into <code>AddFieldRequestSchema</code> and
+            <code>UpdateFieldRequestSchema</code> (lines ~409/446 already carry <code>recordType</code>/<code>multiselect</code>).</li>
+          <li>New read-time annotation for the hard class filter (parity with <code>missing_file_fields</code>):
+            <code>out_of_class_fields?: string[]</code> on <code>JsonListItemSchema</code>/<code>FileItemSchema</code> and
+            <code>_out_of_class?: Record&lt;string,string&gt;</code> (key → "not a member of &lt;Class&gt;") on the record schemas.
+            Distinct from <em>missing</em> (the blob exists; it's just not a member). <span class="muted">P2 — see §4.</span></li>
+        </ul>
+        <div class="ok">
+          <span class="lbl">No on-disk migration.</span> Linked fields store ordinary <code>file</code>/<code>record</code> id
+          references — the same bytes a non-linked field stores. <code>classId</code>/<code>linkedField</code> live in the
+          schema only. An old data root opens unchanged; a field becomes "linked" the moment both pointers are set.
+        </div>
+      </section>
+
+      <section id="classfilter">
+        <h2><span class="n">3</span> Feature 1 — class-filtered file fields <span class="tag fe">frontend</span> <span class="tag be">server</span></h2>
+        <p>Mostly wiring: the hub list already filters by class.</p>
+        <ul>
+          <li><span class="lbl">Picker:</span> <code>FilePicker.svelte</code> gains a <code>classId?: string</code> prop; when set,
+            <code>fetchFiles()</code> passes <code>{ classIds: [classId], matchAll: true }</code> to
+            <code>apiListFiles</code> (both already supported, <code>src/lib/api/files.ts:39</code>). The dialog title becomes
+            "Select &lt;Class&gt; file". No other picker change — single &amp; multiselect already work.</li>
+          <li><span class="lbl">FieldInput:</span> the <code>file</code> branch passes <code>def.classId</code> through to
+            <code>FilePicker</code>. <code>RecordPicker</code> is untouched.</li>
+          <li><span class="lbl">Schema editor:</span> when type = <code>file</code>, show a <span class="lbl">Class</span>
+            <code>Select</code> (optional — "Any file" default) populated from <code>apiListClasses()</code>, persisted as
+            <code>classId</code>. Mirror the existing <code>recordType</code> control for records.</li>
+          <li><span class="lbl">Hard-limit validation (P2):</span> on read, a class-scoped file ref whose blob isn't in
+            <code>manifest.classes[classId]</code> is flagged via <code>out_of_class_fields</code> — the editor shows a
+            "not a member of &lt;Class&gt;" hint + Clear (reuse the missing-ref hint slot; different copy). The picker already
+            prevents <em>creating</em> such a ref, so this only catches hand-edits / membership changes.</li>
+        </ul>
+        <div class="files">
+          <code>src/lib/components/FilePicker.svelte</code> <code>src/lib/components/FieldInput.svelte</code>
+          <code>src/lib/components/schema-editor/SchemaEditorBody.svelte</code> <code>src/lib/storage/manifest.ts</code>
+        </div>
+      </section>
+
+      <section id="linkcfg">
+        <h2><span class="n">4</span> Feature 2a — link setup in the schema editor <span class="tag fe">frontend</span> <span class="tag be">server</span></h2>
+        <p>The counterpart must pre-exist, so the flow has a fixed order; the editor enforces it.</p>
+        <pre class="mock">  Step 1 — on type <span class="b">albums</span>: add file field <span class="k">shots</span>, set Class = <span class="b">photos</span>.
+  Step 2 — on class <span class="b">photos</span>: add record field <span class="k">album</span>, recordType = <span class="b">albums</span>.
+           ☑ Link to inverse field
+              counterpart ▸ [ albums · shots  (file → photos) ▾ ]</pre>
+        <h3>Eligibility (what the counterpart dropdown offers)</h3>
+        <p>Editing record field <code>R</code> on class <code>C</code> with <code>recordType = T</code>, the counterpart
+          list = <code>file</code> fields <code>F</code> on type <code>T</code> where
+          <code>F.classId === C</code> <span class="lbl">and</span> <code>F.linkedField</code> is unset or already
+          <code>=== R</code> (can't steal an existing link). If none qualify, show "create a class-scoped file field on
+          <code>T</code> first" with a deep link. The link control only appears on the <code>record</code> side (the side
+          that knows both <code>recordType</code> and the counterpart) — the file side shows a read-only "🔗 Linked with
+          photos · album" badge once paired.</p>
+        <h3>Commit writes both schemas (reciprocal)</h3>
+        <p>Selecting the counterpart is one user action but two schema writes, done server-side in
+          <code>updateSchemaField</code>:</p>
+        <pre class="code"><span class="c">// PATCH /api/classes/photos/schema  field=album { linkedField: "shots" }</span>
+<span class="k">set</span>  classes/photos.album.linkedField = <span class="s">"shots"</span>
+<span class="k">set</span>  records/albums.shots.linkedField  = <span class="s">"album"</span>   <span class="c">// reciprocal, same request</span></pre>
+        <p>Unchecking, or deleting either field, clears <span class="lbl">both</span> pointers (never leave a half-link —
+          see §6). The API handlers (<code>classes/[id]/schema</code>, <code>media-types/[typeId]/schema</code>) pass
+          <code>classId</code>/<code>linkedField</code> through; the reciprocal write is performed in the repo so a single
+          endpoint call keeps both schemas consistent under their locks.</p>
+        <div class="note">
+          <span class="lbl">Backfill on link:</span> when a pair is first linked, existing references are likely one-sided
+          (people set <code>album</code> on photos before the link existed). The commit runs one
+          <code>reconcileLink()</code> pass (§5's union rule) so both sides immediately agree. Cheap — one class file + one
+          type's <code>data.json</code>.
+        </div>
+      </section>
+
+      <section id="engine">
+        <h2><span class="n">5</span> Feature 2b — the propagation engine <span class="tag be">server</span></h2>
+        <p>New module <code>src/lib/storage/relationLinks.ts</code> — the only structurally new logic.
+          It is invoked after any write that can change a linked field's value, and it mirrors the change to the
+          partner store.</p>
+        <pre class="code"><span class="c">// Given an entity whose linked field F changed value old → new,</span>
+<span class="c">// compute the edge diff and apply the reciprocal writes on the partner.</span>
+<span class="k">propagateLinkedChange</span>({
+  side:        <span class="s">'class' | 'type'</span>,
+  ownerId:     <span class="c">// classId or typeId of the edited entity</span>
+  rowId:       <span class="c">// blob id (class side) or record id (type side)</span>
+  field, def,  <span class="c">// the linked field + its FieldDefinition (has linkedField, partner)</span>
+  before, after <span class="c">// the field's id-array value, normalized</span>
+}) {
+  added   = after − before
+  removed = before − after
+  <span class="k">for</span> (t <span class="k">of</span> added)   partner(t).addRef(rowId)      <span class="c">// + cardinality-move on single sides</span>
+  <span class="k">for</span> (t <span class="k">of</span> removed) partner(t).removeRef(rowId)
+}</pre>
+        <h3>Where it hooks in</h3>
+        <table>
+          <tr><th>Originating write</th><th>Partner write</th></tr>
+          <tr><td><code>classRepo</code> per-blob metadata set (<code>album</code> changes on blob <code>abc</code>)</td><td>add/remove <code>abc</code> in each albums record's <code>shots</code></td></tr>
+          <tr><td><code>jsonRepo.updateRecord</code> (<code>shots</code> changes on album "Trip")</td><td>set/clear <code>album = "Trip"</code> on each blob's <code>photos</code> row</td></tr>
+          <tr><td><code>classRepo.removeMembers</code> / blob deleted</td><td>strip the blob from every linked record's <code>shots</code> (§6)</td></tr>
+          <tr><td><code>jsonRepo.deleteRecord</code></td><td>clear that record id from every linked blob's <code>album</code> (§6)</td></tr>
+        </table>
+        <h3>Three invariants the engine must hold</h3>
+        <ul>
+          <li><span class="lbl">No re-entry (loop guard).</span> The partner write is applied <em>raw</em> — it does not re-trigger
+            <code>propagateLinkedChange</code>. The originating change already represents both halves; re-propagating would loop.
+            Implement as an internal <code>writeRaw</code> path the engine calls, distinct from the public mutators.</li>
+          <li><span class="lbl">Cardinality move.</span> When the partner side is single (<code>!multiselect</code>) and already
+            points elsewhere, adding the new ref first removes the old edge on <em>both</em> stores (the "steal"), then adds the
+            new. Diff math handles it: setting <code>abc.album = "Beach"</code> yields <code>removed = {"Trip"}, added = {"Beach"}</code>.</li>
+          <li><span class="lbl">Deterministic lock order (no deadlock).</span> A linked write touches a class file <em>and</em> a type's
+            <code>data.json</code> (and the manifest). Acquire locks in a <span class="lbl">fixed canonical order</span> — manifest
+            first (existing rule), then the remaining files sorted by absolute path — so two concurrent linked writes can never
+            hold-and-wait in opposite orders. Document the order next to <code>withFileLock</code>.</li>
+        </ul>
+        <h3>Reconcile rule (drift &amp; backfill)</h3>
+        <p>Symmetric stores can drift from hand-edits or a crashed half-write. <code>reconcileLink(C, R, T, F)</code> defines the
+          canonical state as the <span class="lbl">union</span> of edges asserted by either side: edge
+          <code>(blob, record)</code> exists iff <code>blob.R</code> contains <code>record</code> <em>or</em>
+          <code>record.F</code> contains <code>blob</code>. It then enforces the union on both sides, and for any
+          single-cardinality side that ends up over-full, keeps one edge deterministically (by
+          <code>last_modified</code>, else lexicographic id) and drops the rest from both stores. Run it on link creation
+          (§4 backfill) and from the <code>repair</code> endpoints.</p>
+        <div class="files">
+          <code>src/lib/storage/relationLinks.ts <span class="muted">(new)</span></code>
+          <code>src/lib/storage/classRepo.ts</code> <code>src/lib/storage/jsonRepo.ts</code> <code>src/lib/storage/lock.ts</code>
+        </div>
+      </section>
+
+      <section id="cascades">
+        <h2><span class="n">6</span> Cascades &amp; schema lifecycle <span class="tag be">server</span></h2>
+        <p>The dangerous edges. Each must clear the partner side so a link never points at something gone.</p>
+        <table>
+          <tr><th>Event</th><th>Required cleanup</th></tr>
+          <tr><td><span class="lbl">Blob removed from class</span> (<code>removeMembers</code>) — its <code>album</code> row disappears</td><td>strip that blob from every linked record's <code>shots</code></td></tr>
+          <tr><td><span class="lbl">Blob deleted from disk</span> (<code>deleteFromDiskById</code>)</td><td>same, across every linked type</td></tr>
+          <tr><td><span class="lbl">Record deleted</span></td><td>clear that record id from every member blob's <code>album</code></td></tr>
+          <tr><td><span class="lbl">Linked field deleted</span> (either side)</td><td>clear the counterpart's <code>linkedField</code> (downgrade it to a plain field; existing values kept as inert ids)</td></tr>
+          <tr><td><span class="lbl">Class deleted</span></td><td>clear <code>linkedField</code>/<code>classId</code> on any type file field that pointed at it; that field degrades to "Any file"</td></tr>
+          <tr><td><span class="lbl">Type deleted</span></td><td>clear <code>linkedField</code>/<code>recordType</code> on the class record field; it degrades to an unconfigured record field (refs read as missing — existing behavior)</td></tr>
+        </table>
+        <p class="muted">typeIds and classIds are immutable, so <em>rename</em> never breaks a link (only displayName changes).
+          The <code>recordType</code>/<code>classId</code> pointers stay valid.</p>
+      </section>
+
+      <section id="read">
+        <h2><span class="n">7</span> Read &amp; render — mostly free <span class="tag be">server</span></h2>
+        <p>The payoff of writable-symmetric over a derived backlink: <span class="lbl">each side reads from its own stored
+          references</span>, so the existing resolvers already render both ends.</p>
+        <ul>
+          <li>The class <code>album</code> field → resolved to the album's title by <code>recordRefs.ts</code> (shipped with the
+            record field). Unchanged.</li>
+          <li>The album <code>shots</code> field → resolved to filenames by the manifest, the same path as any
+            <code>file</code> field. Unchanged.</li>
+          <li>No new read derivation, no per-row cross-store fetch on the hot list path. The cross-store work happens only on
+            <em>write</em> (bounded: the edited row's added/removed edges).</li>
+        </ul>
+      </section>
+
+      <section id="ui">
+        <h2><span class="n">8</span> UI design <span class="tag fe">frontend</span></h2>
+        <p>You flagged this as the risky part. Three rules keep two writable mirrors from feeling like magic-gone-wrong:
+          <span class="lbl">name the link</span>, <span class="lbl">use the same familiar widget on both sides</span>, and
+          <span class="lbl">make the "move" visible</span>. The mockups below are the concrete surfaces.</p>
+
+        <h3>8.1 — Schema editor: configuring a class-filtered file field (Feature 1)</h3>
+        <p class="muted">On type <code>albums</code> ▸ Fields tab ▸ add/edit a field. The <span class="lbl">Class</span> row
+          appears only when Type = file; "Any file" is the default (unscoped).</p>
+        <pre class="mock">┌─ Add field ─────────────────────────────────────────────┐
+│  Name      [ shots                                    ]  │
+│  Type      [ file                                  ▾ ]   │
+│  Class     [ photos                                ▾ ]   │  ◀ only when Type=file
+│              ⤷ Any file · <span class="b">photos</span> · documents · …          │     optional; "Any file" = unscoped
+│  ☑ Allow multiple                                       │
+│                                       [ Cancel ] [ Add ] │
+└─────────────────────────────────────────────────────────┘</pre>
+
+        <h3>8.2 — Schema editor: linking the record side (Feature 2)</h3>
+        <p class="muted">On class <code>photos</code> ▸ Fields ▸ the <code>album</code> record field. The link control only
+          shows on the record side (it knows both <code>recordType</code> and the counterpart). Checking the box reveals the
+          counterpart <code>Select</code>, populated by the §4 eligibility rule.</p>
+        <pre class="mock">┌─ Edit field · album ────────────────────────────────────┐
+│  Name        [ album                                  ]  │
+│  Type        [ record                              ▾ ]   │
+│  Record type [ albums                              ▾ ]   │
+│                                                         │
+│  ☑ Link to inverse field                                │   ◀ two-way relation
+│     counterpart  [ albums · shots  (file → photos) ▾ ]   │      eligible = file fields on
+│     ┌─────────────────────────────────────────────────┐ │      `albums` with classId=photos
+│     │ 🔗 Edits here also update albums · shots         │ │      & unlinked (or already this)
+│     └─────────────────────────────────────────────────┘ │
+│                                       [ Cancel ] [ Save ]│
+└─────────────────────────────────────────────────────────┘
+
+  ── empty state (no eligible counterpart yet) ───────────────
+│  ☑ Link to inverse field                                │
+│     ⚠ No class-scoped file field on albums.             │
+│       [ Create one on albums → ]   (deep link)          │</pre>
+        <p class="muted">The file side (<code>albums · shots</code>) shows a read-only confirmation once paired — you can't set
+          up the link from there, only see it and unlink:</p>
+        <pre class="mock">┌─ Edit field · shots ────────────────────────────────────┐
+│  Name   [ shots ]   Type [ file ▾ ]   Class [ photos ▾ ] │
+│  🔗 Linked with  photos · album        [ Unlink ]        │   ◀ read-only badge
+│       Unlinking clears the link on both sides.          │
+└─────────────────────────────────────────────────────────┘</pre>
+
+        <h3>8.3 — The linked field in the record/file editor</h3>
+        <p class="muted">Both sides edit with the <em>same</em> familiar widget (<code>RecordPicker</code> on the class side,
+          class-scoped <code>FilePicker</code> on the type side). The only new chrome is the badge + tooltip on the field label.</p>
+        <pre class="mock">  ── class side · blob "abc" editor (photos) ──────────────────
+   Album   🔗                                   ◀ hover badge:
+   ┌──────────────────────────────────────┐        "Editing this also
+   │ ▦  Trip                      ↗   ✕    │         updates albums · shots"
+   └──────────────────────────────────────┘
+
+  ── type side · album "Trip" editor (albums) ─────────────────
+   Shots   🔗   (class: photos)               ◀ picker limited to photos members
+   ┌──────────────────────────────────────┐
+   │ ‹▦ abc ↗ ✕›  ‹▦ def ↗ ✕›              │
+   │ [ + Add photo… ]                      │   ◀ dialog title: "Select photos file"
+   └──────────────────────────────────────┘</pre>
+
+        <h3>8.4 — The "move" is visible, not silent</h3>
+        <p class="muted">Because <code>album</code> is single on the photos side, re-pointing a blob steals it from the previous
+          album. The status line / toast names the source so the disappearance elsewhere is explained.</p>
+        <pre class="mock">   blob "abc" · Album  was: Trip   →   set: Beach
+   ┌──────────────────────────────────────┐
+   │ ▦  Beach                     ↗   ✕    │
+   └──────────────────────────────────────┘
+     <span class="s">Saved · moved from “Trip”</span>            ◀ Trip.shots no longer lists abc</pre>
+
+        <h3>8.5 — Out-of-class ref (hard-limit violation, §4 P2)</h3>
+        <p class="muted">A class-scoped file ref whose blob isn't a member (only reachable by hand-edit / lost membership) reuses
+          the missing-ref hint slot with distinct copy:</p>
+        <pre class="mock">   Shots
+   ┌──────────────────────────────────────┐
+   │ ▦  old-banner.png            ↗   ✕    │
+   └──────────────────────────────────────┘
+     <span class="c">⚠ not a member of photos · [ Clear ]</span></pre>
+
+        <h3>8.6 — Fields-tab summary lines</h3>
+        <p class="muted">So the relationship is legible without opening each field:</p>
+        <pre class="mock">  albums · Fields
+    title    string
+    shots    file → photos        · 🔗 photos·album        ◀ class filter + link
+  photos · Fields
+    album    record → albums      · 🔗 albums·shots</pre>
+      </section>
+
+      <section id="phases">
+        <h2><span class="n">9</span> Build order</h2>
+        <ol class="phases">
+          <li><span class="lbl">Feature 1 — class filter</span> — <code>classId</code> on the field def + DTOs; <code>FilePicker</code>
+            <code>classId</code> prop → <code>apiListFiles({classIds})</code>; schema-editor Class select for file fields.
+            <span class="muted">Outcome: a file field can be limited to one class's members. Independently shippable.</span></li>
+          <li><span class="lbl">Out-of-class validation (P2)</span> — <code>out_of_class_fields</code>/<code>_out_of_class</code>
+            annotation in <code>manifest</code> + editor hint. <span class="muted">Catches hand-edited non-member refs.</span></li>
+          <li><span class="lbl">Link config</span> — <code>linkedField</code> on the def + DTOs; counterpart picker on the record
+            side, eligibility rules, reciprocal schema write + unlink-clears-both. <span class="muted">Outcome: a pair can be
+            declared; no propagation yet.</span></li>
+          <li><span class="lbl">Propagation engine</span> — <code>relationLinks.ts</code>: <code>propagateLinkedChange</code> +
+            <code>reconcileLink</code>, loop guard, cardinality move, canonical lock order. Hook into class metadata writes &amp;
+            <code>jsonRepo.updateRecord</code>. <span class="muted">Outcome: editing either side updates the other.</span></li>
+          <li><span class="lbl">Cascades</span> — §6 cleanup on remove-member / delete-blob / delete-record / delete-field /
+            delete-class / delete-type. <span class="muted">Outcome: no dangling half-links.</span></li>
+          <li><span class="lbl">UI polish + backfill</span> — link badge, move toast, summary lines; <code>reconcileLink</code>
+            backfill on link creation and from <code>repair</code>.</li>
+          <li><span class="lbl">Fixtures · tests · docs</span> — see §10.</li>
+        </ol>
+        <p class="muted">Phase 1 ships alone (the class filter). Phases 3–5 are the relation; 4 is the heart and where the test
+          weight goes.</p>
+      </section>
+
+      <section id="tests">
+        <h2><span class="n">10</span> Tests · fixtures · docs <span class="tag doc">docs</span></h2>
+        <ul>
+          <li><span class="lbl">Unit (engine):</span> new <code>relationLinks.test.ts</code> — set class side → record side updates;
+            set record side → class side updates; single-side reassign moves &amp; drops old; multiselect add/remove; loop guard
+            (one write, no cascade storm); <code>reconcileLink</code> union + single-side tiebreak; cascades (delete record /
+            remove member / delete field clears the partner).</li>
+          <li><span class="lbl">Unit (filter):</span> <code>classId</code> picker scoping; <code>out_of_class_fields</code> flagged
+            for a non-member ref.</li>
+          <li><span class="lbl">Integration:</span> extend <code>classRepo.test.ts</code> across both repos — create
+            <code>photos</code> class + <code>albums</code> type, link them, exercise a full round-trip via the public mutators.</li>
+          <li><span class="lbl">Fixtures:</span> add an <code>albums</code> type + a linked class-scoped <code>shots</code> file field
+            and an <code>album</code> record field on an existing class, pre-wired so the seed shows a live link (one moved, one
+            multi). Regenerate via a scratch root, copy back; update <code>test-fixtures/README.md</code>.</li>
+          <li><span class="lbl">Docs:</span> <code>docs/FEATURES.md</code> (class-filter config, linked relations, two-way
+            semantics, cascade rules) + <code>CLAUDE.md</code> (the relation invariant + lock order) in the same change, per the
+            features-registry rule.</li>
+          <li><span class="lbl">Manual:</span> <code>npm run test:serve</code> + <code>test-ui-feature</code> — screenshot the
+            class-scoped picker, a link propagating both directions, and the move-steal.</li>
+        </ul>
+      </section>
+
+      <section id="risks">
+        <h2><span class="n">11</span> Risks &amp; edge cases</h2>
+        <div class="grid2">
+          <div class="card">
+            <h3>Deadlock across stores</h3>
+            <p class="muted">Two linked writes touching the same class + type in opposite orders. Mitigated by the canonical
+              lock order (manifest → paths sorted) in §5. The single biggest correctness risk; covered by an explicit ordering
+              test.</p>
+          </div>
+          <div class="card">
+            <h3>Half-written propagation</h3>
+            <p class="muted">A crash between the two store writes leaves drift. Bounded and self-healing: <code>reconcileLink</code>
+              (union rule) from <code>repair</code> restores agreement; reads still render each side from its own data meanwhile.</p>
+          </div>
+          <div class="card">
+            <h3>Autosave + propagation</h3>
+            <p class="muted">Editors autosave and patch the row in place without refetch. A propagated change lands on the
+              <em>other</em> entity, not the open one — so no clobbering of in-flight keystrokes. The other side refreshes on its
+              next list/open (acceptable; it's not the focused row).</p>
+          </div>
+          <div class="card">
+            <h3>Scope creep into many-to-many UIs</h3>
+            <p class="muted">v1 is one link shape (class record ⇄ type file). Class↔class and record↔record links are deferred,
+              not designed-in — keep <code>relationLinks.ts</code> parameterized by (side, partner) so they could be added later
+              without a rewrite.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="touchpoints">
+        <h2><span class="n">12</span> File touchpoints at a glance</h2>
+        <div class="card">
+          <div class="files">
+            <code>src/lib/core/types.ts</code>
+            <code>src/lib/storage/relationLinks.ts <span class="muted">(new)</span></code>
+            <code>src/lib/storage/classRepo.ts</code>
+            <code>src/lib/storage/jsonRepo.ts</code>
+            <code>src/lib/storage/manifest.ts</code>
+            <code>src/lib/storage/lock.ts</code>
+            <code>src/routes/api/classes/[id]/schema/+server.ts</code>
+            <code>src/routes/api/media-types/[typeId]/schema/+server.ts</code>
+            <code>src/lib/components/FilePicker.svelte</code>
+            <code>src/lib/components/FieldInput.svelte</code>
+            <code>src/lib/components/schema-editor/SchemaEditorBody.svelte</code>
+            <code>src/lib/api/files.ts <span class="muted">(classIds already present)</span></code>
+            <code>src/lib/storage/relationLinks.test.ts <span class="muted">(new)</span></code>
+            <code>src/lib/storage/classRepo.test.ts</code>
+            <code>test-fixtures/…</code>
+            <code>docs/FEATURES.md</code>
+            <code>CLAUDE.md</code>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

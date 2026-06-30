@@ -17,7 +17,7 @@
  */
 
 import type { SchemaDefinition } from './types.js';
-import { stringifyFieldValue } from './recordDisplay.js';
+import { stringifyFieldValue, type RecordRefRenderer } from './recordDisplay.js';
 
 /** Sort direction. */
 export type SortDir = 'asc' | 'desc';
@@ -114,7 +114,12 @@ export function sortItems<T>(items: T[], dir: SortDir, acc: SortAccessors<T>): T
  * @param key - The schema field key.
  * @param val - The raw stored value (`rec[key]`).
  */
-export function fieldSortValue(schema: SchemaDefinition, key: string, val: unknown): RawSortValue {
+export function fieldSortValue(
+	schema: SchemaDefinition,
+	key: string,
+	val: unknown,
+	resolveRef?: RecordRefRenderer
+): RawSortValue {
 	if (val === null || val === undefined) return null;
 	const def = schema[key];
 	if (def?.type === 'number') {
@@ -122,7 +127,7 @@ export function fieldSortValue(schema: SchemaDefinition, key: string, val: unkno
 		return Number.isNaN(n) ? null : n;
 	}
 	if (def?.type === 'boolean') return typeof val === 'boolean' ? val : null;
-	return stringifyFieldValue(schema, key, val) ?? null;
+	return stringifyFieldValue(schema, key, val, resolveRef) ?? null;
 }
 
 /**

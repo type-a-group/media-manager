@@ -30,9 +30,22 @@
 	import GlobalsSettingsDialog from './globals/GlobalsSettingsDialog.svelte';
 	import type { FieldDefinition } from '$lib/core/types.js';
 
-	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+	type ValueKind =
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'dropdown'
+		| 'list'
+		| 'url'
+		| 'file'
+		| 'record';
 	type ItemType = 'string' | 'number' | 'url';
-	type FieldMeta = { options?: string[]; multiselect?: boolean; itemType?: ItemType };
+	type FieldMeta = {
+		options?: string[];
+		multiselect?: boolean;
+		itemType?: ItemType;
+		recordType?: string;
+	};
 
 	/**
 	 * Globals editor — a sub-app-flavored **sectioned property table**. Fields are grouped into named
@@ -50,6 +63,7 @@
 		'id',
 		'last_modified',
 		'_missing_files',
+		'_missing_records',
 		GLOBALS_FIELD_KINDS_KEY,
 		GLOBALS_FIELD_META_KEY,
 		GLOBALS_LAYOUT_KEY
@@ -67,6 +81,7 @@
 	let fieldKinds = $state<Record<string, ValueKind>>({});
 	let fieldMeta = $state<Record<string, FieldMeta>>({});
 	let missingFiles = $state<Record<string, string>>({});
+	let missingRecords = $state<Record<string, string>>({});
 	let layout = $state<GlobalsLayout>({ sections: [], defaultSectionId: '', fieldSort: 'manual' });
 	/** The record's `last_modified` (Item 9) — shown as a muted caption, mirroring the other editors. */
 	let lastModified = $state<string | null>(null);
@@ -117,7 +132,15 @@
 			if (typeof current === 'string' && current.trim().length > 0) return [current.trim()];
 			return [];
 		}
-		if (kind === 'file') return typeof current === 'string' ? current : '';
+		if (kind === 'file' || kind === 'record') {
+			// Single ⇒ id string; multiselect ⇒ id array. Convert between the two on a cardinality flip.
+			if (meta.multiselect) {
+				if (Array.isArray(current)) return current;
+				return typeof current === 'string' && current ? [current] : [];
+			}
+			if (Array.isArray(current)) return typeof current[0] === 'string' ? current[0] : '';
+			return typeof current === 'string' ? current : '';
+		}
 		if (kind === 'dropdown') {
 			if (meta.multiselect)
 				return Array.isArray(current) ? current : current ? [String(current)] : [];
@@ -137,12 +160,13 @@
 			type: getFieldKind(key),
 			options: meta.options,
 			multiselect: meta.multiselect,
-			itemTypes: meta.itemType ? [meta.itemType] : undefined
+			itemTypes: meta.itemType ? [meta.itemType] : undefined,
+			recordType: meta.recordType
 		} as FieldDefinition;
 	}
 
 	function hasMeta(m: FieldMeta): boolean {
-		return !!(m.options?.length || m.multiselect || m.itemType);
+		return !!(m.options?.length || m.multiselect || m.itemType || m.recordType);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -197,6 +221,7 @@
 				if (o.itemType === 'string' || o.itemType === 'number' || o.itemType === 'url') {
 					m.itemType = o.itemType;
 				}
+				if (typeof o.recordType === 'string') m.recordType = o.recordType;
 				out[k] = m;
 			}
 			return out;
@@ -223,6 +248,10 @@
 		missingFiles =
 			rec._missing_files && typeof rec._missing_files === 'object'
 				? (rec._missing_files as Record<string, string>)
+				: {};
+		missingRecords =
+			rec._missing_records && typeof rec._missing_records === 'object'
+				? (rec._missing_records as Record<string, string>)
 				: {};
 		layout = reconcileLayout(parseLayout(rec[GLOBALS_LAYOUT_KEY]), Object.keys(editable));
 		deletedKeys.clear();
@@ -351,8 +380,10 @@
 
 	function setFieldMeta(key: string, meta: FieldMeta) {
 		fieldMeta = { ...fieldMeta, [key]: meta };
-		if (getFieldKind(key) === 'dropdown') {
-			formValues = { ...formValues, [key]: coerceToKind('dropdown', formValues[key], meta) };
+		const kind = getFieldKind(key);
+		// Re-coerce when a multiselect toggle (dropdown/file/record) flips the value's shape.
+		if (kind === 'dropdown' || kind === 'file' || kind === 'record') {
+			formValues = { ...formValues, [key]: coerceToKind(kind, formValues[key], meta) };
 		}
 	}
 
@@ -694,8 +725,9 @@
 								meta={getMeta(key)}
 								sectionId={section.id}
 								sections={sectionOptions}
-								missing={missingFiles[key] !== undefined && formValues[key] === baseValues[key]}
-								missingName={missingFiles[key]}
+								missing={(missingFiles[key] !== undefined || missingRecords[key] !== undefined) &&
+									formValues[key] === baseValues[key]}
+								missingName={missingFiles[key] ?? missingRecords[key]}
 								onEnterSave={flush}
 								onRename={renameField}
 								onTypeChange={setFieldKind}

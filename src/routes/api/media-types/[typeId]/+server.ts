@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import { getMediaTypePaths } from '$lib/storage/paths.js';
 import { deleteMediaType } from '$lib/storage/mediaTypes.js';
+import { purgeTypeLinks } from '$lib/storage/relationLinks.js';
 import {
 	readMediaTypeSettingsFileSync,
 	writeMediaTypeSettingsFile
@@ -79,6 +80,8 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		const typeId = params.typeId;
 		if (typeId === 'globals') throw error(403, 'Globals group cannot be deleted');
 		getMediaTypeRepo(typeId); // validate typeId and that folder exists
+		// Clear the link declaration on any class record field that targeted this type.
+		await purgeTypeLinks(typeId);
 		await deleteMediaType(typeId);
 		return json({ success: true });
 	} catch (err) {

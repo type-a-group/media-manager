@@ -8,6 +8,7 @@ import {
 	SchemaDefinitionSchema
 } from '$lib/core/types.js';
 import { isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
+import { onFileFieldDeleted } from '$lib/storage/relationLinks.js';
 
 /**
  * GET: Return schema for this media type.
@@ -74,7 +75,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			parsed.data.defaultValue,
 			parsed.data.options,
 			parsed.data.itemTypes,
-			parsed.data.multiselect
+			parsed.data.multiselect,
+			parsed.data.suggest,
+			parsed.data.recordType,
+			parsed.data.classId
 		);
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
@@ -108,7 +112,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			defaultValue: parsed.data.defaultValue,
 			options: parsed.data.options,
 			itemTypes: parsed.data.itemTypes,
-			multiselect: parsed.data.multiselect
+			multiselect: parsed.data.multiselect,
+			suggest: parsed.data.suggest,
+			recordType: parsed.data.recordType,
+			classId: parsed.data.classId
 		});
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
@@ -138,7 +145,10 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 
 		const typeId = params.typeId;
 		const repo = getMediaTypeRepo(typeId);
+		// Capture the def before deletion so a linked file field can unlink its class counterpart.
+		const deletedDef = (await repo.getSchema())[key];
 		const result = await repo.deleteSchemaField(key, parsed.data.removeFromImages);
+		if (deletedDef) await onFileFieldDeleted(deletedDef);
 		return json({ success: true, schema: result.schema });
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;

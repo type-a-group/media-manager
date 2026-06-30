@@ -27,6 +27,12 @@
 			"type": "file",
 			"removable": true,
 			"defaultValue": ""
+		},
+		"related": {
+			"type": "record",
+			"removable": true,
+			"recordType": "notes",
+			"defaultValue": ""
 		}
 	},
 	"displayField": "title",

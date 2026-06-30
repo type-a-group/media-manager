@@ -13,8 +13,14 @@ import {
 	getRecord,
 	listAllFiles,
 	listClassMembers,
-	updateClassConfig
+	updateClassConfig,
+	addSchemaField,
+	updateSchemaField,
+	getClassSchema,
+	getUniqueFieldValues
 } from './classRepo.js';
+import { createMediaType } from './mediaTypes.js';
+import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import type { SchemaDefinition } from '$lib/core/types.js';
 
 const schema = {
@@ -307,5 +313,88 @@ describe('classRepo — opt-in class membership', () => {
 			(f) => f.file_name
 		);
 		expect(both).toEqual(['b.png']);
+	});
+
+	it('round-trips the `suggest` flag through add/update and gates it by type', async () => {
+		const id = await createClass('Gallery', schema);
+
+		// Qualifying fields persist the flag.
+		await addSchemaField(id, 'note', 'string', '', undefined, undefined, undefined, true);
+		await addSchemaField(id, 'tags', 'list', [], undefined, ['string'], undefined, true);
+		// Non-qualifying field: the flag is dropped even when requested.
+		await addSchemaField(id, 'count', 'number', 0, undefined, undefined, undefined, true);
+		// list(number) does not qualify either.
+		await addSchemaField(id, 'sizes', 'list', [], undefined, ['number'], undefined, true);
+
+		let schemaNow = await getClassSchema(id);
+		expect((schemaNow.note as { suggest?: boolean }).suggest).toBe(true);
+		expect((schemaNow.tags as { suggest?: boolean }).suggest).toBe(true);
+		expect((schemaNow.count as { suggest?: boolean }).suggest).toBeUndefined();
+		expect((schemaNow.sizes as { suggest?: boolean }).suggest).toBeUndefined();
+
+		// Turning it off persists (absent flag), and a rename preserves it.
+		await updateSchemaField(id, 'note', { suggest: false });
+		await updateSchemaField(id, 'tags', { newKey: 'labels' });
+		schemaNow = await getClassSchema(id);
+		expect((schemaNow.note as { suggest?: boolean }).suggest).toBeUndefined();
+		expect((schemaNow.labels as { suggest?: boolean }).suggest).toBe(true);
+	});
+
+	it('getUniqueFieldValues flattens list items into distinct sorted values', async () => {
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		fs.writeFileSync(path.join(filesDir, 'b.png'), 'y');
+		const ids = (await listAllFiles()).files.map((f) => f.id);
+
+		const id = await createClass('Gallery', {
+			tags: { type: 'list', removable: true, itemTypes: ['string'], defaultValue: [] }
+		} as unknown as SchemaDefinition);
+		await addMembers(id, ids);
+		await updateRecord(id, ids[0], { tags: ['warm', 'sky'] });
+		await updateRecord(id, ids[1], { tags: ['sky', 'green'] });
+
+		// Individual items, de-duped and sorted — the autocomplete source for a `suggest` tags field.
+		expect(await getUniqueFieldValues(id, 'tags')).toEqual(['green', 'sky', 'warm']);
+	});
+
+	it('resolves a record-field reference to the target title and flags a dangling ref', async () => {
+		// A 'people' json record type with one named record.
+		const peopleId = await createMediaType('People');
+		const people = getMediaTypeRepo(peopleId);
+		await people.addSchemaField('name', 'string', '');
+		const alice = await people.createRecord();
+		await people.updatePropertiesById(alice.id, { name: 'Alice' });
+
+		// A file in a class whose `author` record field points at people and titles each tile.
+		fs.writeFileSync(path.join(filesDir, 'a.png'), 'x');
+		const fileId = (await listAllFiles()).files[0].id;
+		const classId = await createClass('Docs', {} as SchemaDefinition);
+		await addSchemaField(
+			classId,
+			'author',
+			'record',
+			'',
+			undefined,
+			undefined,
+			false,
+			false,
+			peopleId
+		);
+		await updateClassConfig(classId, { displayField: 'author' });
+		await addMembers(classId, [fileId]);
+		await updateRecord(classId, fileId, { author: alice.id });
+
+		// Catalog view resolves the referenced record's title; nothing is missing.
+		let members = await listClassMembers(classId);
+		expect(members.files[0].title_value).toBe('Alice');
+		expect(members.files[0].missing_record_fields).toBeUndefined();
+		expect((await getRecord(classId, fileId))?._missing_records).toBeUndefined();
+
+		// Deleting the target record leaves the reference dangling — flagged on both read paths.
+		await people.deleteRecord(alice.id);
+		members = await listClassMembers(classId);
+		expect(members.files[0].missing_record_fields).toEqual(['author']);
+		expect((await getRecord(classId, fileId))?._missing_records).toMatchObject({
+			author: expect.any(String)
+		});
 	});
 });

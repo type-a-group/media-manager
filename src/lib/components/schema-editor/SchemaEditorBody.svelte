@@ -7,12 +7,15 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-	import { Plus, Pencil, Trash2, X } from 'lucide-svelte';
+	import { Plus, Pencil, Trash2, X, Link2, Link2Off } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { fieldLabel, isProtectedSchemaKey } from '$lib/core/fieldKeys.js';
+	import { fieldSupportsSuggest } from '$lib/core/types.js';
 	import type { SchemaDefinition, FieldType, ListItemType } from '$lib/core/types.js';
 	import type { SchemaEditorAdapter } from './types.js';
+	import { apiListMediaTypes, apiGetSchemaForType } from '$lib/api/client.js';
+	import { apiListClasses, apiUpdateClassField, apiClassLinkPreview } from '$lib/api/files.js';
 
 	/**
 	 * Shared schema editor body: add / edit / delete fields with full field-type support (dropdown
@@ -41,12 +44,28 @@
 		'dropdown',
 		'list',
 		'url',
-		'file'
+		'file',
+		'record'
 	];
 	const LIST_ITEM_TYPES: ListItemType[] = ['string', 'number', 'url'];
 
 	let schema = $state<SchemaDefinition | null>(null);
 	let loading = $state(false);
+
+	/**
+	 * Selectable target record types for `record` fields — every `json` record type except the reserved
+	 * `globals` singleton (which is not a navigable record collection). Loaded once on mount.
+	 */
+	let recordTypes = $state<{ id: string; displayName: string }[]>([]);
+	const recordTypeLabel = $derived((id?: string) =>
+		id ? (recordTypes.find((t) => t.id === id)?.displayName ?? id) : ''
+	);
+
+	/** Selectable classes for scoping a `file` field's picker to one class's members. Loaded on mount. */
+	let classes = $state<{ id: string; displayName: string }[]>([]);
+	const classLabel = $derived((id?: string) =>
+		id ? (classes.find((c) => c.id === id)?.displayName ?? id) : ''
+	);
 
 	// Add field form
 	let addFieldName = $state('');
@@ -58,6 +77,9 @@
 	let addOptionInput = $state('');
 	let addItemType = $state<ListItemType>('string');
 	let addMultiselect = $state(false);
+	let addRecordType = $state('');
+	let addClassId = $state('');
+	let addSuggest = $state(false);
 
 	// Edit state
 	let editingKey = $state<string | null>(null);
@@ -70,6 +92,97 @@
 	let editOptionInput = $state('');
 	let editItemType = $state<ListItemType>('string');
 	let editMultiselect = $state(false);
+	let editRecordType = $state('');
+	let editClassId = $state('');
+	let editSuggest = $state(false);
+	// Two-way relation link (record-field side, only on a class). `editLinkedField` is the chosen
+	// counterpart file-field key on the target type; '' = unlinked.
+	let editLinkEnabled = $state(false);
+	let editLinkedField = $state('');
+	/** Eligible counterpart file fields on the selected record type (scoped to this class, unlinked or ours). */
+	let counterparts = $state<{ key: string; label: string }[]>([]);
+	/** Link-mismatch reconcile prompt (shown only when both sides already hold conflicting data). */
+	let linkPromptOpen = $state(false);
+	let linkPromptCounts = $state<{ classOnly: number; typeOnly: number }>({
+		classOnly: 0,
+		typeOnly: 0
+	});
+	/** The authoritative side the user chose in the prompt; threaded to the save as `linkSync`. */
+	let linkSyncStrategy = $state<'class' | 'type' | undefined>(undefined);
+
+	/** This schema's entity identity (drives the link UI). Undefined adapters fall back to no-link. */
+	const entityKind = $derived(adapter.entityKind);
+	const entityId = $derived(adapter.entityId ?? '');
+	/** Linking is configured only from a class's record field (the declaration side). */
+	const canLink = $derived(entityKind === 'class' && editFieldType === 'record');
+	/** The stored def of the field being edited (pre-edit), for the read-only file-side link badge. */
+	const editStoredDef = $derived(editingKey ? schema?.[editingKey] : undefined);
+	/** When editing a *type*'s linked file field, the class + record field it links back to. */
+	const editFileLink = $derived.by(() => {
+		const d = editStoredDef as
+			| { type?: string; classId?: string; linkedField?: string }
+			| undefined;
+		if (entityKind === 'type' && d?.type === 'file' && d.classId && d.linkedField)
+			return { classId: d.classId, recordField: d.linkedField };
+		return null;
+	});
+
+	/** Unlink from the file side: clear the link declaration on the partner class's record field. */
+	async function unlinkFileField(linkClassId: string, recordField: string) {
+		try {
+			await apiUpdateClassField(linkClassId, { fieldName: recordField, linkedField: '' });
+			toast.success('Unlinked');
+			await fetchSchema();
+			onchanged?.();
+		} catch (e) {
+			console.error(e);
+			toast.error('Failed to unlink');
+		}
+	}
+
+	/** Whether the "Suggest existing values" toggle applies to the in-progress add form. */
+	const addCanSuggest = $derived(fieldSupportsSuggest(addFieldType, [addItemType]));
+	/** Whether the "Suggest existing values" toggle applies to the in-progress edit form. */
+	const editCanSuggest = $derived(fieldSupportsSuggest(editFieldType, [editItemType]));
+
+	/** `multiselect` (array vs single value) applies to dropdown, file, and record fields. */
+	function canMultiselect(t: FieldType): boolean {
+		return t === 'dropdown' || t === 'file' || t === 'record';
+	}
+
+	/**
+	 * Load the eligible counterpart file fields for linking the edited class record field to
+	 * `recordType`: file fields on the target type scoped to this class that are unlinked (or already
+	 * linked to the field being edited).
+	 */
+	async function loadCounterparts(recordType: string, ownKey: string | null) {
+		if (entityKind !== 'class' || !recordType) {
+			counterparts = [];
+			return;
+		}
+		try {
+			const targetSchema = await apiGetSchemaForType(recordType);
+			counterparts = Object.entries(targetSchema)
+				.filter(([, d]) => {
+					const def = d as { type: string; classId?: string; linkedField?: string };
+					return (
+						def.type === 'file' &&
+						def.classId === entityId &&
+						(!def.linkedField || def.linkedField === ownKey)
+					);
+				})
+				.map(([key]) => ({ key, label: fieldLabel(key) }));
+		} catch (e) {
+			console.error('SchemaEditorBody: failed to load link counterparts', e);
+			counterparts = [];
+		}
+	}
+
+	// Reload eligible counterparts whenever the edited record field's target type changes.
+	$effect(() => {
+		if (canLink && editRecordType) loadCounterparts(editRecordType, editingKey);
+		else counterparts = [];
+	});
 
 	let deleteConfirmOpen = $state(false);
 	let deleteTargetKey = $state<string | null>(null);
@@ -89,7 +202,33 @@
 		}
 	}
 
-	onMount(fetchSchema);
+	/** Load the selectable target record types for `record` fields (json types, excluding globals). */
+	async function fetchRecordTypes() {
+		try {
+			const types = await apiListMediaTypes();
+			recordTypes = types
+				.filter((t) => t.kind === 'json' && t.id !== 'globals')
+				.map((t) => ({ id: t.id, displayName: t.displayName }));
+		} catch (e) {
+			console.error('SchemaEditorBody: failed to load record types', e);
+		}
+	}
+
+	/** Load the selectable classes for scoping `file` fields. */
+	async function fetchClasses() {
+		try {
+			const list = await apiListClasses();
+			classes = list.map((c) => ({ id: c.id, displayName: c.displayName }));
+		} catch (e) {
+			console.error('SchemaEditorBody: failed to load classes', e);
+		}
+	}
+
+	onMount(() => {
+		fetchSchema();
+		fetchRecordTypes();
+		fetchClasses();
+	});
 
 	/** Schema keys in display order (adapter override, else plain locale sort). */
 	function getEditableSchemaKeys(s: SchemaDefinition): string[] {
@@ -129,6 +268,8 @@
 		if (!/^[a-z_][a-z0-9_]*$/.test(name))
 			return toast.error('Field name must be snake_case (e.g. my_field)');
 		if (schema && name in schema) return toast.error('Field already exists');
+		if (addFieldType === 'record' && !addRecordType)
+			return toast.error('Choose a record type for this field');
 
 		try {
 			await adapter.addField({
@@ -143,7 +284,10 @@
 				),
 				options: addFieldType === 'dropdown' ? addOptions : undefined,
 				itemTypes: addFieldType === 'list' ? [addItemType] : undefined,
-				multiselect: addFieldType === 'dropdown' ? addMultiselect : undefined
+				multiselect: canMultiselect(addFieldType) ? addMultiselect : undefined,
+				recordType: addFieldType === 'record' ? addRecordType || undefined : undefined,
+				classId: addFieldType === 'file' ? addClassId || undefined : undefined,
+				suggest: addCanSuggest ? addSuggest : undefined
 			});
 			toast.success('Field added');
 			addFieldName = '';
@@ -153,6 +297,9 @@
 			addOptions = [];
 			addItemType = 'string';
 			addMultiselect = false;
+			addRecordType = '';
+			addClassId = '';
+			addSuggest = false;
 			await fetchSchema();
 			onchanged?.();
 		} catch (e) {
@@ -182,8 +329,18 @@
 		editDefaultUrlUrl = '';
 		editOptions = def.options ?? [];
 		editOptionInput = '';
-		editMultiselect =
-			def.type === 'dropdown' ? ((def as { multiselect?: boolean }).multiselect ?? false) : false;
+		editMultiselect = canMultiselect(def.type)
+			? ((def as { multiselect?: boolean }).multiselect ?? false)
+			: false;
+		editRecordType =
+			def.type === 'record' ? ((def as { recordType?: string }).recordType ?? '') : '';
+		editClassId = def.type === 'file' ? ((def as { classId?: string }).classId ?? '') : '';
+		const existingLink =
+			def.type === 'record' ? ((def as { linkedField?: string }).linkedField ?? '') : '';
+		editLinkEnabled = !!existingLink;
+		editLinkedField = existingLink;
+		linkSyncStrategy = undefined;
+		editSuggest = (def as { suggest?: boolean }).suggest ?? false;
 		if (def.type === 'url') {
 			const raw = def.defaultValue;
 			if (raw != null && typeof raw === 'object' && 'url' in raw) {
@@ -224,10 +381,42 @@
 		const newName = editFieldName.trim().toLowerCase().replace(/\s+/g, '_');
 		if (!newName || !/^[a-z_][a-z0-9_]*$/.test(newName))
 			return toast.error('Field name must be snake_case');
+		if (editFieldType === 'record' && !editRecordType)
+			return toast.error('Choose a record type for this field');
+		if (canLink && editLinkEnabled && !editLinkedField)
+			return toast.error('Choose a field to link to (or turn off linking)');
 		if (newName !== editingKey && isProtectedSchemaKey(editingKey))
 			return toast.error('This field cannot be renamed');
 		if (newName !== editingKey && schema[newName])
 			return toast.error('A field with that name already exists');
+
+		// When newly linking a field whose two sides already hold mismatched data, prompt the user to
+		// pick an authoritative side before saving (so the link doesn't silently leave a mismatch).
+		const originalLink = (editStoredDef as { linkedField?: string } | undefined)?.linkedField ?? '';
+		if (canLink && editLinkEnabled && editLinkedField && editLinkedField !== originalLink) {
+			try {
+				const preview = await apiClassLinkPreview(
+					entityId,
+					editingKey,
+					editRecordType,
+					editLinkedField
+				);
+				if (preview.mismatch) {
+					linkPromptCounts = preview;
+					linkPromptOpen = true;
+					return; // wait for the user's choice → onLinkSyncChoice → continueSave
+				}
+			} catch (e) {
+				console.error('SchemaEditorBody: link preview failed', e); // fall through, link without sync
+			}
+		}
+		await continueSave();
+	}
+
+	/** Run the rename gate (if the field is being renamed) then persist the edit. */
+	async function continueSave() {
+		if (!editingKey) return;
+		const newName = editFieldName.trim().toLowerCase().replace(/\s+/g, '_');
 		if (newName !== editingKey) {
 			renameFromKey = editingKey;
 			renameToKey = newName;
@@ -235,6 +424,13 @@
 			return;
 		}
 		await doSaveEdit(editingKey, editingKey);
+	}
+
+	/** The user picked an authoritative side in the link-mismatch prompt; continue the save with it. */
+	function onLinkSyncChoice(strategy: 'class' | 'type') {
+		linkSyncStrategy = strategy;
+		linkPromptOpen = false;
+		continueSave();
 	}
 
 	async function doSaveEdit(oldKey: string, newKey: string) {
@@ -252,7 +448,15 @@
 				),
 				options: editFieldType === 'dropdown' ? editOptions : undefined,
 				itemTypes: editFieldType === 'list' ? [editItemType] : undefined,
-				multiselect: editFieldType === 'dropdown' ? editMultiselect : undefined
+				multiselect: canMultiselect(editFieldType) ? editMultiselect : undefined,
+				recordType: editFieldType === 'record' ? editRecordType || undefined : undefined,
+				classId: editFieldType === 'file' ? editClassId || undefined : undefined,
+				// Record-field link: send the chosen counterpart, or '' to clear (unlink). The server
+				// validates the counterpart and mirrors the back-link on the target type's file field.
+				linkedField: canLink ? (editLinkEnabled ? editLinkedField : '') : undefined,
+				// How to reconcile pre-existing data on initial linkage (set only when the prompt fired).
+				linkSync: canLink && editLinkEnabled ? linkSyncStrategy : undefined,
+				suggest: editCanSuggest ? editSuggest : false
 			});
 			toast.success('Field updated');
 			editingKey = null;
@@ -339,10 +543,120 @@
 										<Input type="url" bind:value={editDefaultUrlUrl} placeholder="https://…" />
 									</div>
 								</div>
-							{:else}
+							{:else if editFieldType !== 'file' && editFieldType !== 'record'}
 								<div class="flex flex-row items-center gap-2">
 									<Label class="w-20 shrink-0">Default</Label>
 									<Input type="text" bind:value={editDefaultValue} placeholder="Default value" />
+								</div>
+							{/if}
+							{#if editFieldType === 'record'}
+								<div class="flex flex-row items-center gap-2">
+									<Label class="w-20 shrink-0">Record type</Label>
+									<Select.Root type="single" bind:value={editRecordType}>
+										<Select.Trigger class="w-48"
+											>{recordTypeLabel(editRecordType) || 'Select type…'}</Select.Trigger
+										>
+										<Select.Content>
+											{#each recordTypes as t (t.id)}
+												<Select.Item value={t.id}>{t.displayName}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+							{/if}
+							{#if editFieldType === 'file'}
+								<div class="flex flex-row items-center gap-2">
+									<Label class="w-20 shrink-0">Class</Label>
+									<Select.Root type="single" bind:value={editClassId}>
+										<Select.Trigger class="w-48"
+											>{classLabel(editClassId) || 'Any file'}</Select.Trigger
+										>
+										<Select.Content>
+											<Select.Item value="">Any file</Select.Item>
+											{#each classes as c (c.id)}
+												<Select.Item value={c.id}>{c.displayName}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
+							{/if}
+							{#if editFileLink}
+								<div
+									class="flex flex-col gap-1 rounded-md border border-dashed bg-muted/40 p-2 text-sm"
+								>
+									<div class="flex items-center gap-1.5">
+										<Link2 class="size-4 text-muted-foreground" />
+										<span
+											>Linked with <span class="font-medium"
+												>{classLabel(editFileLink.classId)}</span
+											>
+											· {fieldLabel(editFileLink.recordField)}</span
+										>
+									</div>
+									<p class="text-xs text-muted-foreground">
+										Two-way relation — edits here also update the linked record field.
+									</p>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										class="mt-1 w-fit gap-1.5"
+										onclick={() =>
+											editFileLink &&
+											unlinkFileField(editFileLink.classId, editFileLink.recordField)}
+									>
+										<Link2Off class="size-3.5" /> Unlink
+									</Button>
+								</div>
+							{/if}
+							{#if editFieldType === 'file' || editFieldType === 'record'}
+								<div class="flex flex-row items-center gap-2">
+									<Checkbox id="edit-multiselect-ref" bind:checked={editMultiselect} />
+									<Label for="edit-multiselect-ref" class="cursor-pointer text-sm font-normal"
+										>Allow multiple</Label
+									>
+								</div>
+							{/if}
+							{#if canLink}
+								<div class="flex flex-col gap-2 rounded-md border bg-muted/30 p-2">
+									<div class="flex flex-row items-center gap-2">
+										<Checkbox id="edit-link" bind:checked={editLinkEnabled} />
+										<Label for="edit-link" class="cursor-pointer text-sm font-normal"
+											>Link to inverse field (two-way relation)</Label
+										>
+									</div>
+									{#if editLinkEnabled}
+										{#if !editRecordType}
+											<p class="text-xs text-muted-foreground">Choose a record type first.</p>
+										{:else if counterparts.length === 0}
+											<p class="text-xs text-muted-foreground">
+												No class-scoped file field on {recordTypeLabel(editRecordType)} is available.
+												Add a
+												<span class="font-medium">file</span> field there scoped to this class first.
+											</p>
+										{:else}
+											<div class="flex flex-row items-center gap-2">
+												<Label class="w-20 shrink-0 text-sm">Counterpart</Label>
+												<Select.Root type="single" bind:value={editLinkedField}>
+													<Select.Trigger class="w-56"
+														>{editLinkedField
+															? fieldLabel(editLinkedField)
+															: 'Select field…'}</Select.Trigger
+													>
+													<Select.Content>
+														{#each counterparts as c (c.key)}
+															<Select.Item value={c.key}>{c.label}</Select.Item>
+														{/each}
+													</Select.Content>
+												</Select.Root>
+											</div>
+											<p class="text-xs text-muted-foreground">
+												Edits to this field will also update the chosen field on {recordTypeLabel(
+													editRecordType
+												)}.
+											</p>
+										{/if}
+									{/if}
 								</div>
 							{/if}
 							{#if editFieldType === 'list'}
@@ -356,6 +670,14 @@
 											{/each}
 										</Select.Content>
 									</Select.Root>
+								</div>
+							{/if}
+							{#if editCanSuggest}
+								<div class="flex flex-row items-center gap-2">
+									<Checkbox id="edit-suggest" bind:checked={editSuggest} />
+									<Label for="edit-suggest" class="cursor-pointer text-sm font-normal"
+										>Suggest existing values</Label
+									>
 								</div>
 							{/if}
 							{#if editFieldType === 'dropdown'}
@@ -415,7 +737,21 @@
 										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiselect){/if}
 									{:else if schema[key]?.type === 'list' && (schema[key] as { itemTypes?: ListItemType[] }).itemTypes?.length}
 										— {(schema[key] as { itemTypes: ListItemType[] }).itemTypes[0]}
+									{:else if schema[key]?.type === 'record'}
+										→ {recordTypeLabel((schema[key] as { recordType?: string }).recordType)}
+										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
+									{:else if schema[key]?.type === 'file'}
+										{#if (schema[key] as { classId?: string }).classId}→ {classLabel(
+												(schema[key] as { classId?: string }).classId
+											)}{/if}
+										{#if (schema[key] as { multiselect?: boolean }).multiselect}(multiple){/if}
 									{/if}
+									{#if (schema[key] as { linkedField?: string }).linkedField}
+										· <Link2 class="inline size-3 align-text-bottom" />{fieldLabel(
+											(schema[key] as { linkedField?: string }).linkedField!
+										)}
+									{/if}
+									{#if (schema[key] as { suggest?: boolean }).suggest}· suggestions{/if}
 								</span>
 							</div>
 							<div class="flex shrink-0 gap-1">
@@ -461,7 +797,7 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				{#if addFieldType !== 'url'}
+				{#if addFieldType !== 'url' && addFieldType !== 'file' && addFieldType !== 'record'}
 					<Input
 						type="text"
 						bind:value={addDefaultValue}
@@ -494,6 +830,55 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
+				</div>
+			{/if}
+			{#if addFieldType === 'record'}
+				<div class="flex flex-row items-center gap-2">
+					<Label class="w-24 shrink-0 text-sm">Record type</Label>
+					<Select.Root type="single" bind:value={addRecordType}>
+						<Select.Trigger class="w-48"
+							>{recordTypeLabel(addRecordType) || 'Select type…'}</Select.Trigger
+						>
+						<Select.Content>
+							{#if recordTypes.length === 0}
+								<div class="px-2 py-1.5 text-sm text-muted-foreground">No record types yet</div>
+							{:else}
+								{#each recordTypes as t (t.id)}
+									<Select.Item value={t.id}>{t.displayName}</Select.Item>
+								{/each}
+							{/if}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			{/if}
+			{#if addFieldType === 'file'}
+				<div class="flex flex-row items-center gap-2">
+					<Label class="w-24 shrink-0 text-sm">Class</Label>
+					<Select.Root type="single" bind:value={addClassId}>
+						<Select.Trigger class="w-48">{classLabel(addClassId) || 'Any file'}</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="">Any file</Select.Item>
+							{#each classes as c (c.id)}
+								<Select.Item value={c.id}>{c.displayName}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			{/if}
+			{#if addFieldType === 'file' || addFieldType === 'record'}
+				<div class="flex flex-row items-center gap-2">
+					<Checkbox id="add-multiselect-ref" bind:checked={addMultiselect} />
+					<Label for="add-multiselect-ref" class="cursor-pointer text-sm font-normal"
+						>Allow multiple</Label
+					>
+				</div>
+			{/if}
+			{#if addCanSuggest}
+				<div class="flex flex-row items-center gap-2">
+					<Checkbox id="add-suggest" bind:checked={addSuggest} />
+					<Label for="add-suggest" class="cursor-pointer text-sm font-normal"
+						>Suggest existing values</Label
+					>
 				</div>
 			{/if}
 			{#if addFieldType === 'dropdown'}
@@ -559,6 +944,43 @@
 			</Button>
 			<Button variant="destructive" type="button" onclick={() => handleDelete(true)}>
 				Remove from schema and all {recordNoun}s
+			</Button>
+			<AlertDialog.Cancel type="button" class="mt-2">Cancel</AlertDialog.Cancel>
+		</div>
+	</AlertDialog.Content>
+</AlertDialog.Root>
+
+<AlertDialog.Root bind:open={linkPromptOpen}>
+	<AlertDialog.Content>
+		<AlertDialog.Title>These fields already have mismatched data</AlertDialog.Title>
+		<AlertDialog.Description>
+			Linking <span class="font-medium">{fieldLabel(editingKey ?? '')}</span> and
+			<span class="font-medium"
+				>{recordTypeLabel(editRecordType)} · {fieldLabel(editLinkedField)}</span
+			>, but they don't agree:
+		</AlertDialog.Description>
+		<ul class="my-2 ml-4 list-disc text-sm text-muted-foreground">
+			{#if linkPromptCounts.classOnly > 0}
+				<li>
+					{linkPromptCounts.classOnly} reference{linkPromptCounts.classOnly === 1 ? '' : 's'} only on
+					the
+					<span class="font-medium">{classLabel(entityId)}</span> side
+				</li>
+			{/if}
+			{#if linkPromptCounts.typeOnly > 0}
+				<li>
+					{linkPromptCounts.typeOnly} reference{linkPromptCounts.typeOnly === 1 ? '' : 's'} only on the
+					<span class="font-medium">{recordTypeLabel(editRecordType)}</span> side
+				</li>
+			{/if}
+		</ul>
+		<p class="text-sm">Which side is correct? The other will be rebuilt to match.</p>
+		<div class="mt-4 flex flex-col gap-2">
+			<Button variant="outline" type="button" onclick={() => onLinkSyncChoice('class')}>
+				Keep {classLabel(entityId)} side
+			</Button>
+			<Button variant="outline" type="button" onclick={() => onLinkSyncChoice('type')}>
+				Keep {recordTypeLabel(editRecordType)} side
 			</Button>
 			<AlertDialog.Cancel type="button" class="mt-2">Cancel</AlertDialog.Cancel>
 		</div>

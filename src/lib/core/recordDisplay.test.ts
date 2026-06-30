@@ -81,6 +81,18 @@ describe('stringifyFieldValue', () => {
 	it('stringifies scalars', () => {
 		expect(stringifyFieldValue(schema, 'count', 7)).toBe('7');
 	});
+
+	it('renders a record ref via the resolver, else falls back to the raw id', () => {
+		const refSchema: SchemaDefinition = {
+			author: { type: 'record', recordType: 'people', removable: true }
+		};
+		const resolve = (key: string, val: unknown) =>
+			key === 'author' && val === 'p1' ? 'Alice' : undefined;
+		expect(stringifyFieldValue(refSchema, 'author', 'p1', resolve)).toBe('Alice');
+		// No resolver → the raw id (single + multiselect array forms).
+		expect(stringifyFieldValue(refSchema, 'author', 'p1')).toBe('p1');
+		expect(stringifyFieldValue(refSchema, 'author', ['p1', 'p2'])).toBe('p1, p2');
+	});
 });
 
 describe('groupByDisplayValue', () => {

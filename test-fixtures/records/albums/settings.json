@@ -1,0 +1,17 @@
+{
+	"displayName": "Albums",
+	"kind": "json",
+	"schema": {
+		"title": { "type": "string", "removable": true, "defaultValue": "" },
+		"photos": {
+			"type": "file",
+			"removable": true,
+			"multiselect": true,
+			"classId": "images",
+			"linkedField": "album",
+			"defaultValue": []
+		}
+	},
+	"displayField": "title",
+	"icon": "image"
+}

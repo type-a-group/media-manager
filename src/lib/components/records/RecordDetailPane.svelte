@@ -17,7 +17,8 @@
 		apiGetSchemaForType,
 		apiGetRecordByIdForType,
 		apiUpdatePropertiesByIdForType,
-		apiDeleteRecordForType
+		apiDeleteRecordForType,
+		apiGetFieldValuesForType
 	} from '$lib/api/client.js';
 
 	/**
@@ -310,8 +311,14 @@
 						{@const def = schema[key]}
 						{@const rec = record as Record<string, unknown> | null}
 						{@const mf = (rec?._missing_files ?? undefined) as Record<string, string> | undefined}
+						{@const mr = (rec?._missing_records ?? undefined) as Record<string, string> | undefined}
+						{@const oc = (rec?._out_of_class ?? undefined) as Record<string, string> | undefined}
 						{@const isMissing =
-							def?.type === 'file' && mf?.[key] !== undefined && formValues[key] === rec?.[key]}
+							((def?.type === 'file' && mf?.[key] !== undefined) ||
+								(def?.type === 'record' && mr?.[key] !== undefined)) &&
+							formValues[key] === rec?.[key]}
+						{@const isOutOfClass =
+							def?.type === 'file' && oc?.[key] !== undefined && formValues[key] === rec?.[key]}
 						<div class="flex flex-col gap-2">
 							<Label for={key}>{fieldLabel(key)}</Label>
 							{#if def}
@@ -320,8 +327,11 @@
 									id={key}
 									bind:value={formValues[key]}
 									missing={isMissing}
-									missingName={mf?.[key]}
+									missingName={mf?.[key] ?? mr?.[key]}
+									outOfClass={isOutOfClass}
 									onEnterSave={flush}
+									loadSuggestions={() =>
+										apiGetFieldValuesForType(typeId, key).then((r) => r.values)}
 								/>
 							{/if}
 						</div>

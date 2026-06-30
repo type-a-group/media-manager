@@ -58,6 +58,8 @@ export function classSettingsAdapter(classId: string): EntitySettingsAdapter {
 			});
 		},
 		schema: {
+			entityKind: 'class',
+			entityId: classId,
 			getSchema: async () => (await apiGetClass(classId)).schema,
 			addField: (body) => apiAddClassField(classId, body),
 			updateField: (body) => apiUpdateClassField(classId, body),
@@ -112,6 +114,8 @@ export function typeSettingsAdapter(typeId: string): EntitySettingsAdapter {
 			});
 		},
 		schema: {
+			entityKind: 'type',
+			entityId: typeId,
 			getSchema: () => apiGetSchemaForType(typeId),
 			addField: (body) => apiAddSchemaFieldForType(typeId, body),
 			updateField: (body) => apiUpdateSchemaFieldForType(typeId, body),

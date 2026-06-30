@@ -30,15 +30,25 @@ import {
 	availableFromManifest,
 	missingFileFields,
 	missingFilesMap,
+	outOfClassFields,
+	outOfClassMap,
 	getAvailableFileIds,
 	readGlobalBlobNames,
 	type Manifest
 } from './manifest.js';
+import {
+	resolveRecordRefs,
+	recordRefRenderer,
+	missingRecordFields,
+	missingRecordsMap,
+	schemaHasRecordField
+} from './recordRefs.js';
 
 import {
 	ClassFileSchema,
 	JsonRecordSchema,
 	normalizeUrlValue,
+	fieldSupportsSuggest,
 	type ClassFile,
 	type ClassSummary,
 	type FileItem,
@@ -215,7 +225,9 @@ function defaultForFieldDef(def: {
 		case 'url':
 			return { display_name: '', url: '' };
 		case 'file':
-			return '';
+		case 'record':
+			// Single ⇒ empty id string; multiselect ⇒ empty id array.
+			return def.multiselect ? [] : '';
 		default:
 			return '';
 	}
@@ -232,7 +244,8 @@ const SchemaFieldTypeSchema = z.enum([
 	'dropdown',
 	'list',
 	'url',
-	'file'
+	'file',
+	'record'
 ]);
 
 export async function addSchemaField(
@@ -242,7 +255,11 @@ export async function addSchemaField(
 	defaultValue: unknown,
 	options?: string[],
 	itemTypes?: string[],
-	multiselect?: boolean
+	multiselect?: boolean,
+	suggest?: boolean,
+	recordType?: string,
+	classId?: string,
+	linkedField?: string
 ): Promise<{ schema: SchemaDefinition }> {
 	const parsedType = SchemaFieldTypeSchema.parse(fieldType);
 	const key = normalizeFieldKey(fieldName);
@@ -255,9 +272,20 @@ export async function addSchemaField(
 		};
 		if (parsedType === 'dropdown' && options?.length) {
 			def.options = options;
-			if (multiselect) def.multiselect = true;
 		}
+		// `multiselect` is meaningful for dropdown, file, and record (array vs single value).
+		if (
+			multiselect &&
+			(parsedType === 'dropdown' || parsedType === 'file' || parsedType === 'record')
+		)
+			def.multiselect = true;
+		if (parsedType === 'record' && recordType) def.recordType = recordType;
+		// `linkedField` declares the two-way relation counterpart (record fields are the declaration site).
+		if (parsedType === 'record' && linkedField) def.linkedField = linkedField;
+		// `classId` scopes a `file` field's picker to one class's members.
+		if (parsedType === 'file' && classId) def.classId = classId;
 		if (parsedType === 'list' && itemTypes?.length) def.itemTypes = itemTypes as never;
+		if (suggest && fieldSupportsSuggest(parsedType, itemTypes)) def.suggest = true;
 		const schema = { ...file.schema, [key]: def };
 		const fill = defaultForFieldDef(def);
 		const records = applyToRecords(file.records, (rec) =>
@@ -278,6 +306,10 @@ export async function updateSchemaField(
 		options?: string[];
 		itemTypes?: string[];
 		multiselect?: boolean;
+		suggest?: boolean;
+		recordType?: string;
+		classId?: string;
+		linkedField?: string;
 	}
 ): Promise<{ schema: SchemaDefinition }> {
 	const key = normalizeFieldKey(oldKey);
@@ -292,19 +324,35 @@ export async function updateSchemaField(
 
 		const type = (updates.type ? SchemaFieldTypeSchema.parse(updates.type) : def.type) as FieldType;
 		const wasMultiselect = (def as { multiselect?: boolean }).multiselect === true;
-		const multiselect =
-			type === 'dropdown'
-				? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false)
-				: false;
+		// `multiselect` is meaningful for dropdown, file, and record; forced off for every other type.
+		const canMultiselect = type === 'dropdown' || type === 'file' || type === 'record';
+		const multiselect = canMultiselect
+			? (updates.multiselect ?? (def as { multiselect?: boolean }).multiselect ?? false)
+			: false;
 
 		let defaultValue = updates.defaultValue ?? def.defaultValue;
 		if (type === 'url' && typeof defaultValue === 'string')
 			defaultValue = normalizeUrlValue(defaultValue);
-		if (type === 'dropdown' && wasMultiselect && !multiselect && Array.isArray(defaultValue)) {
+		if (wasMultiselect && !multiselect && Array.isArray(defaultValue)) {
 			defaultValue = defaultValue[0] ?? '';
 		}
 		const options = updates.options ?? def.options;
 		const itemTypes = updates.itemTypes ?? (def as { itemTypes?: string[] }).itemTypes;
+		const recordType =
+			type === 'record'
+				? (updates.recordType ?? (def as { recordType?: string }).recordType)
+				: undefined;
+		const classId =
+			type === 'file' ? (updates.classId ?? (def as { classId?: string }).classId) : undefined;
+		// `linkedField` is meaningful only for record fields (the link declaration site). An explicit
+		// '' clears it (unlink); undefined preserves the existing value.
+		const linkedField =
+			type === 'record'
+				? (updates.linkedField ?? (def as { linkedField?: string }).linkedField)
+				: undefined;
+		const suggest =
+			(updates.suggest ?? (def as { suggest?: boolean }).suggest ?? false) &&
+			fieldSupportsSuggest(type, itemTypes);
 
 		const schema = { ...file.schema };
 		delete schema[key];
@@ -314,7 +362,11 @@ export async function updateSchemaField(
 			defaultValue: defaultValue as never,
 			...(options?.length ? { options } : {}),
 			...(type === 'list' && itemTypes?.length ? { itemTypes: itemTypes as never } : {}),
-			...(type === 'dropdown' && multiselect ? { multiselect: true } : {})
+			...(multiselect ? { multiselect: true } : {}),
+			...(recordType ? { recordType } : {}),
+			...(linkedField ? { linkedField } : {}),
+			...(classId ? { classId } : {}),
+			...(suggest ? { suggest: true } : {})
 		};
 
 		let records = file.records;
@@ -325,10 +377,18 @@ export async function updateSchemaField(
 				delete next[key];
 				return next;
 			});
-		} else if (wasMultiselect && !multiselect) {
+		}
+		// Convert stored values when the cardinality flips (array ⇄ single), independent of rename.
+		if (wasMultiselect && !multiselect) {
 			records = applyToRecords(records, (rec) => {
 				const v = rec[newKey];
 				return Array.isArray(v) ? { ...rec, [newKey]: v[0] ?? '' } : rec;
+			});
+		} else if (!wasMultiselect && multiselect) {
+			records = applyToRecords(records, (rec) => {
+				const v = rec[newKey];
+				if (v === undefined || Array.isArray(v)) return rec;
+				return { ...rec, [newKey]: v === '' || v == null ? [] : [v] };
 			});
 		}
 		await writeClassFile(id, { ...file, schema, records });
@@ -475,6 +535,13 @@ export async function getRecord(id: string, fileId: string): Promise<JsonRecord 
 	}
 	const missing = missingFilesMap(out, file.schema, manifest, available);
 	if (missing) out._missing_files = missing;
+	const outOfClass = outOfClassMap(out, file.schema, manifest);
+	if (outOfClass) out._out_of_class = outOfClass;
+	if (schemaHasRecordField(file.schema)) {
+		const resolver = await resolveRecordRefs(file.schema);
+		const missingRecords = missingRecordsMap(out, file.schema, resolver);
+		if (missingRecords) out._missing_records = missingRecords;
+	}
 	return out as JsonRecord;
 }
 
@@ -1007,6 +1074,11 @@ export async function listClassMembers(
 	// schema field whose value labels each tile in place of the filename. Resolved server-side into
 	// `title_value` so the grid renders it the same way the records list trusts `title_value` first.
 	const titleField = file.config.displayField || null;
+	// Resolve cross-type `record` references (target titles + missing-ref detection) once per list.
+	const refResolver = schemaHasRecordField(file.schema)
+		? await resolveRecordRefs(file.schema)
+		: null;
+	const resolveRef = refResolver ? recordRefRenderer(file.schema, refResolver) : undefined;
 
 	const files: FileItem[] = [];
 	// Keep each kept blob's class record around so the sort can read its `last_modified` + schema fields
@@ -1033,13 +1105,19 @@ export async function listClassMembers(
 		const item = fileItemFromEntry(fileId, manifest);
 		if (groupBy) item.group_by_value = groupByValue(recObj, file.schema, groupBy);
 		if (titleField) {
-			const tv = stringifyFieldValue(file.schema, titleField, recObj[titleField]);
+			const tv = stringifyFieldValue(file.schema, titleField, recObj[titleField], resolveRef);
 			if (tv !== undefined && tv !== '') item.title_value = tv;
 		}
-		const fv = buildFieldValues(file.schema, recObj, params?.fields);
+		const fv = buildFieldValues(file.schema, recObj, params?.fields, resolveRef);
 		if (fv) item.field_values = fv;
 		const miss = missingFileFields(recObj, file.schema, available);
 		if (miss.length) item.missing_file_fields = miss;
+		const ooc = outOfClassFields(recObj, file.schema, manifest);
+		if (ooc.length) item.out_of_class_fields = ooc;
+		if (refResolver) {
+			const missRec = missingRecordFields(recObj, file.schema, refResolver);
+			if (missRec.length) item.missing_record_fields = missRec;
+		}
 		recById.set(fileId, recObj);
 		files.push(item);
 	}
@@ -1056,7 +1134,7 @@ export async function listClassMembers(
 			const rec = recById.get(f.id);
 			if (sortField === 'last_modified') return (rec?.last_modified as string) ?? null;
 			if (FILE_SORT_KEYS.has(sortField)) return fileBuiltinSortValue(f, sortField);
-			return rec ? fieldSortValue(file.schema, sortField, rec[sortField]) : null;
+			return rec ? fieldSortValue(file.schema, sortField, rec[sortField], resolveRef) : null;
 		},
 		id: (f) => f.id
 	});

@@ -45,7 +45,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import GooglePhotosDialog from '$lib/components/google-photos/GooglePhotosDialog.svelte';
-	import { ListChecks, MoreHorizontal, Plus, Upload, X } from 'lucide-svelte';
+	import { ChevronDown, ListChecks, Plus, Upload, X } from 'lucide-svelte';
 	import { toast } from 'svelte-sonner';
 	import { settingsStore } from '$lib/stores/settings.js';
 	import type { SortDir } from '$lib/core/sort.js';
@@ -776,22 +776,10 @@
 		settingsOpen = true;
 	}
 
-	/** Open settings for a class by id (used by the content-header ⋮ for the active solo class). */
-	function openSettingsById(id: string) {
-		const c = classes.find((x) => x.id === id);
-		if (c) openSettings(c);
-	}
-
 	function askDeleteClass(c: ClassSummary) {
 		deleteClassId = c.id;
 		deleteClassName = c.displayName;
 		deleteClassOpen = true;
-	}
-
-	/** Ask to delete a class by id (used by the content-header ⋮ for the active solo class). */
-	function askDeleteClassById(id: string) {
-		const c = classes.find((x) => x.id === id);
-		if (c) askDeleteClass(c);
 	}
 
 	async function doDeleteClass() {
@@ -1086,36 +1074,38 @@
 					<ListChecks class="size-4" /> Select
 				{/if}
 			</Button>
-			<Button size="sm" onclick={() => fileInput?.click()}>
-				<Upload class="size-4" /> Upload
-			</Button>
+			<!-- Split button: main click = device upload (the common path); the attached chevron opens
+			     rare ingest sources (Item 37: Google Photos import) without a second standalone dot-menu. -->
+			<div class="inline-flex">
+				<Button
+					size="sm"
+					class="rounded-r-none"
+					onclick={() => fileInput?.click()}
+					title="Upload from device"
+				>
+					<Upload class="size-4" /> Upload
+				</Button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								size="sm"
+								class="rounded-l-none border-l border-primary-foreground/20 px-2"
+								title="More sources…"
+							>
+								<ChevronDown class="size-4" />
+							</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end">
+						<DropdownMenu.Item onSelect={() => (googlePhotosOpen = true)}>
+							Import from Google Photos…
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</div>
 			<input bind:this={fileInput} type="file" multiple class="hidden" onchange={onUpload} />
-			<!-- "⋮ More" overflow for rare ingest actions (Item 37: Google Photos import). -->
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<Button {...props} variant="ghost" size="icon" class="size-8" title="More…">
-							<MoreHorizontal class="size-4" />
-						</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end">
-					<DropdownMenu.Item onSelect={() => (googlePhotosOpen = true)}>
-						Import from Google Photos…
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-			<!-- Content-header ⋮ for the active solo class — keeps its settings reachable when the rail is
-			     collapsed (no single active entity in multi-select/All-Files mode, so it only shows here). -->
-			{#if soloClass}
-				<EntityRowMenu
-					noun="class"
-					title="Manage {classLabel(soloClass)}"
-					triggerClass="size-8"
-					onSettings={() => openSettingsById(soloClass)}
-					onDelete={() => askDeleteClassById(soloClass)}
-				/>
-			{/if}
 		</header>
 
 		{#if selectionMode}

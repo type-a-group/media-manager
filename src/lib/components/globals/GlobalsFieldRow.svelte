@@ -5,9 +5,22 @@
 	import FieldMenu from './FieldMenu.svelte';
 	import type { FieldDefinition } from '$lib/core/types.js';
 
-	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+	type ValueKind =
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'dropdown'
+		| 'list'
+		| 'url'
+		| 'file'
+		| 'record';
 	type ItemType = 'string' | 'number' | 'url';
-	type FieldMeta = { options?: string[]; multiselect?: boolean; itemType?: ItemType };
+	type FieldMeta = {
+		options?: string[];
+		multiselect?: boolean;
+		itemType?: ItemType;
+		recordType?: string;
+	};
 	type SectionOption = { id: string; name: string };
 
 	/**

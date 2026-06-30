@@ -1,6 +1,6 @@
 {
 	"schema": {
-		"caption": { "type": "string", "removable": true, "defaultValue": "" },
+		"caption": { "type": "string", "removable": true, "defaultValue": "", "suggest": true },
 		"rating": { "type": "number", "removable": true },
 		"favorite": { "type": "boolean", "removable": true, "defaultValue": false },
 		"category": {
@@ -9,13 +9,26 @@
 			"options": ["nature", "abstract", "portrait"],
 			"defaultValue": "nature"
 		},
-		"tags": { "type": "list", "removable": true, "itemTypes": ["string"], "defaultValue": [] },
+		"tags": {
+			"type": "list",
+			"removable": true,
+			"itemTypes": ["string"],
+			"defaultValue": [],
+			"suggest": true
+		},
 		"source": {
 			"type": "url",
 			"removable": true,
 			"defaultValue": { "display_name": "", "url": "" }
 		},
-		"related_doc": { "type": "file", "removable": true, "defaultValue": "" }
+		"related_doc": { "type": "file", "removable": true, "defaultValue": "" },
+		"album": {
+			"type": "record",
+			"removable": true,
+			"recordType": "albums",
+			"linkedField": "photos",
+			"defaultValue": ""
+		}
 	},
 	"config": {
 		"displayName": "Images",
@@ -33,7 +46,8 @@
 			"category": "nature",
 			"tags": ["warm", "sky"],
 			"source": { "display_name": "Sample", "url": "https://example.com/sunset" },
-			"related_doc": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75"
+			"related_doc": "57ac8e2e-20f8-4a7f-acf4-394e48c6ad75",
+			"album": "a1b2c3d4-0000-4000-8000-000000000001"
 		},
 		"0880c3c5-46dd-4e02-8e11-b0f6634142aa": {
 			"id": "0880c3c5-46dd-4e02-8e11-b0f6634142aa",
@@ -52,7 +66,8 @@
 			"favorite": false,
 			"category": "abstract",
 			"tags": ["blue", "water"],
-			"source": { "display_name": "", "url": "" }
+			"source": { "display_name": "", "url": "" },
+			"album": "a1b2c3d4-0000-4000-8000-000000000001"
 		}
 	}
 }

@@ -8,10 +8,25 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Trash2 } from 'lucide-svelte';
 	import type { Snippet } from 'svelte';
+	import { onMount } from 'svelte';
+	import { apiListMediaTypes } from '$lib/api/client.js';
 
-	type ValueKind = 'string' | 'number' | 'boolean' | 'dropdown' | 'list' | 'url' | 'file';
+	type ValueKind =
+		| 'string'
+		| 'number'
+		| 'boolean'
+		| 'dropdown'
+		| 'list'
+		| 'url'
+		| 'file'
+		| 'record';
 	type ItemType = 'string' | 'number' | 'url';
-	type FieldMeta = { options?: string[]; multiselect?: boolean; itemType?: ItemType };
+	type FieldMeta = {
+		options?: string[];
+		multiselect?: boolean;
+		itemType?: ItemType;
+		recordType?: string;
+	};
 	type SectionOption = { id: string; name: string };
 
 	/**
@@ -65,8 +80,33 @@
 		}) => boolean;
 	} = $props();
 
-	const KINDS: ValueKind[] = ['string', 'number', 'boolean', 'dropdown', 'list', 'url', 'file'];
+	const KINDS: ValueKind[] = [
+		'string',
+		'number',
+		'boolean',
+		'dropdown',
+		'list',
+		'url',
+		'file',
+		'record'
+	];
 	const ITEM_TYPES: ItemType[] = ['string', 'number', 'url'];
+
+	/** Selectable target record types for a `record` field (json types, excluding globals). */
+	let recordTypes = $state<{ id: string; displayName: string }[]>([]);
+	const recordTypeLabel = $derived((id: string) =>
+		id ? (recordTypes.find((t) => t.id === id)?.displayName ?? id) : ''
+	);
+	onMount(async () => {
+		try {
+			const types = await apiListMediaTypes();
+			recordTypes = types
+				.filter((t) => t.kind === 'json' && t.id !== 'globals')
+				.map((t) => ({ id: t.id, displayName: t.displayName }));
+		} catch (e) {
+			console.error('FieldMenu: failed to load record types', e);
+		}
+	});
 
 	let open = $state(false);
 
@@ -77,6 +117,7 @@
 	let optionsCsv = $state('');
 	let multiselect = $state(false);
 	let itemType = $state<ItemType>('string');
+	let recordType = $state('');
 	let sectionLocal = $state('');
 
 	/** (Re)seed the local form from props whenever the popover opens. */
@@ -86,6 +127,7 @@
 		optionsCsv = (meta.options ?? []).join(', ');
 		multiselect = meta.multiselect === true;
 		itemType = meta.itemType ?? 'string';
+		recordType = meta.recordType ?? '';
 		sectionLocal = mode === 'edit' ? sectionId : defaultSectionId || sections[0]?.id || '';
 	}
 
@@ -109,6 +151,11 @@
 			if (multiselect) m.multiselect = true;
 		} else if (kindLocal === 'list') {
 			m.itemType = itemType;
+		} else if (kindLocal === 'record') {
+			if (recordType) m.recordType = recordType;
+			if (multiselect) m.multiselect = true;
+		} else if (kindLocal === 'file') {
+			if (multiselect) m.multiselect = true;
 		}
 		return m;
 	}
@@ -144,6 +191,7 @@
 	function submitAdd() {
 		const key = nameInput.trim();
 		if (!key) return;
+		if (kindLocal === 'record' && !recordType) return; // a record field needs a target type
 		const ok =
 			onAdd?.({ key, kind: kindLocal, meta: buildMeta(), sectionId: sectionLocal }) ?? false;
 		if (ok) open = false;
@@ -234,6 +282,45 @@
 				</Select.Root>
 			</div>
 		{/if}
+		{#if kindLocal === 'record'}
+			<div class="space-y-1">
+				<Label class="text-xs text-muted-foreground">Record type</Label>
+				<Select.Root
+					type="single"
+					value={recordType}
+					onValueChange={(v) => {
+						if (v) {
+							recordType = v;
+							pushMeta();
+						}
+					}}
+				>
+					<Select.Trigger class="w-full">{recordTypeLabel(recordType) || 'Select…'}</Select.Trigger>
+					<Select.Content>
+						{#if recordTypes.length === 0}
+							<div class="px-2 py-1.5 text-sm text-muted-foreground">No record types yet</div>
+						{:else}
+							{#each recordTypes as t (t.id)}
+								<Select.Item value={t.id}>{t.displayName}</Select.Item>
+							{/each}
+						{/if}
+					</Select.Content>
+				</Select.Root>
+			</div>
+		{/if}
+		{#if kindLocal === 'file' || kindLocal === 'record'}
+			<div class="flex items-center gap-2">
+				<Checkbox
+					id="fieldmenu-multi-ref"
+					checked={multiselect}
+					onCheckedChange={(c) => {
+						multiselect = c === true;
+						pushMeta();
+					}}
+				/>
+				<Label for="fieldmenu-multi-ref" class="text-sm font-normal">Allow multiple</Label>
+			</div>
+		{/if}
 
 		<!-- Section placement -->
 		{#if sections.length > 0}
@@ -260,7 +347,13 @@
 		{#if mode === 'add'}
 			<div class="flex justify-end gap-2 pt-1">
 				<Button variant="ghost" size="sm" onclick={() => (open = false)}>Cancel</Button>
-				<Button size="sm" onclick={submitAdd} disabled={!nameInput.trim()}>Add field</Button>
+				<Button
+					size="sm"
+					onclick={submitAdd}
+					disabled={!nameInput.trim() || (kindLocal === 'record' && !recordType)}
+				>
+					Add field
+				</Button>
 			</div>
 		{:else}
 			<div class="flex items-center justify-between pt-1">

@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { z } from 'zod';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { listClassMembers, addMembers, removeMembers } from '$lib/storage/classRepo.js';
+import { unlinkBlobFromClass } from '$lib/storage/relationLinks.js';
 import { FilterClauseSchema } from '$lib/core/filters.js';
 
 const FiltersParamSchema = z.array(FilterClauseSchema);
@@ -76,6 +77,8 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 	const parsed = IdsBodySchema.safeParse(await request.json());
 	if (!parsed.success) throw error(400, 'ids array is required');
 	try {
+		// Drop these blobs from any linked record's file field before they leave the class.
+		for (const fileId of parsed.data.ids) await unlinkBlobFromClass(params.id, fileId);
 		await removeMembers(params.id, parsed.data.ids);
 		return json({ success: true });
 	} catch (err) {

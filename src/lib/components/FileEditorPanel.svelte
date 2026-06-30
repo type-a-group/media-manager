@@ -7,6 +7,7 @@
 		apiAddMembers,
 		apiRemoveMembers,
 		apiCheckFileExtension,
+		apiGetClassFieldValues,
 		type ExtensionCheck
 	} from '$lib/api/files.js';
 	import { hasAllowedImageExtension, isPdfFilename } from '$lib/core/images.js';
@@ -236,10 +237,11 @@
 		if (refresh) load();
 	});
 
-	/** Whether a `file`-field key is a broken reference on this section's record. */
+	/** Whether a `file`- or `record`-field key is a broken reference on this section's record. */
 	function isMissing(section: Section, key: string): boolean {
 		const mf = section.record._missing_files as Record<string, string> | undefined;
-		return !!mf && key in mf;
+		const mr = section.record._missing_records as Record<string, string> | undefined;
+		return (!!mf && key in mf) || (!!mr && key in mr);
 	}
 
 	/** Recombine the base + extension fields into a safe filename (normalises a leading dot). */
@@ -447,8 +449,14 @@
 								missing={isMissing(section, key)}
 								missingName={(
 									section.record._missing_files as Record<string, string> | undefined
+								)?.[key] ??
+									(section.record._missing_records as Record<string, string> | undefined)?.[key]}
+								outOfClass={!!(
+									section.record._out_of_class as Record<string, string> | undefined
 								)?.[key]}
 								onEnterSave={flush}
+								loadSuggestions={() =>
+									apiGetClassFieldValues(section.id, key).then((r) => r.values)}
 							/>
 						</div>
 					{/each}

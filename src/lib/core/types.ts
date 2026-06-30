@@ -16,7 +16,8 @@ export const FieldTypeSchema = z.enum([
 	'dropdown',
 	'list',
 	'url',
-	'file'
+	'file',
+	'record'
 ]);
 export type FieldType = z.infer<typeof FieldTypeSchema>;
 
@@ -97,10 +98,59 @@ export const FieldDefinitionSchema = z.object({
 		.optional(),
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
-	/** When true, dropdown stores string[]; otherwise a single string. Omit/false = single. */
-	multiselect: z.boolean().optional()
+	/**
+	 * When true, the field stores an array instead of a single value. Meaningful for `dropdown`
+	 * (string[] of options), `file` (string[] of blob ids), and `record` (string[] of record ids).
+	 * Omit/false = single value. Ignored for other types.
+	 */
+	multiselect: z.boolean().optional(),
+	/**
+	 * For `record` fields: the target json record type id (`records/<typeId>`) whose records this
+	 * field references. The picker scopes its search to this one type; a `record` field without a
+	 * `recordType` cannot resolve a target. Ignored for all other field types.
+	 */
+	recordType: z.string().optional(),
+	/**
+	 * For `file` fields: the class id (`media/classes/<id>`) whose members this field is scoped to.
+	 * When set, the file picker offers only blobs that are members of that class (a hard limit — a
+	 * non-member id is flagged out-of-class). Omit = any file. Ignored for all other field types.
+	 */
+	classId: z.string().optional(),
+	/**
+	 * Two-way relation link. The counterpart field *key* on the partner schema. Present on both
+	 * linked fields and self-describing: on a `record` field the partner type is `recordType` and the
+	 * partner field is `linkedField`; on a `file` field the partner class is `classId` and the partner
+	 * field is `linkedField`. Both pointers must be set and reference each other for the pair to be
+	 * "linked"; edits to either side propagate to the other. Omit = unlinked.
+	 */
+	linkedField: z.string().optional(),
+	/**
+	 * When true, the editor offers an autocomplete combobox of the distinct values already
+	 * entered for this field across the class/record-type (Excel-style "Pick From Drop-down List").
+	 * Free text is still allowed — suggestions are a convenience, not a constraint. Meaningful only
+	 * for `string` and `list` fields with string items; ignored for other types. Omit/false = plain input.
+	 */
+	suggest: z.boolean().optional()
 });
 export type FieldDefinition = z.infer<typeof FieldDefinitionSchema>;
+
+/**
+ * Whether a field type can carry the `suggest` (autocomplete-from-existing-values) flag.
+ *
+ * Only free-text-ish fields qualify: a plain `string`, or a `list` whose items are strings
+ * (the tags use case). A `list` defaults to string items when `itemTypes` is absent. Dropdowns
+ * already are a fixed list, numbers/booleans/urls/files have no free-text column to mine — so they
+ * never carry the flag, and the UI hides the toggle for them.
+ *
+ * @param type - The field's type.
+ * @param itemTypes - For `list` fields, the allowed item types (first entry is authoritative).
+ * @returns true when a `suggest` toggle is meaningful for this field.
+ */
+export function fieldSupportsSuggest(type: string, itemTypes?: readonly string[]): boolean {
+	if (type === 'string') return true;
+	if (type === 'list') return (itemTypes?.[0] ?? 'string') === 'string';
+	return false;
+}
 
 /**
  * Schema definition (map of fieldKey -> field definition).
@@ -131,7 +181,9 @@ export const ImageRecordSchema = z
 		last_modified: z.string().optional(),
 		width: z.number().optional(),
 		height: z.number().optional(),
-		_missing_files: z.record(z.string()).optional()
+		_missing_files: z.record(z.string()).optional(),
+		_missing_records: z.record(z.string()).optional(),
+		_out_of_class: z.record(z.string()).optional()
 	})
 	.catchall(
 		z
@@ -177,7 +229,9 @@ export const JsonRecordSchema = z
 	.object({
 		id: ImageIdSchema,
 		last_modified: z.string().optional(),
-		_missing_files: z.record(z.string()).optional()
+		_missing_files: z.record(z.string()).optional(),
+		_missing_records: z.record(z.string()).optional(),
+		_out_of_class: z.record(z.string()).optional()
 	})
 	.catchall(
 		z
@@ -228,7 +282,11 @@ export const JsonListItemSchema = z.object({
 	 * absent unless `fields` was sent. Built by `buildFieldValues`; capped at `MAX_VERBOSE_FIELDS`.
 	 */
 	field_values: z.record(z.string()).optional(),
-	missing_file_fields: z.array(z.string()).optional()
+	missing_file_fields: z.array(z.string()).optional(),
+	/** `record`-type field keys whose referenced record id no longer resolves in the target type. */
+	missing_record_fields: z.array(z.string()).optional(),
+	/** `file`-type field keys whose blob exists but isn't a member of the field's `classId` scope. */
+	out_of_class_fields: z.array(z.string()).optional()
 });
 export type JsonListItem = z.infer<typeof JsonListItemSchema>;
 
@@ -327,7 +385,11 @@ export const FileItemSchema = z.object({
 	 */
 	field_values: z.record(z.string()).optional(),
 	/** Broken `file`-type field references on this blob's record in the selected class. */
-	missing_file_fields: z.array(z.string()).optional()
+	missing_file_fields: z.array(z.string()).optional(),
+	/** Broken `record`-type field references on this blob's record in the selected class. */
+	missing_record_fields: z.array(z.string()).optional(),
+	/** `file`-type field keys whose blob exists but isn't a member of the field's `classId` scope. */
+	out_of_class_fields: z.array(z.string()).optional()
 });
 export type FileItem = z.infer<typeof FileItemSchema>;
 
@@ -364,7 +426,17 @@ export const AddFieldRequestSchema = z.object({
 		.optional(),
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
-	multiselect: z.boolean().optional()
+	multiselect: z.boolean().optional(),
+	recordType: z.string().optional(),
+	classId: z.string().optional(),
+	linkedField: z.string().optional(),
+	/**
+	 * How to reconcile pre-existing data when this field's two-way link is (re)declared: `'class'` =
+	 * the record (class) side wins, `'type'` = the file (type) side wins. Absent ⇒ the default
+	 * class→type backfill. Only meaningful when `linkedField` is set on a `record` field.
+	 */
+	linkSync: z.enum(['class', 'type']).optional(),
+	suggest: z.boolean().optional()
 });
 export type AddFieldRequest = z.infer<typeof AddFieldRequestSchema>;
 
@@ -399,7 +471,17 @@ export const UpdateFieldRequestSchema = z.object({
 		.optional(),
 	options: z.array(z.string()).optional(),
 	itemTypes: z.array(ListItemTypeSchema).optional(),
-	multiselect: z.boolean().optional()
+	multiselect: z.boolean().optional(),
+	recordType: z.string().optional(),
+	classId: z.string().optional(),
+	linkedField: z.string().optional(),
+	/**
+	 * How to reconcile pre-existing data when this field's two-way link is (re)declared: `'class'` =
+	 * the record (class) side wins, `'type'` = the file (type) side wins. Absent ⇒ the default
+	 * class→type backfill. Only meaningful when `linkedField` is set on a `record` field.
+	 */
+	linkSync: z.enum(['class', 'type']).optional(),
+	suggest: z.boolean().optional()
 });
 export type UpdateFieldRequest = z.infer<typeof UpdateFieldRequestSchema>;
 

@@ -359,16 +359,65 @@ export function missingFileFields(
 	const out: string[] = [];
 	for (const [key, def] of Object.entries(schema)) {
 		if (def?.type !== 'file') continue;
-		const v = record[key];
-		if (typeof v !== 'string' || v === '') continue;
-		if (!available.has(v)) out.push(key);
+		const ids = fileRefIds(record[key]);
+		if (ids.length === 0) continue;
+		if (ids.some((id) => !available.has(id))) out.push(key);
 	}
 	return out;
 }
 
 /**
- * Map of `file`-field key → expected filename for each broken file reference on `record`, or undefined
- * when nothing is broken.
+ * The `file`-type field keys whose referenced blob is registered (not missing) but is **not a member**
+ * of the field's `classId` scope. A separate concern from {@link missingFileFields} (the blob exists;
+ * it's just out of the required class) — only meaningful for class-scoped file fields.
+ */
+export function outOfClassFields(
+	record: Record<string, unknown>,
+	schema: SchemaDefinition,
+	manifest: Manifest
+): string[] {
+	const out: string[] = [];
+	for (const [key, def] of Object.entries(schema)) {
+		if (def?.type !== 'file') continue;
+		const classId = (def as { classId?: string }).classId;
+		if (!classId) continue;
+		const ids = fileRefIds(record[key]);
+		if (
+			ids.some((id) => {
+				const entry = manifest.files[id];
+				return entry && !(entry.classes ?? []).includes(classId);
+			})
+		)
+			out.push(key);
+	}
+	return out;
+}
+
+/**
+ * Map of `file`-field key → the required `classId` for each out-of-class reference on `record`, or
+ * undefined when none. The UI resolves the classId to the class's display name in the hint.
+ */
+export function outOfClassMap(
+	record: Record<string, unknown>,
+	schema: SchemaDefinition,
+	manifest: Manifest
+): Record<string, string> | undefined {
+	const keys = outOfClassFields(record, schema, manifest);
+	if (keys.length === 0) return undefined;
+	const out: Record<string, string> = {};
+	for (const key of keys) out[key] = (schema[key] as { classId?: string }).classId ?? '';
+	return out;
+}
+
+/** Normalize a `file`-field value (single id or id[]) to an id array, dropping empties. */
+function fileRefIds(val: unknown): string[] {
+	if (Array.isArray(val)) return val.filter((v): v is string => typeof v === 'string' && v !== '');
+	return typeof val === 'string' && val !== '' ? [val] : [];
+}
+
+/**
+ * Map of `file`-field key → expected filename(s) for each broken file reference on `record`, or
+ * undefined when nothing is broken. Multiselect file fields join the missing names with a comma.
  */
 export function missingFilesMap(
 	record: Record<string, unknown>,
@@ -380,8 +429,8 @@ export function missingFilesMap(
 	if (keys.length === 0) return undefined;
 	const out: Record<string, string> = {};
 	for (const key of keys) {
-		const id = record[key] as string;
-		out[key] = manifest.files[id]?.file_name ?? '';
+		const missing = fileRefIds(record[key]).filter((id) => !available.has(id));
+		out[key] = missing.map((id) => manifest.files[id]?.file_name ?? '').join(', ');
 	}
 	return out;
 }

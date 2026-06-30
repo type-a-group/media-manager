@@ -1,6 +1,13 @@
 import { normalizeUrlValue, type JsonListItem, type SchemaDefinition } from './types.js';
 
 /**
+ * Renders a `record`-field value (a referenced record id or id[]) to its display title(s). Supplied by
+ * the server (built from a cross-type {@link RecordRefResolver}); omitted by pure/client callers, which
+ * then fall back to the raw id. Returns undefined for non-record fields or empty values.
+ */
+export type RecordRefRenderer = (key: string, val: unknown) => string | undefined;
+
+/**
  * Resolve the display title for a record list row in the Records Explorer.
  *
  * Records types don't always have a `name` field; before this resolver such rows fell back to the
@@ -78,10 +85,19 @@ export function recordDetailTitle(
 export function stringifyFieldValue(
 	schema: SchemaDefinition,
 	key: string,
-	val: unknown
+	val: unknown,
+	resolveRef?: RecordRefRenderer
 ): string | undefined {
 	const def = schema[key];
 	if (val == null) return undefined;
+	if (def?.type === 'record') {
+		// A `record` ref renders as the referenced record's title(s) when a resolver is supplied
+		// (server lists). Without one (e.g. an optimistic client patch), fall back to the raw id(s).
+		const resolved = resolveRef?.(key, val);
+		if (resolved !== undefined) return resolved || undefined;
+		if (Array.isArray(val)) return val.join(', ') || undefined;
+		return String(val) || undefined;
+	}
 	if (def?.type === 'url') {
 		const urlVal = normalizeUrlValue(val);
 		return (urlVal.display_name ?? '').trim() || urlVal.url || undefined;
@@ -130,13 +146,14 @@ export const MAX_VERBOSE_FIELDS = 6;
 export function buildFieldValues(
 	schema: SchemaDefinition,
 	rec: Record<string, unknown>,
-	fields?: string[] | null
+	fields?: string[] | null,
+	resolveRef?: RecordRefRenderer
 ): Record<string, string> | undefined {
 	if (!fields || fields.length === 0) return undefined;
 	const keys = fields.filter((k) => schema[k]).slice(0, MAX_VERBOSE_FIELDS);
 	if (keys.length === 0) return undefined;
 	const out: Record<string, string> = {};
-	for (const k of keys) out[k] = stringifyFieldValue(schema, k, rec[k]) ?? '';
+	for (const k of keys) out[k] = stringifyFieldValue(schema, k, rec[k], resolveRef) ?? '';
 	return out;
 }
 
@@ -201,17 +218,22 @@ export function groupByDisplayValue(
 export function projectRecordRow(
 	schema: SchemaDefinition,
 	record: Record<string, unknown>,
-	opts: { titleField?: string | null; subtitleField?: string | null; groupBy?: string | null }
+	opts: {
+		titleField?: string | null;
+		subtitleField?: string | null;
+		groupBy?: string | null;
+		resolveRef?: RecordRefRenderer;
+	}
 ): Pick<JsonListItem, 'name' | 'title_value' | 'subtitle_value' | 'group_by_value'> {
 	const out: Pick<JsonListItem, 'name' | 'title_value' | 'subtitle_value' | 'group_by_value'> = {};
 	if (typeof record.name === 'string') out.name = record.name;
-	const { titleField, subtitleField, groupBy } = opts;
+	const { titleField, subtitleField, groupBy, resolveRef } = opts;
 	if (titleField) {
-		const tv = stringifyFieldValue(schema, titleField, record[titleField]);
+		const tv = stringifyFieldValue(schema, titleField, record[titleField], resolveRef);
 		if (tv !== undefined && tv !== '') out.title_value = tv;
 	}
 	if (subtitleField && subtitleField !== titleField) {
-		const sv = stringifyFieldValue(schema, subtitleField, record[subtitleField]);
+		const sv = stringifyFieldValue(schema, subtitleField, record[subtitleField], resolveRef);
 		if (sv !== undefined && sv !== '') out.subtitle_value = sv;
 	}
 	if (groupBy) {

@@ -130,10 +130,16 @@ export async function startLoopbackAuth(): Promise<{ authUrl: string }> {
 				return;
 			}
 			const oauthError = reqUrl.searchParams.get('error');
-			if (oauthError) return send(400, 'Connection cancelled', `Google reported: ${oauthError}`, false);
+			if (oauthError)
+				return send(400, 'Connection cancelled', `Google reported: ${oauthError}`, false);
 			const code = reqUrl.searchParams.get('code');
 			if (!code || reqUrl.searchParams.get('state') !== state) {
-				return send(400, 'Connection failed', 'Missing or mismatched authorization response.', false);
+				return send(
+					400,
+					'Connection failed',
+					'Missing or mismatched authorization response.',
+					false
+				);
 			}
 			const { tokens } = await client.getToken({ code, codeVerifier, redirect_uri: redirectUri });
 			if (!tokens.refresh_token) {

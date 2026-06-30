@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { getMediaTypeRepo } from '$lib/server/imageRepo.js';
 import { ImageIdSchema } from '$lib/core/ids.js';
 import { UpdatePropertiesRequestSchema } from '$lib/core/types.js';
+import { updateTypeRecordLinked, unlinkRecordEverywhere } from '$lib/storage/relationLinks.js';
 
 /**
  * GET: Return record (properties) by id.
@@ -40,8 +41,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	try {
 		const typeId = params.typeId;
-		const repo = getMediaTypeRepo(typeId);
-		const updated = await repo.updatePropertiesById(id.data, patch.data);
+		// Route through the link-aware wrapper so edits to a linked `file` field mirror onto the
+		// partner class's record field (no-op for types without linked fields, incl. globals).
+		const updated = await updateTypeRecordLinked(typeId, id.data, patch.data);
 		return json(updated);
 	} catch (err) {
 		if (err && typeof err === 'object' && 'status' in err) throw err as never;
@@ -62,6 +64,8 @@ export const DELETE: RequestHandler = async ({ params }) => {
 	try {
 		const typeId = params.typeId;
 		if (typeId === 'globals') throw error(403, 'Globals record cannot be deleted');
+		// Drop this record from every blob's linked record field before deleting it.
+		await unlinkRecordEverywhere(typeId, id.data);
 		const repo = getMediaTypeRepo(typeId);
 		await repo.deleteRecord(id.data);
 		return json({ success: true });
