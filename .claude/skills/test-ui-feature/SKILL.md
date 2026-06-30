@@ -73,24 +73,78 @@ importing the helper, then run it with `node .screenshots/_run.mjs`. The helper 
 `page` (a Playwright page scoped to the app), `errors` (console errors + page exceptions),
 `shoot(name)` (→ absolute PNG path), and `close()` (→ absolute WebM path when `video` is on).
 
+### Capture ALL states in ONE script — do not run one screenshot per script
+
+The slow way to verify is to author a script for state A, run it, read the result, author a
+script for state B, run it, and so on. Each separate `node _run.mjs` pays a fresh Chromium
+launch **and** a full model round-trip, so ~12 shots fragmented into 7 scripts costs 7× what it
+should. **Plan every state worth showing up front, then drive them all in a single `_run.mjs`:
+one browser launch, navigate → `shoot()` → navigate → `shoot()` …** The helper accumulates
+every shot in `ui.shots`, so one run prints all the paths at once.
+
+This is about not _fragmenting states you already know you need_ — it is **not** "one shot at
+verification." Iterating is expected: if a run surfaces a bug, a regression, or a state you
+couldn't have foreseen, **run again** (rebuild first if you changed code). The goal is that each
+run covers everything you currently know to check, so the follow-ups are driven by new findings
+— not by having split a known checklist across seven scripts. Keep testing until the feature is
+actually verified; batching is the floor on thoroughness, never the ceiling.
+
+Structure the run as a list of **scenarios**, each in its own `try/catch` so one bad selector
+doesn't abort the batch and throw away the other shots (a mid-script failure is the main reason
+a run gets restarted from scratch). Capture what you can, log what failed, keep going, then print
+a **failure summary** at the end — treat any failed scenario, or a `shots` list shorter than you
+expected, as **verification not done**. A screenshot existing is not proof the state is correct:
+actually open the PNGs.
+
+**Each scenario gets a clean data root via `ui.reset()`** — it navigates to `about:blank` (so no
+in-flight autosave writes into the tree), wipes `test-data/`, and re-copies the pristine fixture,
+all **without restarting the server** (the app reads from disk per request). So scenarios are
+genuinely independent: count assertions like `Images (3)` and empty-state checks stay true no
+matter what an earlier scenario did. Steps that must build on each other (upload → it appears →
+edit it) belong **inside one scenario**, between resets — not split across them. Combined with a
+warm background server (§3, started once), this collapses the whole verify stage into a single drive.
+
 Screenshot template — adapt the navigation/interaction to the feature under test:
 
 ```js
 import { launchUi } from '../scripts/ui-capture.mjs';
 
 const ui = await launchUi(); // headless; viewport 1440x900; baseURL :3000
+
+// One entry per independent scenario: a label + a drive(page, shoot). ui.reset() runs a clean
+// fixture before each, so scenarios can't contaminate each other. Cumulative steps (and multiple
+// shoots) live INSIDE one scenario — that's the unit that shares state.
+const scenarios = [
+	['images-grid', async (p, shoot) => {
+		await p.goto('/media/images');
+		await p.getByText('Images (3)').waitFor(); // wait for real content, not a fixed sleep
+		await shoot('images-grid');
+		// Interaction state that is NOT in the URL — exactly what needs a live driver:
+		await p.getByText('Sunset', { exact: true }).first().click();
+		await p.getByText('sunset.png').waitFor();
+		await shoot('sunset-editor-open');
+	}],
+	['notes-empty', async (p, shoot) => {
+		await p.goto('/media/notes'); // starts from the pristine fixture again, not images' leftovers
+		await shoot('notes-grid');
+	}]
+	// ...add every other scenario here; each runs in this one browser, each on fresh data.
+];
+
+const failures = [];
 try {
-	await ui.page.goto('/media/images');
-	await ui.page.getByText('Images (3)').waitFor(); // wait for real content, not a fixed sleep
-	await ui.shoot('images-grid');
-
-	// Interaction state that is NOT in the URL — exactly what needs a live driver:
-	await ui.page.getByText('Sunset', { exact: true }).first().click();
-	await ui.page.getByText('sunset.png').waitFor();
-	await ui.shoot('sunset-editor-open');
-
+	for (const [name, drive] of scenarios) {
+		await ui.reset(); // about:blank → wipe test-data → re-copy fixture; no server restart
+		try {
+			await drive(ui.page, ui.shoot);
+		} catch (err) {
+			failures.push(name);
+			console.log(`SCENARIO_FAILED: ${name} — ${err.message}`); // keep going to the next scenario
+		}
+	}
 	console.log('CONSOLE_ERRORS:', ui.errors.length ? ui.errors : 'none');
-	console.log('SHOTS:', ui.shots); // absolute paths
+	console.log('SHOTS:', ui.shots); // every absolute path, from the single run
+	console.log(failures.length ? `VERIFY_INCOMPLETE: ${failures.join(', ')}` : 'ALL_SCENARIOS_OK');
 } finally {
 	await ui.close(); // always close in finally so a failed assertion can't leak the browser
 }

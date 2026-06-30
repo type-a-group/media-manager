@@ -37,6 +37,12 @@ export const SCREENSHOT_DIR = path.join(repoRoot, '.screenshots');
 /** Base URL the page is scoped to; matches the `npm run test:serve` default. */
 export const BASE_URL = process.env.UI_BASE_URL ?? 'http://localhost:3000';
 
+/** Pristine committed seed; the source of every `reset()` (see `serve-test.mjs`). */
+const FIXTURES_DIR = path.join(repoRoot, 'test-fixtures');
+
+/** The disposable data root the server runs against; what `reset()` restores in place. */
+const WORKING_DIR = path.join(repoRoot, 'test-data');
+
 /** Timestamp + slug → a stable, sortable filename stem under SCREENSHOT_DIR. */
 function captureName(name, fallback) {
 	const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -61,8 +67,9 @@ function captureName(name, fallback) {
  * @param {{width:number,height:number}} [opts.viewport] - Viewport / video size (default 1440x900).
  * @param {boolean} [opts.video=false] - Record the session to a WebM (finalized on `close()`).
  * @param {string} [opts.videoName='recording'] - Slug used for the saved video filename.
- * @returns {Promise<{ browser: import('playwright').Browser, context: import('playwright').BrowserContext, page: import('playwright').Page, errors: string[], shots: string[], videos: string[], shoot: (name: string, o?: { fullPage?: boolean }) => Promise<string>, close: () => Promise<string|undefined> }>}
+ * @returns {Promise<{ browser: import('playwright').Browser, context: import('playwright').BrowserContext, page: import('playwright').Page, errors: string[], shots: string[], videos: string[], shoot: (name: string, o?: { fullPage?: boolean }) => Promise<string>, reset: () => Promise<void>, close: () => Promise<string|undefined> }>}
  *   `errors` accumulates console errors + page exceptions; `shots`/`videos` collect saved paths.
+ *   `reset()` restores the data root to the pristine fixture in place (per-scenario clean slate).
  *   `close()` returns the saved video path when `video` was enabled, else `undefined`.
  */
 export async function launchUi({
@@ -108,6 +115,36 @@ export async function launchUi({
 	}
 
 	/**
+	 * Restore the server's data root to the pristine fixture **without restarting the server**.
+	 *
+	 * Use case:
+	 * - Call at the top of each independent scenario in a batched `_run.mjs` so the scenarios
+	 *   don't contaminate each other — earlier mutations (uploads, edits, deletions) are wiped,
+	 *   so count assertions like `Images (3)` and empty-state checks stay true. Cumulative steps
+	 *   that depend on each other belong **inside one scenario** (between resets), not across them.
+	 *
+	 * How it works (and why it's safe mid-run):
+	 * - The app is stateless-per-request — it reads JSON from disk on every API call and runs no
+	 *   fs watcher — so swapping the directory contents takes effect on the next request; no
+	 *   rebuild or restart needed.
+	 * - We navigate to `about:blank` **first**, which tears down the SvelteKit client and cancels
+	 *   any pending fetch / autosave-idle timer, so nothing writes into the tree while we're
+	 *   mid-copy (the editors' 3s idle-save safety net is the specific hazard). Only then do we
+	 *   wipe + re-copy. The next scenario's own `goto('/…')` brings the app back up clean.
+	 *
+	 * Concerns / future improvements:
+	 * - The wipe+copy mirrors `serve-test.mjs` step 2; if that copy logic gains nuance (e.g. a
+	 *   `--keep` mode), factor it into a shared module rather than letting the two drift.
+	 *
+	 * @returns {Promise<void>} Resolves once the working copy is freshly restored from the seed.
+	 */
+	async function reset() {
+		await page.goto('about:blank'); // cancel in-flight fetches / autosave timers before the wipe
+		fs.rmSync(WORKING_DIR, { recursive: true, force: true });
+		fs.cpSync(FIXTURES_DIR, WORKING_DIR, { recursive: true });
+	}
+
+	/**
 	 * Close the browser and finalize the video (if recording). Always call in a `finally` block
 	 * so a failed assertion can't leak the browser or lose the recording.
 	 * @returns {Promise<string|undefined>} Absolute path to the saved WebM when `video` was on.
@@ -128,5 +165,5 @@ export async function launchUi({
 		return videoPath;
 	}
 
-	return { browser, context, page, errors, shots, videos, shoot, close };
+	return { browser, context, page, errors, shots, videos, shoot, reset, close };
 }

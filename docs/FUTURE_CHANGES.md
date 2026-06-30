@@ -435,7 +435,7 @@ acceptance:
   - Bulk-export selected records as JSON (the only remaining bulk action)
 ```
 
-> ✅ **Mostly shipped.** Bulk-**update** a field and bulk-**delete** across selected records both exist ([`RecordBulkActions.svelte`](../src/lib/components/RecordBulkActions.svelte) + the `bulk-update`/`bulk-delete` endpoints). Only **bulk-export to JSON** remains — demoted from a full item to this one-liner.
+> ✅ **Mostly shipped.** Bulk-**update** a field and bulk-**delete** across selected records both exist ([`RecordBulkActions.svelte`](../src/lib/components/RecordBulkActions.svelte) + the `bulk-update`/`bulk-delete` endpoints). The bulk **Set field…** value widget is now the shared [`BulkSetFieldDialog.svelte`](../src/lib/components/BulkSetFieldDialog.svelte) (built on `FieldInput`, so it covers every field type incl. the `record`/`file` pickers), and the **Files single-class catalog** got the same bulk Set field… (solo-class only) via `apiBulkUpdateClassRecords` → `POST /api/classes/[id]/records/bulk-update`. Only **bulk-export to JSON** remains — demoted from a full item to this one-liner.
 
 ### 5 · Data Validation & Repair — verify coverage
 

@@ -17,12 +17,14 @@
 		apiGetMissingFiles,
 		apiGetClass,
 		apiUpdateClassConfig,
+		apiBulkUpdateClassRecords,
 		type MissingFilesResponse
 	} from '$lib/api/files.js';
 	import { fieldLabel } from '$lib/core/fieldKeys.js';
 	import { OPERATORS } from '$lib/core/filters.js';
 	import { hasAllowedImageExtension } from '$lib/core/images.js';
 	import FileEditorPanel from '$lib/components/FileEditorPanel.svelte';
+	import BulkSetFieldDialog from '$lib/components/BulkSetFieldDialog.svelte';
 	import EntityRail from '$lib/components/rail/EntityRail.svelte';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SearchBox from '$lib/components/SearchBox.svelte';
@@ -50,7 +52,7 @@
 	import { settingsStore } from '$lib/stores/settings.js';
 	import { refreshTrigger, triggerImageListRefresh } from '$lib/stores/refreshTrigger.js';
 	import type { SortDir } from '$lib/core/sort.js';
-	import type { ClassSummary, FileItem } from '$lib/core/types.js';
+	import type { ClassSummary, FileItem, SchemaDefinition } from '$lib/core/types.js';
 
 	let files = $state<FileItem[]>([]);
 	let classes = $state<ClassSummary[]>([]);
@@ -58,6 +60,8 @@
 
 	/** Catalog view (single class) config: ad-hoc group-by and the class's schema keys. */
 	let catalogSchemaKeys = $state<string[]>([]);
+	/** The solo class's full schema — drives the bulk "Set field…" value widgets (null outside a catalog). */
+	let catalogSchema = $state<SchemaDefinition | null>(null);
 	let catalogGroupBy = $state('');
 	let catalogLoadedFor: string | null = null;
 	/**
@@ -138,6 +142,7 @@
 	let newClassName = $state('');
 	let showNewClass = $state(false);
 	let bulkClassId = $state('');
+	let setFieldOpen = $state(false);
 	let deleteFilesOpen = $state(false);
 	let fileInput = $state<HTMLInputElement | null>(null);
 
@@ -323,6 +328,7 @@
 	async function loadCatalogConfig(classId: string) {
 		try {
 			const detail = await apiGetClass(classId);
+			catalogSchema = detail.schema;
 			catalogSchemaKeys = Object.keys(detail.schema).sort((a, b) => a.localeCompare(b));
 			catalogGroupBy = detail.config.gridGroupByField ?? '';
 			// Per-class persisted sort; default last_modified desc (catalog rows have records).
@@ -332,6 +338,7 @@
 			verbose = detail.config.verbose ?? false;
 			verboseFields = detail.config.verboseFields ?? [];
 		} catch {
+			catalogSchema = null;
 			catalogSchemaKeys = [];
 			catalogGroupBy = '';
 			sortField = 'last_modified';
@@ -795,6 +802,21 @@
 		triggerImageListRefresh();
 	}
 
+	/**
+	 * Bulk "Set field…" in a single-class catalog: apply one class metadata field to every selected
+	 * member (replace semantics). Throws on failure so the dialog stays open. A linked `record` field
+	 * mutates the partner Records type / pickers (server-side mirror), so we refetch + cross-tab notify
+	 * — mirroring {@link bulkRemove}.
+	 */
+	async function bulkSetField(key: string, value: unknown) {
+		if (!soloClass || selectedIds.size === 0) return;
+		await apiBulkUpdateClassRecords(soloClass, [...selectedIds], { [key]: value });
+		toast.success(`Updated ${selectedIds.size} file${selectedIds.size === 1 ? '' : 's'}`);
+		selectedIds.clear();
+		await loadFiles();
+		triggerImageListRefresh();
+	}
+
 	async function bulkDelete() {
 		if (selectedIds.size === 0) return;
 		await apiDeleteFilesFromDisk([...selectedIds]);
@@ -1178,6 +1200,14 @@
 					<Button
 						variant="outline"
 						size="sm"
+						disabled={selectedIds.size === 0 || !catalogSchema}
+						onclick={() => (setFieldOpen = true)}
+					>
+						Set field…
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
 						disabled={selectedIds.size === 0}
 						onclick={bulkRemove}
 					>
@@ -1257,6 +1287,13 @@
 		/>
 	{/key}
 {/if}
+
+<BulkSetFieldDialog
+	bind:open={setFieldOpen}
+	schema={catalogSchema}
+	selectedCount={selectedIds.size}
+	apply={bulkSetField}
+/>
 
 <AlertDialog.Root bind:open={deleteFilesOpen}>
 	<AlertDialog.Content>

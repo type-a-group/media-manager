@@ -390,6 +390,29 @@ export async function apiRemoveMembers(
 	await jsonOrThrow(res, z.object({ success: z.literal(true) }), 'Failed to remove members');
 }
 
+/**
+ * Apply the same property patch to many members of a class in one call (bulk "Set field…"). Routes
+ * through the link-aware `/api/classes/[id]/records/bulk-update` endpoint, so a bulk-set of a linked
+ * `record` field mirrors onto the partner type's file field.
+ *
+ * @param id - Class id whose members are updated.
+ * @param ids - Manifest ids of the member blobs to patch.
+ * @param patch - Property patch applied to each member (e.g. `{ [fieldKey]: value }`).
+ */
+export async function apiBulkUpdateClassRecords(
+	id: string,
+	ids: ImageId[],
+	patch: Record<string, unknown>,
+	fetchFn: typeof fetch = fetch
+): Promise<void> {
+	const res = await fetchFn(`/api/classes/${id}/records/bulk-update`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ids, patch })
+	});
+	await jsonOrThrow(res, z.object({ updated: z.number() }), 'Failed to update members');
+}
+
 export async function apiGetClassRecord(
 	id: string,
 	fileId: ImageId,
