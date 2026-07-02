@@ -1,0 +1,1437 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>media-manager/reader — structure, patterns & cleanups</title>
+		<style>
+			:root {
+				--bg: #0f1117;
+				--panel: #171a23;
+				--panel-2: #1e222e;
+				--ink: #e6e9f0;
+				--muted: #99a0b3;
+				--line: #2a2f3d;
+				--accent: #7c9cff;
+				--accent-2: #59d1a6;
+				--warn: #f0b45a;
+				--bad: #f07a7a;
+				--code: #e4b6ff;
+				--mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+				--sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html {
+				scroll-behavior: smooth;
+			}
+			body {
+				margin: 0;
+				background: var(--bg);
+				color: var(--ink);
+				font-family: var(--sans);
+				line-height: 1.6;
+				font-size: 16px;
+			}
+			.wrap {
+				max-width: 960px;
+				margin: 0 auto;
+				padding: 0 24px 120px;
+			}
+			header.hero {
+				padding: 64px 24px 40px;
+				border-bottom: 1px solid var(--line);
+				background: radial-gradient(
+					1200px 400px at 30% -10%,
+					rgba(124, 156, 255, 0.14),
+					transparent
+				);
+			}
+			header.hero .wrap {
+				padding-bottom: 0;
+			}
+			.kicker {
+				font-family: var(--mono);
+				font-size: 12px;
+				letter-spacing: 0.16em;
+				text-transform: uppercase;
+				color: var(--accent);
+			}
+			h1 {
+				font-size: 40px;
+				line-height: 1.1;
+				margin: 12px 0 8px;
+				letter-spacing: -0.02em;
+			}
+			h1 code {
+				font-size: 0.7em;
+				color: var(--code);
+				background: none;
+				padding: 0;
+			}
+			.lede {
+				color: var(--muted);
+				font-size: 18px;
+				max-width: 68ch;
+			}
+			h2 {
+				font-size: 26px;
+				margin: 56px 0 6px;
+				padding-top: 14px;
+				letter-spacing: -0.01em;
+				scroll-margin-top: 20px;
+			}
+			h2 .num {
+				font-family: var(--mono);
+				color: var(--accent);
+				font-size: 0.6em;
+				margin-right: 10px;
+				vertical-align: 3px;
+			}
+			h3 {
+				font-size: 18px;
+				margin: 30px 0 4px;
+			}
+			p {
+				margin: 10px 0;
+			}
+			a {
+				color: var(--accent);
+			}
+			code {
+				font-family: var(--mono);
+				font-size: 0.86em;
+				background: var(--panel-2);
+				padding: 1px 6px;
+				border-radius: 5px;
+				color: var(--code);
+			}
+			pre {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 10px;
+				padding: 16px 18px;
+				overflow-x: auto;
+				font-family: var(--mono);
+				font-size: 13.5px;
+				line-height: 1.55;
+			}
+			pre code {
+				background: none;
+				padding: 0;
+				color: #d5dbea;
+				font-size: inherit;
+			}
+			.tok-c {
+				color: #6b7488;
+				font-style: italic;
+			} /* comment */
+			.tok-k {
+				color: #7c9cff;
+			} /* keyword */
+			.tok-s {
+				color: #59d1a6;
+			} /* string */
+			.tok-f {
+				color: #e4b6ff;
+			} /* fn/method */
+			.tok-t {
+				color: #f0b45a;
+			} /* type */
+			.tok-bad {
+				color: var(--bad);
+			}
+			.tok-good {
+				color: var(--accent-2);
+			}
+			ul,
+			ol {
+				padding-left: 22px;
+			}
+			li {
+				margin: 5px 0;
+			}
+			.panel {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 20px 22px;
+				margin: 20px 0;
+			}
+			.grid2 {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 16px;
+			}
+			@media (max-width: 720px) {
+				.grid2 {
+					grid-template-columns: 1fr;
+				}
+			}
+			.card {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 16px 18px;
+			}
+			.card h4 {
+				margin: 0 0 6px;
+				font-size: 15px;
+			}
+			.card.good {
+				border-color: rgba(89, 209, 166, 0.4);
+			}
+			.card.warn {
+				border-color: rgba(240, 180, 90, 0.4);
+			}
+			.tag {
+				display: inline-block;
+				font-family: var(--mono);
+				font-size: 11px;
+				padding: 2px 8px;
+				border-radius: 999px;
+				border: 1px solid var(--line);
+				color: var(--muted);
+			}
+			.tag.good {
+				color: var(--accent-2);
+				border-color: rgba(89, 209, 166, 0.4);
+			}
+			.tag.warn {
+				color: var(--warn);
+				border-color: rgba(240, 180, 90, 0.4);
+			}
+			.tag.bad {
+				color: var(--bad);
+				border-color: rgba(240, 122, 122, 0.4);
+			}
+			.tag.ship {
+				color: var(--accent);
+				border-color: rgba(124, 156, 255, 0.4);
+			}
+			figure {
+				margin: 24px 0;
+			}
+			figcaption {
+				color: var(--muted);
+				font-size: 13px;
+				text-align: center;
+				margin-top: 8px;
+			}
+			.svgwrap {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 18px;
+				overflow-x: auto;
+			}
+			svg {
+				display: block;
+				margin: 0 auto;
+				max-width: 100%;
+				height: auto;
+			}
+			table {
+				border-collapse: collapse;
+				width: 100%;
+				margin: 18px 0;
+				font-size: 14px;
+			}
+			th,
+			td {
+				text-align: left;
+				padding: 10px 12px;
+				border-bottom: 1px solid var(--line);
+				vertical-align: top;
+			}
+			th {
+				color: var(--muted);
+				font-weight: 600;
+				font-size: 13px;
+				text-transform: uppercase;
+				letter-spacing: 0.05em;
+			}
+			.toc {
+				background: var(--panel);
+				border: 1px solid var(--line);
+				border-radius: 12px;
+				padding: 14px 20px;
+				margin: 28px 0;
+				columns: 2;
+				column-gap: 32px;
+			}
+			@media (max-width: 720px) {
+				.toc {
+					columns: 1;
+				}
+			}
+			.toc a {
+				color: var(--ink);
+				text-decoration: none;
+				display: block;
+				padding: 3px 0;
+				font-size: 14px;
+			}
+			.toc a:hover {
+				color: var(--accent);
+			}
+			.toc .n {
+				font-family: var(--mono);
+				color: var(--accent);
+				margin-right: 8px;
+				font-size: 12px;
+			}
+			.callout {
+				border-left: 3px solid var(--accent);
+				background: var(--panel-2);
+				padding: 12px 16px;
+				border-radius: 0 8px 8px 0;
+				margin: 18px 0;
+			}
+			.callout.warn {
+				border-left-color: var(--warn);
+			}
+			.callout .lbl {
+				font-family: var(--mono);
+				font-size: 11px;
+				text-transform: uppercase;
+				letter-spacing: 0.1em;
+				color: var(--accent);
+			}
+			.callout.warn .lbl {
+				color: var(--warn);
+			}
+			hr {
+				border: none;
+				border-top: 1px solid var(--line);
+				margin: 40px 0;
+			}
+			.pill-row {
+				display: flex;
+				gap: 8px;
+				flex-wrap: wrap;
+				margin: 8px 0 0;
+			}
+			.foot {
+				color: var(--muted);
+				font-size: 13px;
+				margin-top: 60px;
+				border-top: 1px solid var(--line);
+				padding-top: 20px;
+			}
+		</style>
+	</head>
+	<body>
+		<header class="hero">
+			<div class="wrap">
+				<div class="kicker">Design note · media-manager</div>
+				<h1><code>media-manager/reader</code><br />structure, patterns &amp; cleanups</h1>
+				<p class="lede">
+					How a host build reads a workspace today, where the design is already sound, and the
+					handful of changes that make it usable without an AI holding your hand — grounded in the
+					real <code>nicb.at</code> consumer and in how Astro / Velite / Contentlayer solve the same
+					problem.
+				</p>
+				<div class="pill-row">
+					<span class="tag ship">record refs · shipped in this pass</span>
+					<span class="tag ship">MMRecord rename · shipped</span>
+					<span class="tag warn">typed access · proposed</span>
+					<span class="tag warn">load() diagnostics · proposed</span>
+				</div>
+			</div>
+		</header>
+
+		<div class="wrap">
+			<nav class="toc">
+				<a href="#model"><span class="n">01</span>The mental model</a>
+				<a href="#load"><span class="n">02</span>What <code>load()</code> actually does</a>
+				<a href="#join"><span class="n">03</span>The manifest × asset join</a>
+				<a href="#right"><span class="n">04</span>What we're doing right</a>
+				<a href="#friction"><span class="n">05</span>Where it bites</a>
+				<a href="#typed"><span class="n">06</span>Fixing "stringly-typed"</a>
+				<a href="#refs"><span class="n">07</span>Reference resolution</a>
+				<a href="#naming"><span class="n">08</span>Naming: why <code>MMRecord</code></a>
+				<a href="#roadmap"><span class="n">09</span>Recommendations</a>
+				<a href="#priorart"><span class="n">10</span>Prior art</a>
+			</nav>
+
+			<!-- ─────────────────────────────────────────── 01 -->
+			<h2 id="model"><span class="num">01</span>The mental model</h2>
+			<p>
+				The reader is a <strong>"load once, read many"</strong> data layer. It is a pure function of
+				already-parsed JSON — no <code>fs</code>, no server, no network. The host's bundler (Vite)
+				does the file reading and asset hashing; the reader does the <em>joining</em> and hands back
+				flat, iterable items.
+			</p>
+
+			<figure>
+				<div class="svgwrap">
+					<svg viewBox="0 0 900 300" role="img" aria-label="Reader pipeline">
+						<defs>
+							<marker id="arw" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+								<path d="M0,0 L7,3 L0,6 Z" fill="#7c9cff" />
+							</marker>
+						</defs>
+						<!-- disk -->
+						<rect x="10" y="60" width="180" height="180" rx="10" fill="#171a23" stroke="#2a2f3d" />
+						<text
+							x="100"
+							y="52"
+							fill="#99a0b3"
+							font-size="13"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							workspace on disk
+						</text>
+						<text x="28" y="90" fill="#d5dbea" font-size="12.5" font-family="ui-monospace">
+							media/manifest.json
+						</text>
+						<text x="28" y="112" fill="#d5dbea" font-size="12.5" font-family="ui-monospace">
+							media/classes/*.json
+						</text>
+						<text x="28" y="134" fill="#d5dbea" font-size="12.5" font-family="ui-monospace">
+							records/*/data.json
+						</text>
+						<text x="28" y="156" fill="#d5dbea" font-size="12.5" font-family="ui-monospace">
+							globals/data.json
+						</text>
+						<text x="28" y="186" fill="#59d1a6" font-size="12.5" font-family="ui-monospace">
+							media/files/*.jpg
+						</text>
+						<text x="28" y="208" fill="#59d1a6" font-size="12.5" font-family="ui-monospace">
+							media/files/*.pdf
+						</text>
+
+						<!-- globs -->
+						<rect x="250" y="70" width="150" height="46" rx="8" fill="#1e222e" stroke="#7c9cff" />
+						<text
+							x="325"
+							y="92"
+							fill="#7c9cff"
+							font-size="12.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							data glob
+						</text>
+						<text
+							x="325"
+							y="108"
+							fill="#99a0b3"
+							font-size="10.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							**/*.json (parsed)
+						</text>
+						<rect x="250" y="184" width="150" height="46" rx="8" fill="#1e222e" stroke="#59d1a6" />
+						<text
+							x="325"
+							y="206"
+							fill="#59d1a6"
+							font-size="12.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							files glob
+						</text>
+						<text
+							x="325"
+							y="222"
+							fill="#99a0b3"
+							font-size="10.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							files/* (?url)
+						</text>
+
+						<!-- MediaManager -->
+						<rect x="470" y="80" width="180" height="140" rx="10" fill="#171a23" stroke="#7c9cff" />
+						<text
+							x="560"
+							y="72"
+							fill="#7c9cff"
+							font-size="13"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							MediaManager.load()
+						</text>
+						<text
+							x="560"
+							y="112"
+							fill="#d5dbea"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							classifyGlobs (by path)
+						</text>
+						<text
+							x="560"
+							y="136"
+							fill="#d5dbea"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							parseManifest (v-guard)
+						</text>
+						<text
+							x="560"
+							y="160"
+							fill="#d5dbea"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							assetIndex + refs
+						</text>
+						<text
+							x="560"
+							y="184"
+							fill="#99a0b3"
+							font-size="11"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							(memoized joins)
+						</text>
+
+						<!-- items -->
+						<rect x="720" y="80" width="170" height="140" rx="10" fill="#171a23" stroke="#2a2f3d" />
+						<text
+							x="805"
+							y="72"
+							fill="#99a0b3"
+							font-size="13"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							your code
+						</text>
+						<text
+							x="805"
+							y="112"
+							fill="#e4b6ff"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							mm.media('photos')
+						</text>
+						<text
+							x="805"
+							y="134"
+							fill="#e4b6ff"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							mm.records('trips')
+						</text>
+						<text
+							x="805"
+							y="160"
+							fill="#d5dbea"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							→ Collection&lt;Item&gt;
+						</text>
+						<text
+							x="805"
+							y="184"
+							fill="#d5dbea"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							.where().sortBy()
+						</text>
+
+						<!-- arrows -->
+						<line
+							x1="192"
+							y1="120"
+							x2="246"
+							y2="93"
+							stroke="#7c9cff"
+							stroke-width="1.6"
+							marker-end="url(#arw)"
+						/>
+						<line
+							x1="192"
+							y1="180"
+							x2="246"
+							y2="207"
+							stroke="#59d1a6"
+							stroke-width="1.6"
+							marker-end="url(#arw)"
+						/>
+						<line
+							x1="402"
+							y1="93"
+							x2="466"
+							y2="120"
+							stroke="#7c9cff"
+							stroke-width="1.6"
+							marker-end="url(#arw)"
+						/>
+						<line
+							x1="402"
+							y1="207"
+							x2="466"
+							y2="160"
+							stroke="#59d1a6"
+							stroke-width="1.6"
+							marker-end="url(#arw)"
+						/>
+						<line
+							x1="652"
+							y1="150"
+							x2="716"
+							y2="150"
+							stroke="#7c9cff"
+							stroke-width="1.6"
+							marker-end="url(#arw)"
+						/>
+					</svg>
+				</div>
+				<figcaption>
+					Vite reads &amp; hashes files → two glob maps → the reader joins them → you query flat
+					items.
+				</figcaption>
+			</figure>
+
+			<p>
+				Every public method returns either a flat <strong>item</strong> (<code>MediaItem</code> for
+				a blob, <code>MMRecord</code> for a record) or a fluent <strong>Collection</strong> of them.
+				There are only four "kinds" of thing in a workspace, and one method each:
+			</p>
+			<table>
+				<thead>
+					<tr>
+						<th>Concept</th>
+						<th>What it is</th>
+						<th>Reader entry</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><strong>Blob</strong></td>
+						<td>A file on disk (image, pdf, …) with a stable id.</td>
+						<td><code>mm.media()</code>, <code>mm.file(id)</code></td>
+					</tr>
+					<tr>
+						<td><strong>Class</strong></td>
+						<td>Opt-in metadata schema layered over a set of blobs.</td>
+						<td><code>mm.media('photos')</code>, <code>mm.classes()</code></td>
+					</tr>
+					<tr>
+						<td><strong>Record type</strong></td>
+						<td>Fileless <code>json</code> rows (projects, trips…).</td>
+						<td>
+							<code>mm.records('trips')</code>, <code>mm.record(id)</code>, <code>mm.types()</code>
+						</td>
+					</tr>
+					<tr>
+						<td><strong>Globals</strong></td>
+						<td>The single reserved key/value singleton.</td>
+						<td><code>mm.globals()</code></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<!-- ─────────────────────────────────────────── 02 -->
+			<h2 id="load"><span class="num">02</span>What <code>load()</code> actually does</h2>
+			<p>
+				This is the one piece of glue you write, and the one people get wrong. Here it is,
+				annotated:
+			</p>
+			<pre><code><span class="tok-k">const</span> mm = <span class="tok-t">MediaManager</span>.<span class="tok-f">load</span>({
+  <span class="tok-c">// 1️⃣ every JSON file, PARSED. import:'default' → the parsed object,</span>
+  <span class="tok-c">//    eager:true → inline it now (not a lazy () =&gt; import()).</span>
+  data:  <span class="tok-f">import.meta.glob</span>(<span class="tok-s">'$assets/media_manager/**/*.json'</span>, { eager: <span class="tok-k">true</span>, import: <span class="tok-s">'default'</span> }),
+
+  <span class="tok-c">// 2️⃣ every blob, as a URL. query:'?url' → Vite copies + content-hashes</span>
+  <span class="tok-c">//    the asset and hands back its final served URL string.</span>
+  files: <span class="tok-f">import.meta.glob</span>(<span class="tok-s">'$assets/media_manager/media/files/*'</span>, { eager: <span class="tok-k">true</span>, query: <span class="tok-s">'?url'</span>, import: <span class="tok-s">'default'</span> }),
+});</code></pre>
+
+			<div class="grid2">
+				<div class="card">
+					<h4>Why two globs, and why literals?</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						Vite can only bundle files whose glob pattern is a
+						<em>string literal it can see at build time</em>. A library buried in
+						<code>node_modules</code> can't glob <em>your</em> source tree, so the patterns must
+						live in your code. The reader compensates by being <strong>path-driven</strong>: it
+						inspects each entry's path to decide if it's the manifest, a class, a type, globals, or
+						an asset — so the snippet is identical for every host; only the
+						<code>$assets/media_manager</code> prefix changes.
+					</p>
+				</div>
+				<div class="card">
+					<h4>The <code>?url</code> asymmetry</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						The <code>data</code> glob wants the <em>parsed JSON</em>. The <code>files</code> glob
+						wants a <em>URL string</em>, so it alone carries <code>query: '?url'</code>. This
+						asymmetry is the #1 setup mistake — see the warning below.
+					</p>
+				</div>
+			</div>
+
+			<div class="callout warn">
+				<div class="lbl">Silent failure</div>
+				If the <code>files</code> prefix is wrong (or you forget <code>?url</code>), the JSON still
+				loads, the manifest still parses — but
+				<strong>every image comes back <code>src: null</code>, <code>missing: true</code></strong
+				>, with no error thrown. Blank gallery, no clue. This is exactly the "needs an AI to debug"
+				class of problem, and the reason §05 proposes optional dev-mode diagnostics.
+			</div>
+
+			<p style="color: var(--muted); font-size: 14px">
+				One-time host setup this depends on: a <code>$assets</code> alias in
+				<code>svelte.config.js</code> pointing at <code>./src/assets</code>, and the workspace
+				copied (or symlinked) under it. <code>nicb.at</code> does exactly this.
+			</p>
+
+			<!-- ─────────────────────────────────────────── 03 -->
+			<h2 id="join"><span class="num">03</span>The manifest × asset join</h2>
+			<p>
+				A blob's <code>src</code> is not stored anywhere — it's <em>computed</em> by joining two
+				maps the reader builds at load. This is worth seeing because it explains both the ext-case
+				tolerance and the <code>missing</code> flag.
+			</p>
+			<figure>
+				<div class="svgwrap">
+					<svg viewBox="0 0 860 240" role="img" aria-label="Manifest asset join">
+						<defs>
+							<marker id="arw2" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+								<path d="M0,0 L7,3 L0,6 Z" fill="#59d1a6" />
+							</marker>
+						</defs>
+						<rect x="10" y="40" width="240" height="160" rx="10" fill="#171a23" stroke="#7c9cff" />
+						<text
+							x="130"
+							y="32"
+							fill="#7c9cff"
+							font-size="12.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							manifest.files (by id)
+						</text>
+						<text x="26" y="72" fill="#d5dbea" font-size="12" font-family="ui-monospace">
+							"8e69…" → {
+						</text>
+						<text x="46" y="94" fill="#e4b6ff" font-size="12" font-family="ui-monospace">
+							file_name: "Sunset.JPEG"
+						</text>
+						<text x="46" y="116" fill="#d5dbea" font-size="12" font-family="ui-monospace">
+							width: 100, height: 50
+						</text>
+						<text x="46" y="138" fill="#d5dbea" font-size="12" font-family="ui-monospace">
+							classes: ["photos"]
+						</text>
+						<text x="26" y="160" fill="#d5dbea" font-size="12" font-family="ui-monospace">}</text>
+
+						<rect x="300" y="40" width="250" height="160" rx="10" fill="#171a23" stroke="#59d1a6" />
+						<text
+							x="425"
+							y="32"
+							fill="#59d1a6"
+							font-size="12.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							assetIndex (by lower-name)
+						</text>
+						<text x="316" y="86" fill="#e4b6ff" font-size="12" font-family="ui-monospace">
+							"sunset.jpeg"
+						</text>
+						<text x="316" y="108" fill="#59d1a6" font-size="12" font-family="ui-monospace">
+							→ "/assets/sunset.a1b2.jpeg"
+						</text>
+						<text x="316" y="150" fill="#99a0b3" font-size="11" font-family="ui-monospace">
+							lower-cased so "JPEG"
+						</text>
+						<text x="316" y="168" fill="#99a0b3" font-size="11" font-family="ui-monospace">
+							matches "jpeg"
+						</text>
+
+						<rect x="610" y="70" width="240" height="100" rx="10" fill="#1e222e" stroke="#2a2f3d" />
+						<text
+							x="730"
+							y="62"
+							fill="#99a0b3"
+							font-size="12.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							MediaItem
+						</text>
+						<text x="626" y="102" fill="#e4b6ff" font-size="12" font-family="ui-monospace">
+							src: "/assets/sunset.a1b2…"
+						</text>
+						<text x="626" y="126" fill="#d5dbea" font-size="12" font-family="ui-monospace">
+							width, height, classes
+						</text>
+						<text x="626" y="150" fill="#f0b45a" font-size="12" font-family="ui-monospace">
+							missing: false
+						</text>
+
+						<line
+							x1="252"
+							y1="88"
+							x2="298"
+							y2="88"
+							stroke="#7c9cff"
+							stroke-width="1.5"
+							marker-end="url(#arw2)"
+						/>
+						<text
+							x="275"
+							y="80"
+							fill="#99a0b3"
+							font-size="10"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							name
+						</text>
+						<line
+							x1="552"
+							y1="120"
+							x2="606"
+							y2="120"
+							stroke="#59d1a6"
+							stroke-width="1.5"
+							marker-end="url(#arw2)"
+						/>
+					</svg>
+				</div>
+				<figcaption>
+					id → filename (manifest) → hashed URL (assets). No match → <code>src: null</code> +
+					<code>missing: true</code>.
+				</figcaption>
+			</figure>
+			<p>
+				The same join is why references are cheap: a <code>file</code>-field stores only an id, and
+				<code>fileById(id)</code> is memoized — so <code>mm.file(id)</code> and a resolved
+				<code>record.file('cover')</code> are the <em>same object</em> in memory.
+			</p>
+
+			<!-- ─────────────────────────────────────────── 04 -->
+			<h2 id="right"><span class="num">04</span>What we're doing right</h2>
+			<p>
+				This is not a mess at the architectural level. Several choices match what the best "content
+				as data" tools converged on independently:
+			</p>
+			<div class="grid2">
+				<div class="card good">
+					<h4>✓ Pure, build-time data layer</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						No <code>fs</code>/env/network. Correct for a static host — same philosophy as Astro
+						Content Collections &amp; Velite.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>✓ Facade + fluent Collection</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						<code>.where().sortBy().map()</code> — a recognised, Laravel-Collection-style ergonomic.
+						Not a query DSL to learn.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>✓ Layout-aware, path-driven</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						Hosts never hard-code <code>media/classes/x.json</code>; a format move doesn't silently
+						break consumers.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>✓ Shared identity + never-throw refs</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						Memoized resolution; a dangling id yields <code>null</code>, never a broken
+						<code>&lt;img&gt;</code> or a crash.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>✓ Loud version guard</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						<code>WorkspaceFormatError</code> on an absent/old manifest — actionable message, not a
+						silent-empty gallery.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>✓ Single source of truth</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						Value normalization &amp; reserved-key handling mirror the editor's <code>core/</code>,
+						so it can't drift.
+					</p>
+				</div>
+			</div>
+
+			<!-- ─────────────────────────────────────────── 05 -->
+			<h2 id="friction"><span class="num">05</span>Where it bites</h2>
+			<p>Grounded in the real <code>nicb.at</code> consumer, ordered by how much pain it causes:</p>
+
+			<table>
+				<thead>
+					<tr>
+						<th>Friction</th>
+						<th>Symptom in real code</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><strong>Stringly-typed access</strong></td>
+						<td>
+							<code>r.field('name') <span class="tok-bad">as string</span></code> on
+							<em>every</em> read; no autocomplete on field names; typos → silent
+							<code>undefined</code>.
+						</td>
+						<td><span class="tag warn">proposed §06</span></td>
+					</tr>
+					<tr>
+						<td><strong>Silent-empty failures</strong></td>
+						<td>
+							Wrong <code>files</code> prefix → all <code>missing</code>. Typo'd class id → empty.
+							Typo'd key → <code>undefined</code>. No warnings.
+						</td>
+						<td><span class="tag warn">proposed §05</span></td>
+					</tr>
+					<tr>
+						<td><strong>No cross-record refs</strong></td>
+						<td>
+							<code>record</code>-type fields handed back a raw id; no resolver, unlike
+							<code>file</code>/<code>files</code>.
+						</td>
+						<td><span class="tag good">fixed §07</span></td>
+					</tr>
+					<tr>
+						<td>
+							<strong><code>Record</code> name collision</strong>
+						</td>
+						<td>
+							Shadowed TS's built-in <code>Record&lt;K,V&gt;</code>; forced
+							<code>globalThis.Record</code> internally,
+							<code>import { Record as MMRecord }</code> in hosts.
+						</td>
+						<td><span class="tag good">fixed §08</span></td>
+					</tr>
+					<tr>
+						<td><strong>Two identical import paths</strong></td>
+						<td>
+							<code>media-manager/reader</code> vs <code>/reader/vite</code> are byte-identical;
+							"which do I use?"
+						</td>
+						<td><span class="tag">keep, document</span></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<h3>Proposed: opt-in dev diagnostics</h3>
+			<p>
+				The silent-empty class of bug is the biggest "needs AI" driver. A cheap, non-breaking fix: a
+				<code>{ dev: true }</code> (or <code>import.meta.env.DEV</code>) mode that
+				<code>console.warn</code>s once for the tell-tale signs — an unknown class/type id passed to
+				<code>media()</code>/<code>records()</code>, a blob whose asset didn't resolve, a load where
+				<em>all</em> assets are missing (near-certain glob-prefix mistake). Zero cost in prod, turns
+				"blank page" into a one-line message.
+			</p>
+
+			<!-- ─────────────────────────────────────────── 06 -->
+			<h2 id="typed"><span class="num">06</span>Fixing "stringly-typed"</h2>
+			<p>
+				Today <code>field()</code> returns <code>unknown</code>, so the host casts everywhere. This
+				is the single biggest ergonomic complaint, and it's exactly the problem Astro / Velite /
+				Contentlayer exist to solve: <strong>schema → generated TypeScript types</strong>. Three
+				tiers, increasing power and machinery:
+			</p>
+
+			<figure>
+				<div class="svgwrap">
+					<svg viewBox="0 0 860 150" role="img" aria-label="Three tiers of typing">
+						<rect x="10" y="30" width="260" height="90" rx="10" fill="#171a23" stroke="#2a2f3d" />
+						<text x="140" y="58" fill="#e6e9f0" font-size="14" text-anchor="middle">
+							Tier 1 · Generics
+						</text>
+						<text
+							x="140"
+							y="80"
+							fill="#99a0b3"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							field&lt;string&gt;('name')
+						</text>
+						<text x="140" y="100" fill="#f0b45a" font-size="11" text-anchor="middle">
+							no build · no key safety
+						</text>
+
+						<rect x="300" y="30" width="260" height="90" rx="10" fill="#171a23" stroke="#2a2f3d" />
+						<text x="430" y="58" fill="#e6e9f0" font-size="14" text-anchor="middle">
+							Tier 2 · Typed shape
+						</text>
+						<text
+							x="430"
+							y="80"
+							fill="#99a0b3"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							records&lt;Project&gt;('projects')
+						</text>
+						<text x="430" y="100" fill="#f0b45a" font-size="11" text-anchor="middle">
+							no build · you write the type
+						</text>
+
+						<rect x="590" y="30" width="260" height="90" rx="10" fill="#171a23" stroke="#59d1a6" />
+						<text x="720" y="58" fill="#e6e9f0" font-size="14" text-anchor="middle">
+							Tier 3 · Typegen
+						</text>
+						<text
+							x="720"
+							y="80"
+							fill="#99a0b3"
+							font-size="11.5"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							from workspace schema
+						</text>
+						<text x="720" y="100" fill="#59d1a6" font-size="11" text-anchor="middle">
+							full autocomplete · a step
+						</text>
+					</svg>
+				</div>
+			</figure>
+
+			<h3>Tier 1 — generic accessor <span class="tag">no build step</span></h3>
+			<p>
+				Smallest change. Let the caller assert the return type at the call site instead of after it:
+			</p>
+			<pre><code><span class="tok-c">// today</span>
+<span class="tok-k">const</span> name = r.<span class="tok-f">field</span>(<span class="tok-s">'name'</span>) <span class="tok-bad">as string</span>;
+<span class="tok-c">// tier 1 — field&lt;T&gt;(key): T</span>
+<span class="tok-k">const</span> name = r.<span class="tok-f">field</span>&lt;<span class="tok-t">string</span>&gt;(<span class="tok-s">'name'</span>);</code></pre>
+			<p style="color: var(--muted); font-size: 14px">
+				Cheap, honest (it's still an assertion), removes visual noise. Doesn't validate the key or
+				the shape — a typo is still a runtime <code>undefined</code>.
+			</p>
+
+			<h3>Tier 2 — typed item shape <span class="tag">no build step</span></h3>
+			<p>
+				Parameterize the query methods on a host-written interface, so the whole projection is typed
+				and keys autocomplete:
+			</p>
+			<pre><code><span class="tok-k">interface</span> <span class="tok-t">Project</span> { name: <span class="tok-t">string</span>; date: <span class="tok-t">string</span>; tags: <span class="tok-t">string</span>[]; }
+
+<span class="tok-k">const</span> projects = mm.<span class="tok-f">records</span>&lt;<span class="tok-t">Project</span>&gt;(<span class="tok-s">'projects'</span>)
+  .<span class="tok-f">sortBy</span>(<span class="tok-s">'date'</span>, <span class="tok-s">'desc'</span>)          <span class="tok-c">// 'date' checked against Project</span>
+  .<span class="tok-f">map</span>(r =&gt; r.<span class="tok-f">field</span>(<span class="tok-s">'name'</span>));      <span class="tok-good">// → string, no cast</span></code></pre>
+			<p style="color: var(--muted); font-size: 14px">
+				You maintain the interface by hand (it can drift from the real schema), but there's still no
+				build step and the ergonomics jump dramatically. A good default if we want to stay
+				zero-build.
+			</p>
+
+			<h3>Tier 3 — schema typegen <span class="tag good">the Astro / Velite answer</span></h3>
+			<p>
+				The workspace <em>already stores the schema</em> in each class/type file. A
+				<code>media-manager typegen &lt;root&gt;</code> command reads those schemas and emits a
+				<code>.d.ts</code> that maps every class/type id to a fully-typed field shape — the same
+				trick Astro's <code>.astro/types.d.ts</code> and Velite's generated <code>.d.ts</code> use.
+				Then <code>mm.records('projects')</code> is typed
+				<em>with no hand-written interface and no casts</em>, and <code>'projects'</code> /
+				<code>'name'</code> both autocomplete.
+			</p>
+			<figure>
+				<div class="svgwrap">
+					<svg viewBox="0 0 820 130" role="img" aria-label="Typegen flow">
+						<defs>
+							<marker id="arw3" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+								<path d="M0,0 L7,3 L0,6 Z" fill="#7c9cff" />
+							</marker>
+						</defs>
+						<rect x="10" y="40" width="180" height="52" rx="9" fill="#171a23" stroke="#2a2f3d" />
+						<text
+							x="100"
+							y="63"
+							fill="#e4b6ff"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							classes/*.json
+						</text>
+						<text x="100" y="80" fill="#99a0b3" font-size="10.5" text-anchor="middle">
+							(schema lives here)
+						</text>
+						<rect x="250" y="40" width="180" height="52" rx="9" fill="#171a23" stroke="#7c9cff" />
+						<text
+							x="340"
+							y="63"
+							fill="#7c9cff"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							mm typegen
+						</text>
+						<text x="340" y="80" fill="#99a0b3" font-size="10.5" text-anchor="middle">
+							reads schema
+						</text>
+						<rect x="490" y="40" width="150" height="52" rx="9" fill="#171a23" stroke="#59d1a6" />
+						<text
+							x="565"
+							y="63"
+							fill="#59d1a6"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							workspace.d.ts
+						</text>
+						<text x="565" y="80" fill="#99a0b3" font-size="10.5" text-anchor="middle">
+							emitted types
+						</text>
+						<rect x="700" y="40" width="110" height="52" rx="9" fill="#1e222e" stroke="#2a2f3d" />
+						<text x="755" y="63" fill="#e6e9f0" font-size="12" text-anchor="middle">
+							autocomplete
+						</text>
+						<text x="755" y="80" fill="#59d1a6" font-size="10.5" text-anchor="middle">
+							zero casts
+						</text>
+						<line
+							x1="192"
+							y1="66"
+							x2="246"
+							y2="66"
+							stroke="#7c9cff"
+							stroke-width="1.5"
+							marker-end="url(#arw3)"
+						/>
+						<line
+							x1="432"
+							y1="66"
+							x2="486"
+							y2="66"
+							stroke="#7c9cff"
+							stroke-width="1.5"
+							marker-end="url(#arw3)"
+						/>
+						<line
+							x1="642"
+							y1="66"
+							x2="696"
+							y2="66"
+							stroke="#7c9cff"
+							stroke-width="1.5"
+							marker-end="url(#arw3)"
+						/>
+					</svg>
+				</div>
+			</figure>
+			<div class="callout">
+				<div class="lbl">Recommendation</div>
+				Ship <strong>Tier 2 now</strong> (a small, backwards-compatible generic on
+				<code>records</code>/<code>media</code>) — it removes nearly all the <code>as</code> noise
+				with zero machinery — and treat <strong>Tier 3 typegen</strong> as the next backlog item
+				once we want the full autocomplete-from-schema experience. Both are additive; neither breaks
+				the current string-key API.
+			</div>
+
+			<!-- ─────────────────────────────────────────── 07 -->
+			<h2 id="refs">
+				<span class="num">07</span>Reference resolution
+				<span class="tag good" style="vertical-align: 6px">shipped this pass</span>
+			</h2>
+			<p>
+				A workspace has two kinds of reference field: <code>file</code> (→ a blob) and
+				<code>record</code> (→ another record, e.g. a project's <code>lead</code> → a
+				<code>people</code> row). Only <code>file</code> was resolvable. Now they're symmetric:
+			</p>
+			<table>
+				<thead>
+					<tr>
+						<th></th>
+						<th>File fields</th>
+						<th>Record fields <span class="tag good">new</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>single</td>
+						<td><code>item.file(key)</code> → <code>MediaItem</code></td>
+						<td><code>item.record(key)</code> → <code>MMRecord</code></td>
+					</tr>
+					<tr>
+						<td>list</td>
+						<td><code>item.files(key)</code> → <code>Collection</code></td>
+						<td><code>item.records(key)</code> → <code>Collection</code></td>
+					</tr>
+					<tr>
+						<td>by id</td>
+						<td><code>mm.file(id)</code></td>
+						<td><code>mm.record(id)</code></td>
+					</tr>
+				</tbody>
+			</table>
+			<p>
+				Resolution is <strong>by id alone</strong> — record ids are globally unique across types, so
+				the reader builds one id→record index at load (mirroring the manifest's id→blob index) and
+				you never name the target type. Identity is shared and dangling ids drop, exactly like
+				files. That means you can chain hops across the graph:
+			</p>
+			<pre><code><span class="tok-k">const</span> p = mm.<span class="tok-f">records</span>(<span class="tok-s">'projects'</span>).<span class="tok-f">first</span>();
+p.<span class="tok-f">record</span>(<span class="tok-s">'lead'</span>)?.<span class="tok-f">field</span>(<span class="tok-s">'name'</span>);        <span class="tok-c">// → "Ada"</span>
+p.<span class="tok-f">records</span>(<span class="tok-s">'contributors'</span>);                <span class="tok-c">// → Collection&lt;MMRecord&gt; (dangling dropped)</span>
+p.<span class="tok-f">record</span>(<span class="tok-s">'lead'</span>)?.<span class="tok-f">file</span>(<span class="tok-s">'avatar'</span>)?.src;  <span class="tok-good">// hop record → blob → url</span></code></pre>
+			<figure>
+				<div class="svgwrap">
+					<svg viewBox="0 0 820 140" role="img" aria-label="Record reference resolution">
+						<defs>
+							<marker id="arw4" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+								<path d="M0,0 L7,3 L0,6 Z" fill="#e4b6ff" />
+							</marker>
+						</defs>
+						<rect x="10" y="45" width="210" height="52" rx="9" fill="#171a23" stroke="#2a2f3d" />
+						<text
+							x="115"
+							y="66"
+							fill="#e6e9f0"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							project.field('lead')
+						</text>
+						<text
+							x="115"
+							y="85"
+							fill="#f0b45a"
+							font-size="11"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							"person1" (raw id)
+						</text>
+						<rect x="300" y="45" width="200" height="52" rx="9" fill="#171a23" stroke="#7c9cff" />
+						<text
+							x="400"
+							y="66"
+							fill="#7c9cff"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							recordById(id)
+						</text>
+						<text x="400" y="85" fill="#99a0b3" font-size="10.5" text-anchor="middle">
+							memoized index
+						</text>
+						<rect x="580" y="45" width="230" height="52" rx="9" fill="#171a23" stroke="#59d1a6" />
+						<text
+							x="695"
+							y="66"
+							fill="#e6e9f0"
+							font-size="12"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							project.record('lead')
+						</text>
+						<text
+							x="695"
+							y="85"
+							fill="#59d1a6"
+							font-size="11"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							MMRecord {name:"Ada"}
+						</text>
+						<line
+							x1="222"
+							y1="71"
+							x2="296"
+							y2="71"
+							stroke="#e4b6ff"
+							stroke-width="1.5"
+							marker-end="url(#arw4)"
+						/>
+						<text
+							x="259"
+							y="63"
+							fill="#99a0b3"
+							font-size="10"
+							text-anchor="middle"
+							font-family="ui-monospace"
+						>
+							id
+						</text>
+						<line
+							x1="502"
+							y1="71"
+							x2="576"
+							y2="71"
+							stroke="#e4b6ff"
+							stroke-width="1.5"
+							marker-end="url(#arw4)"
+						/>
+					</svg>
+				</div>
+				<figcaption>
+					Same shape as <code>file()</code>: raw id → memoized lookup → shared item, null-safe.
+				</figcaption>
+			</figure>
+
+			<!-- ─────────────────────────────────────────── 08 -->
+			<h2 id="naming">
+				<span class="num">08</span>Naming: why <code>MMRecord</code>, not a blanket prefix
+				<span class="tag good" style="vertical-align: 6px">shipped</span>
+			</h2>
+			<div class="grid2">
+				<div class="card warn">
+					<h4>The problem was one name</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						<code>Record</code> shadows TypeScript's built-in <code>Record&lt;K, V&gt;</code>. That
+						forced <code>globalThis.Record</code> all over the reader internals and
+						<code>import { Record as MMRecord }</code> in <code>nicb.at</code>.
+						<code>MediaItem</code> and <code>Collection</code> collide with nothing.
+					</p>
+				</div>
+				<div class="card good">
+					<h4>The fix: rename the collider only</h4>
+					<p style="margin: 0; color: var(--muted); font-size: 14px">
+						<code>Record → MMRecord</code>. This <em>also</em> let us delete every
+						<code>globalThis.Record</code> (the built-in is unshadowed again), a net simplification.
+						Blanket <code>MM</code>-prefixing (<code>MMCollection</code>, <code>MMMediaItem</code>)
+						would only add noise for no collision — so we didn't.
+					</p>
+				</div>
+			</div>
+			<div class="callout warn">
+				<div class="lbl">Consumer migration</div>
+				<code>nicb.at</code> currently does <code>import { Record as MMRecord }</code>. When it
+				bumps to a build that includes this rename, that becomes a plain
+				<code>import { MMRecord } from 'media-manager/reader/vite'</code>. (It pins a published tag,
+				so nothing breaks until the bump.)
+			</div>
+
+			<!-- ─────────────────────────────────────────── 09 -->
+			<h2 id="roadmap"><span class="num">09</span>Recommendations</h2>
+			<table>
+				<thead>
+					<tr>
+						<th>Change</th>
+						<th>Effort</th>
+						<th>Payoff</th>
+						<th>Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>
+							Record-field resolvers
+							(<code>record</code>/<code>records</code>/<code>mm.record</code>)
+						</td>
+						<td>S</td>
+						<td>Closes the file/record asymmetry; enables graph hops</td>
+						<td><span class="tag good">done</span></td>
+					</tr>
+					<tr>
+						<td>Rename <code>Record → MMRecord</code> + drop <code>globalThis.Record</code></td>
+						<td>S</td>
+						<td>No import-site collision; cleaner internals</td>
+						<td><span class="tag good">done</span></td>
+					</tr>
+					<tr>
+						<td>
+							Tier-2 typed queries (<code>records&lt;T&gt;</code>, <code>media&lt;T&gt;</code>)
+						</td>
+						<td>S</td>
+						<td>Kills nearly all <code>as</code> casts, zero build step</td>
+						<td><span class="tag warn">recommend next</span></td>
+					</tr>
+					<tr>
+						<td>Opt-in dev diagnostics (unknown id / all-assets-missing warnings)</td>
+						<td>S–M</td>
+						<td>Turns silent blanks into one-line messages</td>
+						<td><span class="tag warn">recommend next</span></td>
+					</tr>
+					<tr>
+						<td>Schema typegen (<code>mm typegen</code> → <code>.d.ts</code>)</td>
+						<td>M–L</td>
+						<td>Full autocomplete from the real schema (Astro/Velite parity)</td>
+						<td><span class="tag">backlog</span></td>
+					</tr>
+					<tr>
+						<td>
+							Document the <code>/reader</code> vs <code>/reader/vite</code> split (or collapse it)
+						</td>
+						<td>XS</td>
+						<td>Removes "which import?" confusion</td>
+						<td><span class="tag">backlog</span></td>
+					</tr>
+				</tbody>
+			</table>
+
+			<!-- ─────────────────────────────────────────── 10 -->
+			<h2 id="priorart"><span class="num">10</span>Prior art</h2>
+			<p>
+				The patterns above aren't invented here — they're the settled answers from the "content as
+				data" ecosystem:
+			</p>
+			<ul>
+				<li>
+					<a href="https://docs.astro.build/en/guides/content-collections/"
+						>Astro Content Collections</a
+					>
+					— <code>defineCollection</code> + Zod schema → auto-generated TS types on
+					<code>getCollection()</code>; the canonical schema-typed-query pattern, and the model for
+					Tier-3 typegen. It also resolves cross-collection <code>reference()</code>s (our
+					<code>record</code>/<code>records</code>) and typed asset helpers (our
+					<code>file()</code>/<code>src</code>).
+				</li>
+				<li>
+					<a href="https://velite.js.org/guide/introduction">Velite</a> — "type-safe data layer":
+					Markdown/JSON → Zod-validated, emits JSON + a <code>.d.ts</code>, framework-agnostic.
+					Closest living analogue to what the reader is; confirms the pure-data + generated-types
+					direction.
+				</li>
+				<li>
+					<a
+						href="https://www.wisp.blog/blog/contentlayer-has-been-abandoned-what-are-the-alternatives"
+						>Contentlayer</a
+					>
+					(now unmaintained) — the originator of "content → typed data" for the JS ecosystem; Velite
+					is its spiritual successor. A reminder to keep the reader small and dependency-light.
+				</li>
+			</ul>
+			<p style="color: var(--muted); font-size: 14px">
+				The reader's own docs: <code>src/lib/reader/README.md</code> (consumer guide) ·
+				<code>docs/FEATURES.md</code> (feature map) ·
+				<code>docs/plans/v1.0/npx/reader-package-plan.html</code> (original plan, Item 33).
+			</p>
+
+			<div class="foot">
+				Generated as a design note for discussion. Diagrams are inline SVG (no external assets).
+				Sources: Astro Docs, Velite docs, Wisp CMS. Code changes referenced (record resolvers,
+				<code>MMRecord</code> rename) are shipped in <code>src/lib/reader/</code> with tests in
+				<code>media-manager.test.ts</code>.
+			</div>
+		</div>
+	</body>
+</html>

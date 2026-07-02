@@ -15,7 +15,7 @@ export type {
 	TypeSummary
 } from './media-manager.js';
 export { Collection, type FieldAccessible } from './collection.js';
-export { MediaItem, Record, type ReaderContext } from './items.js';
+export { MediaItem, MMRecord, type ReaderContext } from './items.js';
 export {
 	parseManifest,
 	WorkspaceFormatError,

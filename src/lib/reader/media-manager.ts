@@ -3,9 +3,9 @@
  *
  * A host loads a media-manager workspace once (`MediaManager.load({ data, files })`, fed two
  * `import.meta.glob` maps) and then reads it through a handful of obvious methods — `media()`,
- * `records()`, `globals()`, `file()`, `classes()`, `types()` — getting back flat {@link MediaItem} /
- * {@link Record} items in fluent {@link Collection}s. Everything underneath (manifest join, url
- * normalization, ext-case asset matching, the version guard) is private.
+ * `records()`, `globals()`, `file()`, `record()`, `classes()`, `types()` — getting back flat
+ * {@link MediaItem} / {@link MMRecord} items in fluent {@link Collection}s. Everything underneath
+ * (manifest join, url normalization, ext-case asset matching, the version guard) is private.
  *
  * It is **pure**: no `fs`, no `process.env`, no network, no writes. All input is already-parsed JSON
  * + a `{ filename → url }` asset map; the host's bundler resolves the asset URLs.
@@ -14,10 +14,10 @@
  */
 
 import { Collection } from './collection.js';
-import { MediaItem, Record, type ReaderContext } from './items.js';
+import { MediaItem, MMRecord, type ReaderContext } from './items.js';
 import { parseManifest, type Manifest } from './manifest.js';
 
-type RawRecord = globalThis.Record<string, unknown>;
+type RawRecord = Record<string, unknown>;
 
 /**
  * System keys stripped from a record's user-facing `fields`. Mirrors `core/fieldKeys.RESERVED_FIELD_KEYS`
@@ -51,7 +51,7 @@ export interface TypeSummary {
 interface ClassData {
 	displayName: string;
 	icon?: string;
-	records: globalThis.Record<string, RawRecord>;
+	records: Record<string, RawRecord>;
 }
 
 /** Internal: a parsed record type's reader view. */
@@ -69,21 +69,21 @@ export interface ParsedWorkspace {
 	/** Parsed `media/manifest.json`. */
 	manifest: unknown;
 	/** classId → parsed `media/classes/<id>.json`. */
-	classes?: globalThis.Record<string, unknown>;
+	classes?: Record<string, unknown>;
 	/** typeId → its parsed `settings.json` + `data.json`. */
-	recordTypes?: globalThis.Record<string, { settings?: unknown; data?: unknown }>;
+	recordTypes?: Record<string, { settings?: unknown; data?: unknown }>;
 	/** The globals singleton's parsed `settings.json` + `data.json`. */
 	globals?: { settings?: unknown; data?: unknown };
 	/** filename → resolved (bundler-hashed) asset URL. */
-	assets?: globalThis.Record<string, string>;
+	assets?: Record<string, string>;
 }
 
 /** The two glob maps a Vite host passes to {@link MediaManager.load}. */
 export interface WorkspaceGlobs {
 	/** `import.meta.glob('<root>/**\/*.json', { eager: true, import: 'default' })` — parsed JSON by path. */
-	data: globalThis.Record<string, unknown>;
+	data: Record<string, unknown>;
 	/** `import.meta.glob('<root>/media/files/*', { eager: true, query: '?url', import: 'default' })`. */
-	files: globalThis.Record<string, unknown>;
+	files: Record<string, unknown>;
 }
 
 export class MediaManager implements ReaderContext {
@@ -95,6 +95,10 @@ export class MediaManager implements ReaderContext {
 	private readonly assetIndex: Map<string, string>;
 	/** Memoized blob-level MediaItems by id (so resolved references share identity). */
 	private readonly fileCache = new Map<string, MediaItem | null>();
+	/** id → raw record, across every record type + the globals singleton (for `recordById`). */
+	private readonly recordsRawById = new Map<string, RawRecord>();
+	/** Memoized MMRecords by id (so resolved references share identity, like {@link fileCache}). */
+	private readonly recordCache = new Map<string, MMRecord | null>();
 
 	private constructor(parsed: ParsedWorkspace) {
 		this.manifest = parseManifest(parsed.manifest);
@@ -113,7 +117,7 @@ export class MediaManager implements ReaderContext {
 			this.classData.set(id, {
 				displayName: cf.config?.displayName || id,
 				icon: cf.config?.icon,
-				records: (cf.records as globalThis.Record<string, RawRecord>) ?? {}
+				records: (cf.records as Record<string, RawRecord>) ?? {}
 			});
 		}
 
@@ -132,6 +136,19 @@ export class MediaManager implements ReaderContext {
 			? (globalsData!.records as RawRecord[])
 			: [];
 		this.globalsRecordRaw = globalsRecords[0] ?? null;
+
+		// Index every record by id so `record`-type field references resolve by id alone (record ids
+		// are globally unique across types), mirroring how the manifest indexes blobs for `file` fields.
+		for (const type of this.typeData.values()) {
+			for (const raw of type.records) {
+				const id = typeof raw.id === 'string' ? raw.id : '';
+				if (id && !this.recordsRawById.has(id)) this.recordsRawById.set(id, raw);
+			}
+		}
+		if (this.globalsRecordRaw) {
+			const gid = typeof this.globalsRecordRaw.id === 'string' ? this.globalsRecordRaw.id : '';
+			if (gid && !this.recordsRawById.has(gid)) this.recordsRawById.set(gid, this.globalsRecordRaw);
+		}
 	}
 
 	/**
@@ -192,6 +209,19 @@ export class MediaManager implements ReaderContext {
 		return item;
 	}
 
+	/**
+	 * Resolve a record by its id (searching every record type + globals) to an {@link MMRecord},
+	 * memoized so every reference to the same id is the same object. `null` for an unknown/dangling id.
+	 * The record-side counterpart of {@link fileById}.
+	 */
+	recordById(id: string): MMRecord | null {
+		if (this.recordCache.has(id)) return this.recordCache.get(id) ?? null;
+		const raw = this.recordsRawById.get(id);
+		const rec = raw ? new MMRecord(this.recordInit(raw)) : null;
+		this.recordCache.set(id, rec);
+		return rec;
+	}
+
 	// ── Public surface ───────────────────────────────────────────────────────────
 
 	/**
@@ -235,16 +265,21 @@ export class MediaManager implements ReaderContext {
 	 * The records of a `json` record type (`mm.records('projects')`). An unknown type id yields an
 	 * empty Collection — use {@link types} to enumerate valid ids.
 	 */
-	records(typeId: string): Collection<Record> {
+	records(typeId: string): Collection<MMRecord> {
 		const type = this.typeData.get(typeId);
-		if (!type) return new Collection<Record>([]);
-		const items = type.records.map((raw) => this.toRecord(raw));
+		if (!type) return new Collection<MMRecord>([]);
+		const items = type.records.map((raw) => this.recordFor(raw));
 		return new Collection(items);
 	}
 
-	/** The globals singleton as a {@link Record}, or `null` if the workspace has no globals data. */
-	globals(): Record | null {
-		return this.globalsRecordRaw ? this.toRecord(this.globalsRecordRaw) : null;
+	/** The globals singleton as an {@link MMRecord}, or `null` if the workspace has no globals data. */
+	globals(): MMRecord | null {
+		return this.globalsRecordRaw ? this.recordFor(this.globalsRecordRaw) : null;
+	}
+
+	/** Look up one record by its id, across every type + globals (`null` if unknown). Same identity as {@link records}. */
+	record(id: string): MMRecord | null {
+		return this.recordById(id);
 	}
 
 	/** Look up one blob by its manifest id (`null` if unknown). Same item identity as {@link media}. */
@@ -271,13 +306,28 @@ export class MediaManager implements ReaderContext {
 		}));
 	}
 
-	private toRecord(raw: RawRecord): Record {
-		return new Record({
+	/** Build the constructor init for an {@link MMRecord} from a raw record (system/meta keys stripped). */
+	private recordInit(raw: RawRecord) {
+		return {
 			id: typeof raw.id === 'string' ? raw.id : '',
 			lastModified: typeof raw.last_modified === 'string' ? raw.last_modified : null,
 			fields: stripSystemKeys(raw),
 			ctx: this
-		});
+		};
+	}
+
+	/**
+	 * An {@link MMRecord} for a raw record, reusing the id-memoized instance from {@link recordById}
+	 * when the record has an id — so a record surfaced via `records()`/`globals()` shares identity with
+	 * the same record reached through a `record`-type reference. Id-less records get a fresh instance.
+	 */
+	private recordFor(raw: RawRecord): MMRecord {
+		const id = typeof raw.id === 'string' ? raw.id : '';
+		if (id) {
+			const cached = this.recordById(id);
+			if (cached) return cached;
+		}
+		return new MMRecord(this.recordInit(raw));
 	}
 }
 
@@ -299,8 +349,8 @@ function stripSystemKeys(raw: RawRecord): RawRecord {
  * entries are keyed by basename.
  */
 function classifyGlobs(
-	dataGlob: globalThis.Record<string, unknown>,
-	filesGlob: globalThis.Record<string, unknown>
+	dataGlob: Record<string, unknown>,
+	filesGlob: Record<string, unknown>
 ): ParsedWorkspace {
 	const parsed: ParsedWorkspace = { manifest: undefined, classes: {}, recordTypes: {}, assets: {} };
 

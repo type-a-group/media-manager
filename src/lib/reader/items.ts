@@ -1,9 +1,9 @@
 /**
- * The two flat item types the facade hands back: {@link MediaItem} (a blob) and {@link Record} (a
+ * The two flat item types the facade hands back: {@link MediaItem} (a blob) and {@link MMRecord} (a
  * `json` record / class metadata row). Both are read-only views with a uniform value accessor
- * (`field`) and file-reference resolvers (`file` / `files`) — so following a `file`-type field
- * never means juggling a raw manifest id, and the resolved value is the *same* MediaItem you'd get
- * from `mm.media()` or `mm.file(id)`.
+ * (`field`) and reference resolvers — `file`/`files` for `file`-type fields, `record`/`records` for
+ * `record`-type (cross-record) fields — so following a reference never means juggling a raw id, and
+ * the resolved value is the *same* item you'd get from `mm.file(id)` / `mm.record(id)`.
  */
 
 import { Collection, type FieldAccessible } from './collection.js';
@@ -16,6 +16,15 @@ import { normalizeFieldValue } from './values.js';
 export interface ReaderContext {
 	/** Resolve a blob by its manifest id, or `null` if the id is unknown/dangling. */
 	fileById(id: string): MediaItem | null;
+	/** Resolve a record by its id (across every record type + globals), or `null` if unknown/dangling. */
+	recordById(id: string): MMRecord | null;
+}
+
+/** Read the ids stored in a reference field: a single id string → `[id]`, an id array → itself. */
+function refIds(value: unknown): string[] {
+	if (typeof value === 'string') return value ? [value] : [];
+	if (Array.isArray(value)) return value.filter((x): x is string => typeof x === 'string');
+	return [];
 }
 
 /** Intrinsic keys a {@link MediaItem} resolves from blob metadata (not class fields). */
@@ -52,7 +61,7 @@ export class MediaItem implements FieldAccessible {
 	/** True when the blob is missing from disk, or its id is dangling / its asset didn't resolve. */
 	readonly missing: boolean;
 	/** Class-scoped per-blob metadata (empty at the blob level). */
-	readonly fields: globalThis.Record<string, unknown>;
+	readonly fields: Record<string, unknown>;
 
 	private readonly ctx: ReaderContext;
 
@@ -64,7 +73,7 @@ export class MediaItem implements FieldAccessible {
 		height?: number;
 		classes?: string[];
 		missing?: boolean;
-		fields?: globalThis.Record<string, unknown>;
+		fields?: Record<string, unknown>;
 		ctx: ReaderContext;
 	}) {
 		this.id = init.id;
@@ -120,37 +129,60 @@ export class MediaItem implements FieldAccessible {
 	 * collection never contains `null`).
 	 */
 	files(key: string): Collection<MediaItem> {
-		const v = this.fields[key];
-		const ids = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-		const resolved = ids
+		const resolved = refIds(this.fields[key])
 			.map((id) => this.ctx.fileById(id))
 			.filter((m): m is MediaItem => m != null);
 		return new Collection(resolved);
 	}
+
+	/**
+	 * Follow a `record`-type field to the record it references. The stored value is a target-type
+	 * record id; this resolves it to an {@link MMRecord} (same identity as `mm.record(id)`), or `null`
+	 * when the field is empty or the id is dangling. The mirror of {@link file} for cross-record links.
+	 */
+	record(key: string): MMRecord | null {
+		const v = this.fields[key];
+		return typeof v === 'string' && v ? this.ctx.recordById(v) : null;
+	}
+
+	/**
+	 * Follow a list-of-records field to its records, in stored order. Dangling ids are dropped. The
+	 * mirror of {@link files} for cross-record links.
+	 */
+	records(key: string): Collection<MMRecord> {
+		const resolved = refIds(this.fields[key])
+			.map((id) => this.ctx.recordById(id))
+			.filter((r): r is MMRecord => r != null);
+		return new Collection(resolved);
+	}
 }
 
-/** Intrinsic keys a {@link Record} resolves outside its `fields` bag. */
+/** Intrinsic keys an {@link MMRecord} resolves outside its `fields` bag. */
 const RECORD_INTRINSICS = new Set(['id', 'last_modified', 'lastModified']);
 
 /**
  * One `json` record (a record-type row, or the globals singleton). `fields` holds the user-facing
  * field values (system + reserved meta keys stripped). `file`/`files` resolve `file`-type fields to
- * blobs exactly like {@link MediaItem}.
+ * blobs, and `record`/`records` resolve `record`-type fields to other records — exactly like
+ * {@link MediaItem}.
+ *
+ * Named `MMRecord` (not `Record`) so it never shadows TypeScript's built-in `Record<K, V>` utility
+ * type at an import site.
  */
-export class Record implements FieldAccessible {
+export class MMRecord implements FieldAccessible {
 	/** Stable record id (UUID). */
 	readonly id: string;
 	/** ISO last-modified timestamp, or `null` if absent. */
 	readonly lastModified: string | null;
 	/** User-facing field values (system + reserved meta keys removed). */
-	readonly fields: globalThis.Record<string, unknown>;
+	readonly fields: Record<string, unknown>;
 
 	private readonly ctx: ReaderContext;
 
 	constructor(init: {
 		id: string;
 		lastModified?: string | null;
-		fields: globalThis.Record<string, unknown>;
+		fields: Record<string, unknown>;
 		ctx: ReaderContext;
 	}) {
 		this.id = init.id;
@@ -180,11 +212,23 @@ export class Record implements FieldAccessible {
 
 	/** Follow a list-of-files field to its blobs, in order. See {@link MediaItem.files}. */
 	files(key: string): Collection<MediaItem> {
-		const v = this.fields[key];
-		const ids = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
-		const resolved = ids
+		const resolved = refIds(this.fields[key])
 			.map((id) => this.ctx.fileById(id))
 			.filter((m): m is MediaItem => m != null);
+		return new Collection(resolved);
+	}
+
+	/** Follow a `record`-type field to its record (`null` when empty/dangling). See {@link MediaItem.record}. */
+	record(key: string): MMRecord | null {
+		const v = this.fields[key];
+		return typeof v === 'string' && v ? this.ctx.recordById(v) : null;
+	}
+
+	/** Follow a list-of-records field to its records, in order. See {@link MediaItem.records}. */
+	records(key: string): Collection<MMRecord> {
+		const resolved = refIds(this.fields[key])
+			.map((id) => this.ctx.recordById(id))
+			.filter((r): r is MMRecord => r != null);
 		return new Collection(resolved);
 	}
 }

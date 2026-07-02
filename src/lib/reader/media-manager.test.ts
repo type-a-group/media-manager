@@ -56,9 +56,20 @@ function fixture(): ParsedWorkspace {
 							last_modified: '2026-03-01',
 							name: 'Beta',
 							date: '2026-02-01',
-							thumbnail: 'f1'
+							thumbnail: 'f1',
+							lead: 'person1', // record-type field → people
+							contributors: ['person1', 'person2', 'ghost'] // list-of-records, 'ghost' dangling
 						},
 						{ id: 'p2', name: 'Alpha', date: '2026-05-01', gallery: ['f1', 'f2', 'nope'] }
+					]
+				}
+			},
+			people: {
+				settings: { displayName: 'People' },
+				data: {
+					records: [
+						{ id: 'person1', name: 'Ada' },
+						{ id: 'person2', name: 'Alan' }
 					]
 				}
 			}
@@ -182,6 +193,38 @@ describe('MediaManager — records & file references', () => {
 		const mm = MediaManager.fromParsed(fixture());
 		const p2 = mm.records('projects').find((r) => r.id === 'p2')!;
 		expect(p2.file('thumbnail')).toBeNull();
+	});
+});
+
+describe('MediaManager — record references', () => {
+	it('follows a record-type field to another record (same identity as mm.record)', () => {
+		const mm = MediaManager.fromParsed(fixture());
+		const p1 = mm.records('projects').find((r) => r.id === 'p1')!;
+		expect(p1.field('lead')).toBe('person1'); // raw stored id
+		const lead = p1.record('lead');
+		expect(lead?.id).toBe('person1');
+		expect(lead?.field('name')).toBe('Ada');
+		expect(lead).toBe(mm.record('person1'));
+	});
+
+	it('resolves records across types by id and shares identity with records(typeId)', () => {
+		const mm = MediaManager.fromParsed(fixture());
+		expect(mm.record('person1')).toBe(mm.records('people').find((r) => r.id === 'person1'));
+	});
+
+	it('follows a list-of-records field, dropping dangling ids', () => {
+		const mm = MediaManager.fromParsed(fixture());
+		const p1 = mm.records('projects').find((r) => r.id === 'p1')!;
+		const contributors = p1.records('contributors');
+		expect(contributors.length).toBe(2); // person1, person2 — 'ghost' dropped
+		expect(contributors.map((r) => r.field('name'))).toEqual(['Ada', 'Alan']);
+	});
+
+	it('returns null for an empty/missing record field', () => {
+		const mm = MediaManager.fromParsed(fixture());
+		const p2 = mm.records('projects').find((r) => r.id === 'p2')!;
+		expect(p2.record('lead')).toBeNull();
+		expect(mm.record('nobody')).toBeNull();
 	});
 });
 

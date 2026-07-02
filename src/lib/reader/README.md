@@ -13,6 +13,16 @@ path into the workspace that breaks when media-manager's on-disk format moves.
 
 > Scope: this is the **data layer** only. It does not ship UI components — you render with your own.
 
+> New here? The 60-second mental model, the `load()` breakdown, and the manifest×asset join are
+> diagrammed in [`docs/reader-package-design.html`](../../../docs/reader-package-design.html).
+
+## How it works, in one breath
+
+Your bundler (Vite) reads the workspace files and hands the reader **two maps** — the parsed JSON and
+a `{ filename → hashed-URL }` asset map. `MediaManager.load()` joins them once (manifest gives every
+blob a stable id; the asset map turns a filename into a served URL) and hands back flat, iterable
+items. Load once at module scope, query many times. That's the whole model.
+
 ## Install
 
 While unpublished, depend on it locally (a sibling checkout) or from git:
@@ -26,6 +36,50 @@ While unpublished, depend on it locally (a sibling checkout) or from git:
 The subpath ships prebuilt JS + `.d.ts` (built by `npm run build:reader`; runs automatically on
 `prepublishOnly`). For a local `file:` dependency, run `npm run build:reader` in the media-manager
 checkout once so `dist/reader/` exists.
+
+## Set up your host
+
+Two things get wired up **once**: the workspace has to live where your bundler can see it, and an
+alias makes the glob paths resolve. Using SvelteKit (as [nicb.at](../../../README.md) does):
+
+**1 · Put the workspace inside your app.** Commit it under `src/assets/` — nicb.at commits the whole
+tree. Vite can only bundle files that live in the project, so a folder _outside_ the repo won't work
+for a static build.
+
+```
+src/assets/media_manager/
+├─ settings.json
+├─ media/
+│  ├─ manifest.json
+│  ├─ classes/<id>.json
+│  └─ files/<blobs>          ← the ?url glob targets this dir
+├─ records/<typeId>/{settings.json, data.json}
+└─ globals/{settings.json, data.json}
+```
+
+**2 · Add the `$assets` alias** so `import.meta.glob('$assets/…')` resolves — in `svelte.config.js`:
+
+```js
+// svelte.config.js
+const config = {
+	kit: {
+		alias: { $assets: './src/assets' }
+	}
+};
+```
+
+Plain Vite (no SvelteKit): use a relative glob (`import.meta.glob('../assets/media_manager/**/*.json', …)`)
+or add a `resolve.alias` in `vite.config.ts` instead.
+
+**3 · (Recommended) Edit the same folder you bundle.** Drop a `media-manager.config.json` at your repo
+root pointing the editor at that folder:
+
+```json
+{ "root": "./src/assets/media_manager" }
+```
+
+Now `npx media-manager` (the editor) reads and writes the _exact_ workspace your site bundles: edit,
+commit, redeploy. One source of truth — no export step, no copy.
 
 ## A photos gallery in ~15 lines
 
@@ -61,12 +115,16 @@ class / record type / globals / asset) **from its path**, so this snippet is the
 ```js
 mm.media(); // every blob in the workspace        → Collection<MediaItem>
 mm.media('photos'); // members of the "photos" class       → Collection<MediaItem>
-mm.records('projects'); // records of a type                   → Collection<Record>
-mm.globals(); // the globals singleton                → Record | null
+mm.records('projects'); // records of a type                   → Collection<MMRecord>
+mm.globals(); // the globals singleton                → MMRecord | null
 mm.file(id); // one blob by manifest id              → MediaItem | null
+mm.record(id); // one record by id (any type/globals)  → MMRecord | null
 mm.classes(); // [{ id, name, icon?, count }]
 mm.types(); // [{ id, name, count }]
 ```
+
+> The record class is exported as **`MMRecord`** (not `Record`) so it never shadows TypeScript's
+> built-in `Record<K, V>` utility type at your import site.
 
 ## Item shapes
 
@@ -82,13 +140,17 @@ MediaItem {
   field(key): unknown;                 // value by key (fields first, else intrinsics)
   file(key): MediaItem | null;         // follow a file-type field
   files(key): Collection<MediaItem>;   // follow a list-of-files field
+  record(key): MMRecord | null;        // follow a record-type field
+  records(key): Collection<MMRecord>;  // follow a list-of-records field
 }
 
-Record {
+MMRecord {
   id: string;
   lastModified: string | null;
   fields: Record<string, unknown>;
-  field(key); file(key); files(key);   // same accessors as MediaItem
+  field(key);                          // same accessors as MediaItem
+  file(key); files(key);               // follow file-type fields
+  record(key); records(key);           // follow record-type fields
 }
 ```
 
@@ -115,11 +177,13 @@ mm.records('projects').map((r) => ({ title: r.field('name'), date: r.field('date
 `where` / `filter` / `sortBy` return a `Collection` (chainable, never mutating); `map` returns a plain
 array (you're projecting out of the collection into your own shape).
 
-## Following file references — never juggle an id
+## Following references — never juggle an id
 
-A `file`-type field stores a raw manifest id on disk. `field()` gives you that id; `file()` / `files()`
-resolve it to the actual blob — the **same** `MediaItem` you'd get from `mm.file(id)` (identity is
-shared), so you get `src`, dimensions, and `missing` for free:
+Reference fields store a raw id on disk. `field()` gives you that id; the resolvers follow it to the
+real item — the **same** object you'd get from `mm.file(id)` / `mm.record(id)` (identity is shared),
+so you get `src`, dimensions, `missing`, nested fields, etc. for free.
+
+**`file`-type fields → blobs** (`file` / `files`):
 
 ```js
 const p = mm.records('projects').first();
@@ -129,7 +193,19 @@ p.file('thumbnail')?.src;
 p.files('gallery'); // → Collection<MediaItem>  (dangling ids dropped, never null)
 ```
 
-A dangling reference yields `null` (or is dropped from `files()`), never a throw or a broken `<img>`.
+**`record`-type fields → other records** (`record` / `records`) — the exact mirror, for cross-record
+links (e.g. a project's `lead` pointing at a `people` record). Resolution is by id across **every**
+type + globals, so you don't name the target type:
+
+```js
+p.field('lead'); // → "person1"  (the stored id)
+p.record('lead'); // → MMRecord { id: 'person1', … }
+p.record('lead')?.field('name'); // → "Ada"
+p.records('contributors'); // → Collection<MMRecord>  (dangling ids dropped)
+```
+
+A dangling reference yields `null` (or is dropped from `files()` / `records()`), never a throw or a
+broken render. Because identity is shared, you can chain hops: `p.record('lead').file('avatar')?.src`.
 
 ## Missing files
 
@@ -194,6 +270,21 @@ const projects = mm.records('projects').sortBy('date', 'desc');
 A host that pinned the **pre-Item-18** paths (`photos/image-data.json`, `files/*`,
 `projects/data.json`) will read nothing once the workspace is migrated to the file-first layout — that
 silent breakage is exactly what the reader exists to prevent.
+
+## Troubleshooting — when it renders blank
+
+The reader is deliberately defensive: it never throws on missing data, so a wiring mistake shows up as
+_silence_, not an error. The usual suspects, quickest first:
+
+| Symptom                                                       | Likely cause                                                             | Fix                                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| **All images `src: null` / `missing: true`** — records fine   | `files` glob prefix wrong, or it's missing `query: '?url'`               | Point `files` at `…/media/files/*` **with `query: '?url'`**; it must share the `data` prefix       |
+| **Everything empty** — `media()` / `records()` all length `0` | The `data` glob matched nothing (wrong prefix, or `$assets` alias unset) | Confirm the alias resolves and the prefix matches where the workspace actually lives               |
+| **`WorkspaceFormatError` at load**                            | No `media/manifest.json` under the prefix, or a pre-file-first workspace | Point at a migrated workspace; run `npm run upgrade-data -- <root> --apply` on an old one          |
+| **One class/type empty**, others fine                         | Typo in the id (`mm.media('phtoos')`)                                    | List real ids with `mm.classes()` / `mm.types()`                                                   |
+| **`field('x')` is `undefined`**                               | Key typo, or the field only exists in a _class view_                     | Inspect `Object.keys(item.fields)`; blob-level items (`mm.media()`, `mm.file`) have empty `fields` |
+| **`Cannot find module 'media-manager/reader/vite'`**          | `dist/reader/` not built (`file:`/git installs may skip it)              | Run `npm run build:reader` in the media-manager checkout                                           |
+| **`file()` / `record()` returns `null`**                      | The referenced id is dangling (target was deleted)                       | Expected — guard with `?.`; not a bug                                                              |
 
 ## Guarantees
 

@@ -5,7 +5,7 @@
  * (`.where(...).sortBy(...)`) without learning an API, and drop straight into a Svelte `{#each}`.
  *
  * Filtering/sorting read item values through the item's own `field(key)` accessor (see
- * {@link FieldAccessible}), so `where`/`sortBy` work uniformly over both `MediaItem` and `Record`
+ * {@link FieldAccessible}), so `where`/`sortBy` work uniformly over both `MediaItem` and `MMRecord`
  * and look in the same place `field()` does (schema fields first, then intrinsics like `width`).
  */
 

@@ -41,7 +41,7 @@ export function normalizeUrlValue(value: unknown): UrlValue {
 }
 
 /**
- * The convenience normalization applied by `MediaItem.field()` / `Record.field()`: a value that
+ * The convenience normalization applied by `MediaItem.field()` / `MMRecord.field()`: a value that
  * looks like a `url` object is normalized to a {@link UrlValue}; everything else (scalars, lists,
  * file-id strings) passes through untouched. This keeps `.field()` predictable — it returns the
  * stored value — while smoothing the one shape (url) that has a legacy variant.
